@@ -78,3 +78,21 @@ fn undo_protects_a_word() {
     let ed = s.push("wamt", None);
     assert!(ed.iter().all(|e| e.index != 3), "{ed:?}");
 }
+
+#[test]
+fn learns_names_typed_twice() {
+    // Once is not enough (could be a typo); twice means it's a word.
+    check("We met Hasnat today and then Hasant said hello", "We met Hasnat today and then Hasant said hello");
+    check(
+        "We met Hasnat today and Hasnat was great so then Hasant said hello",
+        "We met Hasnat today and Hasnat was great so then Hasnat said hello",
+    );
+    check("the kubectl tool and the kubectl config then the kubetcl apply", "the kubectl tool and the kubectl config then the kubectl apply");
+}
+
+#[test]
+fn proper_nouns() {
+    check("I went to Calicornia last Monady", "I went to California last Monday");
+    check("i love london", "I love London");
+    check("We met Colman and Barcus", "We met Colman and Barcus");
+}

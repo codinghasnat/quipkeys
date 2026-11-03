@@ -45,6 +45,10 @@ pub struct Config {
     /// A capitalised word may be fixed to a known proper noun with the usual
     /// bar only if the slip costs less than this (one clean keyboard slip).
     pub proper_fix_max_channel: f32,
+    /// Weight of the document cache in the context model (0 = off).
+    pub doc_cache: f32,
+    /// Prior weight of session-learned words.
+    pub learned_weight: f32,
     /// Score of "this unknown word is exactly what the user meant".
     pub oov_keep_base: f32,
     pub oov_keep_per_char: f32,
@@ -93,6 +97,8 @@ impl Default for Config {
             bound_max: 19.0,
             tau_capital: 0.999,
             proper_fix_max_channel: 6.0,
+            doc_cache: 0.0,
+            learned_weight: 0.2,
             oov_keep_base: 12.0,
             oov_keep_per_char: 2.0,
             oov_len_cap: 10,
@@ -114,8 +120,29 @@ impl Default for Config {
 
 /// Context for one decision. `prev`/`next` are dictionary ids of the
 /// neighbouring words (already corrected), when known and in the dictionary.
+/// What has been typed so far in this document/session.
+#[derive(Clone, Default, Debug)]
+pub struct DocCache {
+    /// Output word counts (dictionary words).
+    pub counts: HashMap<WordId, u32>,
+    pub total: u32,
+    /// Words the user evidently means even though the dictionary lacks them
+    /// (typed identically twice, or restored with undo): (lowercase, count).
+    pub learned: Vec<(String, u32)>,
+}
+
+impl DocCache {
+    pub fn add(&mut self, id: WordId, delta: i32) {
+        let c = self.counts.entry(id).or_insert(0);
+        *c = (*c as i32 + delta).max(0) as u32;
+        self.total = (self.total as i32 + delta).max(0) as u32;
+    }
+}
+
 #[derive(Clone, Copy, Default, Debug)]
-pub struct Ctx {
+pub struct Ctx<'a> {
+    /// Document memory, if any.
+    pub cache: Option<&'a DocCache>,
     /// Two words back (for trigram context).
     pub prev2: Option<WordId>,
     pub prev: Option<WordId>,
@@ -142,6 +169,8 @@ pub enum Hyp {
     Word(WordId),
     /// Run-together words: "nicetomeetyou" -> nice to meet you.
     Seg(Vec<WordId>),
+    /// A word learned in this session (not in the dictionary).
+    Learned(String),
 }
 
 pub struct Engine {
@@ -170,6 +199,24 @@ impl Engine {
         }
         let prev2 = if prev.is_some() { prev2 } else { None };
         self.lx.cost3(prev2, prev, w, &self.lm_params()) as f32
+    }
+
+    /// Left-context cost of `w`, mixed with how often it already appeared in
+    /// this document (a cache language model).
+    fn lm_doc(&self, ctx: &Ctx, w: WordId) -> f32 {
+        let base = self.lm3(ctx.prev2, ctx.prev, w);
+        match ctx.cache {
+            Some(c) if self.cfg.doc_cache > 0.0 && c.total >= 10 => {
+                let n = c.counts.get(&w).copied().unwrap_or(0);
+                if n == 0 {
+                    return base - (1.0 - self.cfg.doc_cache).ln();
+                }
+                let pc = n as f32 / c.total as f32;
+                let p = (1.0 - self.cfg.doc_cache) * (-base).exp() + self.cfg.doc_cache * pc;
+                -p.ln()
+            }
+            _ => base,
+        }
     }
 
     fn lm(&self, prev: Option<WordId>, w: WordId) -> f32 {
@@ -239,8 +286,8 @@ impl Engine {
         let keep = match typed_id.or(morph) {
             // An inflection of a known word ("freewheelers") is scored like
             // the stem plus a small cost: it is almost certainly a real word.
-            Some(t) if typed_id.is_none() => self.cfg.morph_cost + w * (self.lm3(ctx.prev2, ctx.prev, t) + self.right(Some(t), ctx)),
-            Some(t) => w * (self.lm3(ctx.prev2, ctx.prev, t) + self.right(Some(t), ctx)),
+            Some(t) if typed_id.is_none() => self.cfg.morph_cost + w * (self.lm_doc(ctx, t) + self.right(Some(t), ctx)),
+            Some(t) => w * (self.lm_doc(ctx, t) + self.right(Some(t), ctx)),
             None => {
                 let len = if ctx.name_like { 0 } else { core.len().min(self.cfg.oov_len_cap) };
                 self.cfg.oov_keep_base + self.cfg.oov_keep_per_char * len as f32 + w * self.right(None, ctx)
@@ -252,8 +299,26 @@ impl Engine {
                 continue;
             }
             let extra = if typed_id.is_some() { self.cfg.real_word_extra } else { 0.0 };
-            let s = c.channel + extra + w * (self.lm3(ctx.prev2, ctx.prev, c.word) + self.right(Some(c.word), ctx));
+            let s = c.channel + extra + w * (self.lm_doc(ctx, c.word) + self.right(Some(c.word), ctx));
             hyps.push((Hyp::Word(c.word), s));
+        }
+        // Words learned in this session compete like dictionary words, with a
+        // prior from how often they've been used here.
+        if let Some(cache) = ctx.cache {
+            if !cache.learned.is_empty() && typed_id.is_none() {
+                let tc = self.ch.typed_costs(core.as_bytes(), times);
+                let total = cache.total.max(10) as f32;
+                for (lw, n) in &cache.learned {
+                    if lw == core || lw.len().abs_diff(core.len()) > 2 {
+                        continue;
+                    }
+                    let d = self.ch.distance(lw.as_bytes(), &tc);
+                    if d <= self.cfg.bound {
+                        let prior = -(self.cfg.learned_weight * *n as f32 / total).ln();
+                        hyps.push((Hyp::Learned(lw.clone()), d + w * (prior + self.right(None, ctx))));
+                    }
+                }
+            }
         }
         if self.cfg.splits && typed_id.is_none() && core.len() >= 3 {
             if let Some((ws, lm)) = self.segment(core, ctx.prev2, ctx.prev) {
@@ -391,6 +456,7 @@ impl Engine {
         match h {
             Hyp::Keep => core.to_string(),
             Hyp::Word(id) => self.lx.word(*id).to_string(),
+            Hyp::Learned(w) => w.clone(),
             Hyp::Seg(ws) => ws.iter().map(|&w| self.lx.word(w)).collect::<Vec<_>>().join(" "),
         }
     }

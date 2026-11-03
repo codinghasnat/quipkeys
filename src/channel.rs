@@ -149,3 +149,33 @@ impl Channel {
         TypedCosts { keys: keys.to_vec(), ins, trans }
     }
 }
+
+impl Channel {
+    /// Weighted alignment cost of `intended` against already-prepared typed
+    /// costs: the same recurrence as the trie search, for one word.
+    pub fn distance(&self, intended: &[u8], tc: &TypedCosts) -> f32 {
+        let (t, n, m) = (&tc.keys, tc.keys.len(), intended.len());
+        let fl = self.p.first_letter;
+        let mut rows = vec![vec![0f32; n + 1]; m + 1];
+        for j in 1..=n {
+            rows[0][j] = rows[0][j - 1] + tc.ins[j - 1] + if j == 1 { fl } else { 0.0 };
+        }
+        for d in 1..=m {
+            let c = intended[d - 1];
+            let pc = if d >= 2 { intended[d - 2] } else { 0 };
+            let first = if d == 1 { fl } else { 0.0 };
+            rows[d][0] = rows[d - 1][0] + self.del(c, pc) + first;
+            for j in 1..=n {
+                let tj = t[j - 1];
+                let mut v = rows[d - 1][j - 1] + if c == tj { 0.0 } else { self.sub(c, tj) + first };
+                v = v.min(rows[d - 1][j] + self.del(c, pc) + first);
+                v = v.min(rows[d][j - 1] + tc.ins[j - 1]);
+                if d >= 2 && j >= 2 && c == t[j - 2] && pc == tj && c != pc {
+                    v = v.min(rows[d - 2][j - 2] + tc.trans[j - 1] + if d == 2 { fl } else { 0.0 });
+                }
+                rows[d][j] = v;
+            }
+        }
+        rows[m][n]
+    }
+}

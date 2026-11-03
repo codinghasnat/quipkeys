@@ -15,7 +15,10 @@
 
 use std::collections::HashSet;
 
-use crate::decoder::{Ctx, Engine};
+use std::collections::HashMap;
+use std::rc::Rc;
+
+use crate::decoder::{Ctx, DocCache, Engine};
 use crate::lexicon::WordId;
 
 /// How a raw token splits into punctuation + correctable core.
@@ -194,11 +197,27 @@ pub struct Stream<'e> {
     pub words: Vec<Word>,
     pub enabled: bool,
     ignore: HashSet<String>,
+    /// Document memory: word counts so far and words learned this session.
+    cache: Rc<DocCache>,
+    /// Dictionary ids currently counted in the cache for each chunk.
+    counted: Vec<Vec<crate::lexicon::WordId>>,
+    /// Unknown words left exactly as typed, by count.
+    typed_oov: HashMap<String, u32>,
+    learned_upto: usize,
 }
 
 impl<'e> Stream<'e> {
     pub fn new(engine: &'e Engine) -> Self {
-        Stream { engine, words: Vec::new(), enabled: true, ignore: HashSet::new() }
+        Stream {
+            engine,
+            words: Vec::new(),
+            enabled: true,
+            ignore: HashSet::new(),
+            cache: Rc::new(DocCache::default()),
+            counted: Vec::new(),
+            typed_oov: HashMap::new(),
+            learned_upto: 0,
+        }
     }
 
     /// Index of the last non-empty chunk before `i`.
@@ -245,6 +264,63 @@ impl<'e> Stream<'e> {
     /// Commit a finished word (the raw token between spaces, including any
     /// punctuation). `times` are optional key-down timestamps (ms), one per byte.
     pub fn push(&mut self, raw: &str, times: Option<Vec<f32>>) -> Vec<Edit> {
+        let edits = self.push_inner(raw, times);
+        self.update_memory();
+        edits
+    }
+
+    /// Keep the document cache in sync with the latest outputs, and learn
+    /// unknown words the user has now typed the same way twice.
+    fn update_memory(&mut self) {
+        let n = self.words.len();
+        self.counted.resize(n, Vec::new());
+        let lx = &self.engine.lx;
+        let cache = Rc::make_mut(&mut self.cache);
+        // Only the last few chunks can still change (look-backs, boundary repair).
+        for k in n.saturating_sub(4)..n {
+            let now: Vec<_> = self.words[k]
+                .output
+                .split(' ')
+                .filter_map(|p| lx.id(&parse_token(p, true).core.to_ascii_lowercase()))
+                .collect();
+            if now != self.counted[k] {
+                for &id in &self.counted[k] {
+                    cache.add(id, -1);
+                }
+                for &id in &now {
+                    cache.add(id, 1);
+                }
+                self.counted[k] = now;
+            }
+        }
+        if self.engine.cfg.learned_weight <= 0.0 {
+            return;
+        }
+        // Chunks older than the second look-back are final.
+        while self.learned_upto + 3 < n {
+            let w = &self.words[self.learned_upto];
+            self.learned_upto += 1;
+            let lower = w.tok.core.to_ascii_lowercase();
+            let plain = lower.len() >= 3 && lower.bytes().all(|c| c.is_ascii_lowercase());
+            if w.output != w.typed || !plain || w.tok.protected && !w.tok.name_like || lx.id(&lower).is_some() {
+                continue;
+            }
+            let c = self.typed_oov.entry(lower.clone()).or_insert(0);
+            *c += 1;
+            if *c == 2 {
+                // Typed the same way twice and never corrected: it's a word.
+                self.ignore.insert(lower.clone());
+                cache.learned.push((lower, 2));
+            } else if *c > 2 {
+                if let Some(e) = cache.learned.iter_mut().find(|e| e.0 == lower) {
+                    e.1 = *c;
+                }
+            }
+        }
+    }
+
+    fn push_inner(&mut self, raw: &str, times: Option<Vec<f32>>) -> Vec<Edit> {
+        let cache = self.cache.clone();
         let i = self.words.len();
         let sentence_start = self.prev_index(i).is_none_or(|p| self.words[p].tok.ends_sentence);
         let tok = parse_token(raw, sentence_start);
@@ -275,7 +351,7 @@ impl<'e> Stream<'e> {
         if !reseg.is_empty() {
             return reseg;
         }
-        let ctx = Ctx { prev2: self.ctx_prev2(i), prev: self.ctx_prev(i), ..Default::default() };
+        let ctx = Ctx { prev2: self.ctx_prev2(i), prev: self.ctx_prev(i), cache: Some(&cache), ..Default::default() };
         if let Some(e) = self.try_word(i, ctx, None, false) {
             edits.push(e);
         }
@@ -285,7 +361,13 @@ impl<'e> Stream<'e> {
                 if !pw.changed && !pw.protected && !pw.tok.ends_sentence {
                     let next = self.words[i].out_id;
                     if next.is_some() {
-                        let ctx = Ctx { prev2: self.ctx_prev2(p), prev: self.ctx_prev(p), next, ..Default::default() };
+                        let ctx = Ctx {
+                            prev2: self.ctx_prev2(p),
+                            prev: self.ctx_prev(p),
+                            next,
+                            cache: Some(&cache),
+                            ..Default::default()
+                        };
                         // Real words need tau_revise; a non-word just needs the usual bar.
                         let known = self.engine.lx.id(&pw.tok.core.to_ascii_lowercase()).is_some();
                         let tau = if known { Some(self.engine.cfg.tau_revise) } else { None };
@@ -311,6 +393,7 @@ impl<'e> Stream<'e> {
                                 prev: self.ctx_prev(pp),
                                 next: n1,
                                 next2: n2,
+                                cache: Some(&cache),
                                 ..Default::default()
                             };
                             let known = self.engine.lx.id(&w2.tok.core.to_ascii_lowercase()).is_some();
@@ -397,11 +480,18 @@ impl<'e> Stream<'e> {
             let plain = Ctx { name_like: false, ..ctx };
             self.engine
                 .decide(&lower, w.core_times(), &plain, None)
-                .filter(|s| !s.text.contains(' ') && lx.cap_share(&s.text) >= 0.9)
-                // Only a single clean keyboard slip (adjacent key, roll-over swap,
-                // doubled/dropped repeat), never in the first letter: names
-                // differ from each other by spelling variants (Colman/Coleman).
                 .filter(|s| {
+                    // A name learned in this session ("Hasnat" typed twice) is
+                    // as good as a dictionary proper noun.
+                    if ctx.cache.is_some_and(|c| c.learned.iter().any(|(w, _)| *w == s.text)) {
+                        return true;
+                    }
+                    if s.text.contains(' ') || lx.cap_share(&s.text) < 0.9 {
+                        return false;
+                    }
+                    // Only a single clean keyboard slip (adjacent key, roll-over swap,
+                    // doubled/dropped repeat), never in the first letter: names
+                    // differ from each other by spelling variants (Colman/Coleman).
                     let id = lx.id(&s.text);
                     self.engine
                         .candidates(&lower, w.core_times())
@@ -486,7 +576,8 @@ impl<'e> Stream<'e> {
             _ => None,
         };
         let jt = joined_times.as_deref();
-        let ctx = |prev2, prev| Ctx { prev2, prev, ..Default::default() };
+        let cache = self.cache.clone();
+        let ctx = |prev2, prev| Ctx { prev2, prev, cache: Some(&cache), ..Default::default() };
         // Score of reading `x` as word(s); an unknown word can never be the
         // *result* of moving a space, so it costs infinity there.
         let known = |text: &str| text.split(' ').all(|w| lx.id(w).is_some());
@@ -564,8 +655,12 @@ impl<'e> Stream<'e> {
         let old = std::mem::replace(&mut w.output, w.typed.clone());
         w.protected = true;
         let lower = w.tok.core.to_ascii_lowercase();
-        self.ignore.insert(lower);
+        self.ignore.insert(lower.clone());
         self.ignore.insert(w.typed.to_ascii_lowercase());
+        // An undo is the strongest signal there is: learn the word.
+        if self.engine.lx.id(&lower).is_none() && lower.bytes().all(|c| c.is_ascii_lowercase()) {
+            Rc::make_mut(&mut self.cache).learned.push((lower, 2));
+        }
         let new = w.typed.clone();
         self.words[index].out_id = self.id_of(&new);
         Some(Edit { index, old, new, confidence: 1.0, revision: false })

@@ -34,6 +34,9 @@ fn configs() -> Vec<(&'static str, Config)> {
     no_space.boundary = false;
     let mut no_lb2 = Config::default();
     no_lb2.lookback2 = false;
+    let mut no_mem = Config::default();
+    no_mem.doc_cache = 0.0;
+    no_mem.learned_weight = 0.0;
     let mut no_time = Config::default();
     no_time.channel.timing = false;
     vec![
@@ -45,6 +48,7 @@ fn configs() -> Vec<(&'static str, Config)> {
         ("no-trigram", no_tri),
         ("no-boundary", no_space),
         ("no-lookback2", no_lb2),
+        ("no-memory", no_mem),
         ("no-timing", no_time),
     ]
 }
@@ -288,7 +292,14 @@ fn main() {
     };
     let wanted: Option<Vec<String>> = get("--configs").map(|s| s.split(',').map(String::from).collect());
     let text = std::fs::read_to_string(&data).expect("read eval data");
-    let sentences: Vec<&str> = text.lines().filter(|l| !l.trim().is_empty()).take(n).collect();
+    // A docs file (blank-line separated texts) is evaluated one session per
+    // document, so document memory carries across its sentences.
+    let units: Vec<String> = if data.contains("docs") {
+        text.split("\n\n").map(|d| d.lines().collect::<Vec<_>>().join(" ")).filter(|d| !d.trim().is_empty()).take(n).collect()
+    } else {
+        text.lines().filter(|l| !l.trim().is_empty()).take(n).map(String::from).collect()
+    };
+    let sentences: Vec<&str> = units.iter().map(String::as_str).collect();
 
     if args.iter().any(|a| a == "--tune") {
         tune(&sentences, seed);
