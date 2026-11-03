@@ -3,7 +3,14 @@
 
 use crate::channel::{Channel, ChannelParams};
 use crate::lexicon::{Lexicon, LmParams, WordId};
-use crate::search::search;
+use crate::search::{search, Candidate};
+use std::cell::RefCell;
+use std::collections::HashMap;
+use std::rc::Rc;
+
+thread_local! {
+    static CACHE: RefCell<HashMap<String, Rc<Vec<Candidate>>>> = RefCell::new(HashMap::new());
+}
 
 #[derive(Clone, Debug)]
 pub struct Config {
@@ -12,6 +19,10 @@ pub struct Config {
     pub context: bool,
     /// Allow revising the previous word once the next word is known.
     pub right_context: bool,
+    /// Second look-back with two words of right context.
+    pub lookback2: bool,
+    /// Repair misplaced spaces between consecutive chunks.
+    pub boundary: bool,
     /// Try splitting a run-together word ("thecat" -> "the cat").
     pub splits: bool,
     /// Bigram interpolation weight.
@@ -25,6 +36,12 @@ pub struct Config {
     pub lm_weight: f32,
     /// Largest channel cost considered (nats). Roughly "two slips".
     pub bound: f32,
+    /// Extra search radius per letter beyond 5 (long words absorb more slips).
+    pub bound_per_char: f32,
+    /// Hard cap on the search radius (keeps the worst case fast).
+    pub bound_max: f32,
+    /// Confidence needed to correct a capitalised word mid-sentence (could be a name).
+    pub tau_capital: f32,
     /// Score of "this unknown word is exactly what the user meant".
     pub oov_keep_base: f32,
     pub oov_keep_per_char: f32,
@@ -56,12 +73,17 @@ impl Default for Config {
             context: true,
             right_context: true,
             splits: true,
+            boundary: true,
+            lookback2: true,
             lambda: 0.6,
             trigrams: true,
             lambda3: 0.7,
             k3: 5.0,
             lm_weight: 1.0,
             bound: 13.0,
+            bound_per_char: 2.5,
+            bound_max: 19.0,
+            tau_capital: 0.99,
             oov_keep_base: 14.0,
             oov_keep_per_char: 1.5,
             real_word_extra: 1.5,
@@ -74,7 +96,7 @@ impl Default for Config {
             merge_margin: 6.0,
             shift_margin: 2.0,
             hand_shift_max_cost: 14.0,
-            min_len: 2,
+            min_len: 1,
         }
     }
 }
@@ -156,12 +178,48 @@ impl Engine {
         }
     }
 
+    /// Dictionary candidates for `core`, memoised: while typing, each chunk is
+    /// searched again at the next space (boundary repair, look-back), so a
+    /// small per-thread cache saves most repeat work.
+    pub fn candidates(&self, core: &str, times: Option<&[f32]>) -> Rc<Vec<Candidate>> {
+        let bound = (self.cfg.bound + self.cfg.bound_per_char * core.len().saturating_sub(5) as f32).min(self.cfg.bound_max);
+        self.candidates_within(core, times, bound)
+    }
+
+    pub fn candidates_within(&self, core: &str, times: Option<&[f32]>, bound: f32) -> Rc<Vec<Candidate>> {
+        let tc = self.ch.typed_costs(core.as_bytes(), times);
+        // Timing only matters through the transposition costs, so key on those.
+        let mut key = core.to_string();
+        key.push_str(&format!("|{bound}|"));
+        for t in &tc.trans {
+            key.push(char::from(b'0' + (*t as u8).min(9)));
+        }
+        if let Some(c) = CACHE.with(|m| m.borrow().get(&key).cloned()) {
+            return c;
+        }
+        let c = Rc::new(search(&self.lx, &self.ch, &tc, bound));
+        CACHE.with(|m| {
+            let mut m = m.borrow_mut();
+            if m.len() > 256 {
+                m.clear();
+            }
+            m.insert(key, c.clone());
+        });
+        c
+    }
+
     /// Score every hypothesis for `core`. Index 0 is always "keep as typed".
     /// Lower score = more likely (nats).
     pub fn hypotheses(&self, core: &str, times: Option<&[f32]>, ctx: &Ctx) -> Vec<(Hyp, f32)> {
+        self.hypotheses_within(core, times, ctx, None)
+    }
+
+    pub fn hypotheses_within(&self, core: &str, times: Option<&[f32]>, ctx: &Ctx, bound: Option<f32>) -> Vec<(Hyp, f32)> {
         let typed_id = self.lx.id(core);
-        let tc = self.ch.typed_costs(core.as_bytes(), times);
-        let cands = search(&self.lx, &self.ch, &tc, self.cfg.bound);
+        let cands = match bound {
+            Some(b) => self.candidates_within(core, times, b),
+            None => self.candidates(core, times),
+        };
         let w = self.cfg.lm_weight;
         let mut hyps = Vec::with_capacity(cands.len() + 4);
         let keep = match typed_id {
@@ -173,7 +231,7 @@ impl Engine {
             }
         };
         hyps.push((Hyp::Keep, keep));
-        for c in &cands {
+        for c in cands.iter() {
             if Some(c.word) == typed_id {
                 continue;
             }
@@ -187,8 +245,41 @@ impl Engine {
                     + w * (lm + self.right(ws.last().copied(), ctx));
                 hyps.push((Hyp::Seg(ws), s));
             }
+            if core.len() >= 5 && bound.is_none() {
+                self.fuzzy_splits(core, ctx, &mut hyps);
+            }
         }
         hyps
+    }
+
+    /// Run-together words with a slip in one of them ("andfharts" -> and charts):
+    /// cut where one side is an exact word and spell-correct the other side.
+    fn fuzzy_splits(&self, core: &str, ctx: &Ctx, hyps: &mut Vec<(Hyp, f32)>) {
+        let w = self.cfg.lm_weight;
+        let ok_piece = |p: &str| p.len() >= 2 || p == "a" || p == "i";
+        for k in 1..core.len() {
+            let (x, y) = core.split_at(k);
+            if !ok_piece(x) || !ok_piece(y) {
+                continue;
+            }
+            let (ix, iy) = (self.lx.id(x), self.lx.id(y));
+            if ix.is_some() == iy.is_some() {
+                continue; // both exact: plain segmentation covers it; neither: too costly
+            }
+            let fuzzy = if ix.is_some() { y } else { x };
+            if fuzzy.len() < 3 {
+                continue;
+            }
+            for c in self.candidates_within(fuzzy, None, self.cfg.bound).iter() {
+                let (a, b) = if let Some(a) = ix { (a, c.word) } else { (c.word, iy.unwrap()) };
+                let unseen = if self.lx.seen_bigram(a, b) { 0.0 } else { 3.0 };
+                let s = self.cfg.split_cost
+                    + unseen
+                    + c.channel
+                    + w * (self.lm3(ctx.prev2, ctx.prev, a) + self.lm3(ctx.prev, Some(a), b) + self.right(Some(b), ctx));
+                hyps.push((Hyp::Seg(vec![a, b]), s));
+            }
+        }
     }
 
     /// Best way to cut `core` into 2+ dictionary words (exact pieces),
@@ -245,7 +336,8 @@ impl Engine {
     /// The single most likely reading of `core` and its score, with no
     /// confidence gate. Used to compare alternative word boundaries.
     pub fn best(&self, core: &str, times: Option<&[f32]>, ctx: &Ctx) -> (String, f32) {
-        let hyps = self.hypotheses(core, times, ctx);
+        // Boundary alternatives use the base radius: keeps repair cheap.
+        let hyps = self.hypotheses_within(core, times, ctx, Some(self.cfg.bound));
         let (h, s) = hyps.into_iter().min_by(|a, b| a.1.partial_cmp(&b.1).unwrap()).unwrap();
         (self.hyp_text(&h, core), s)
     }

@@ -30,6 +30,10 @@ fn configs() -> Vec<(&'static str, Config)> {
     no_right.right_context = false;
     let mut no_tri = Config::default();
     no_tri.trigrams = false;
+    let mut no_space = Config::default();
+    no_space.boundary = false;
+    let mut no_lb2 = Config::default();
+    no_lb2.lookback2 = false;
     let mut no_time = Config::default();
     no_time.channel.timing = false;
     vec![
@@ -39,6 +43,8 @@ fn configs() -> Vec<(&'static str, Config)> {
         ("no-context", no_ctx),
         ("no-right-ctx", no_right),
         ("no-trigram", no_tri),
+        ("no-boundary", no_space),
+        ("no-lookback2", no_lb2),
         ("no-timing", no_time),
     ]
 }
@@ -202,18 +208,19 @@ fn simulate(sentences: &[&str], level: &str, seed: u64) -> Vec<Vec<SimToken>> {
     sentences.iter().map(|s| ty.type_sentence(s)).collect()
 }
 
-/// Grid search over the gate / weighting parameters. The objective treats a
-/// false or wrong correction as 3x worse than a missed one: an unexpected
-/// change is what makes people turn autocorrect off.
+/// Grid search over the gate / weighting parameters on moderate, messy and
+/// blind typing. Objective: +1 per fixed mistake, -1.5 per mistake changed to
+/// the wrong word (still wrong, now harder to spot), -4 per correctly typed
+/// word that gets changed (the thing that makes people turn autocorrect off).
 fn tune(sentences: &[&str], seed: u64) {
-    let sims: Vec<_> = ["light", "moderate", "messy"].iter().map(|l| simulate(sentences, l, seed)).collect();
+    let sims: Vec<_> = ["moderate", "messy", "blind"].iter().map(|l| simulate(sentences, l, seed)).collect();
     let mut grid = Vec::new();
-    for &oov in &[14.0f32, 17.0, 20.0, 23.0] {
-        for &per in &[0.5f32, 1.0, 1.5] {
-            for &rwe in &[0.0f32, 1.5] {
-                for &split in &[4.0f32, 6.0] {
-                    for &tau in &[0.6f32, 0.8, 0.9] {
-                        grid.push((oov, per, rwe, split, tau));
+    for &tau in &[0.5f32, 0.7, 0.9] {
+        for &oov in &[12.0f32, 14.0, 16.0] {
+            for &per in &[1.0f32, 1.5, 2.0] {
+                for &rwe in &[0.0f32, 1.5] {
+                    for &taur in &[0.95f32, 0.98] {
+                        grid.push((tau, oov, per, rwe, taur));
                     }
                 }
             }
@@ -229,25 +236,29 @@ fn tune(sentences: &[&str], seed: u64) {
                 s.spawn(move || {
                     let mut e = Engine::new(Config::default());
                     let mut out = Vec::new();
-                    for (oov, per, rwe, split, tau) in chunk {
+                    for (tau, oov, per, rwe, taur) in chunk {
+                        e.cfg.tau_nonword = tau;
                         e.cfg.oov_keep_base = oov;
                         e.cfg.oov_keep_per_char = per;
                         e.cfg.real_word_extra = rwe;
-                        e.cfg.split_cost = split;
-                        e.cfg.tau_nonword = tau;
-                        let (mut fixed, mut bad, mut fc, mut clean) = (0u64, 0u64, 0u64, 0u64);
+                        e.cfg.tau_realword = taur;
+                        e.cfg.tau_revise = taur;
+                        let (mut fixed, mut wrong, mut fc, mut clean, mut err) = (0u64, 0u64, 0u64, 0u64, 0u64);
                         for sim in sims {
                             let st = evaluate(Some(&e), &e.lx, sim, &Show::default());
                             fixed += st.err_fixed;
-                            bad += st.err_wrong + st.clean_changed;
+                            wrong += st.err_wrong;
                             fc += st.clean_changed;
                             clean += st.clean;
+                            err += st.err;
                         }
-                        let score = fixed as f64 - 3.0 * bad as f64;
+                        let score = fixed as f64 - 1.5 * wrong as f64 - 4.0 * fc as f64;
                         out.push((
                             score,
                             format!(
-                                "oov={oov:<4} per={per:<3} rwe={rwe:<3} split={split:<3} tau={tau:<3} | fixed {fixed:>5} bad {bad:>4} falsecorr {:.3}%",
+                                "tau={tau:<3} oov={oov:<4} per={per:<3} rwe={rwe:<3} taur={taur:<4} | fixed {:.1}% wrong {:.1}% falsecorr {:.3}%",
+                                pct(fixed, err),
+                                pct(wrong, err),
                                 pct(fc, clean)
                             ),
                         ));
@@ -287,7 +298,7 @@ fn main() {
     let t0 = Instant::now();
     let base = Engine::new(Config::default());
     eprintln!("dictionary: {} words, loaded in {:.0} ms", base.lx.len(), t0.elapsed().as_secs_f64() * 1e3);
-    let levels: Vec<&str> = if level == "all" { vec!["light", "moderate", "messy"] } else { vec![level.as_str()] };
+    let levels: Vec<&str> = if level == "all" { vec!["light", "moderate", "messy", "blind"] } else { vec![level.as_str()] };
 
     for lvl in levels {
         let p = SimParams::level(lvl);

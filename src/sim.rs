@@ -42,6 +42,8 @@ pub struct SimParams {
     pub premature_space_rate: f32,
     /// Probability that a space lands one letter early/late ("mee tyou").
     pub shifted_space_rate: f32,
+    /// Probability that a whole word is typed with the hand one key off.
+    pub hand_shift_rate: f32,
 }
 
 impl SimParams {
@@ -52,18 +54,29 @@ impl SimParams {
                 missing_space_rate: 0.003,
                 premature_space_rate: 0.002,
                 shifted_space_rate: 0.003,
+                hand_shift_rate: 0.0,
             },
             "messy" => SimParams {
                 char_error_rate: 0.06,
                 missing_space_rate: 0.012,
                 premature_space_rate: 0.008,
                 shifted_space_rate: 0.012,
+                hand_shift_rate: 0.002,
+            },
+            // The north star: typing without looking, fast and loose.
+            "blind" => SimParams {
+                char_error_rate: 0.10,
+                missing_space_rate: 0.02,
+                premature_space_rate: 0.012,
+                shifted_space_rate: 0.02,
+                hand_shift_rate: 0.006,
             },
             _ => SimParams {
                 char_error_rate: 0.03,
                 missing_space_rate: 0.006,
                 premature_space_rate: 0.004,
                 shifted_space_rate: 0.006,
+                hand_shift_rate: 0.001,
             },
         }
     }
@@ -134,7 +147,28 @@ impl Typist {
     }
 
     /// Type one word's letters; returns (bytes, fast_pair flags as times).
+    /// The whole word with the hand resting one key left or right.
+    fn hand_shifted(&mut self, word: &str) -> Option<Vec<u8>> {
+        const ROWS: [&[u8]; 3] = [b"qwertyuiop[]", b"asdfghjkl;'", b"zxcvbnm,./"];
+        let dir: i32 = if self.rng.f() < 0.5 { -1 } else { 1 };
+        word.bytes()
+            .map(|c| {
+                let lc = c.to_ascii_lowercase();
+                let r = ROWS.iter().find(|r| r.contains(&lc))?;
+                let i = r.iter().position(|&k| k == lc)? as i32 + dir;
+                let k = *r.get(usize::try_from(i).ok()?)?;
+                Some(if c.is_ascii_uppercase() { k.to_ascii_uppercase() } else { k })
+            })
+            .collect()
+    }
+
     fn type_word(&mut self, word: &str) -> (Vec<u8>, Vec<f32>) {
+        if word.len() >= 3 && word.bytes().all(|c| c.is_ascii_alphabetic()) && self.rng.f() < self.p.hand_shift_rate {
+            if let Some(t) = self.hand_shifted(word) {
+                let gaps = t.iter().map(|_| self.iki()).collect();
+                return (t, gaps);
+            }
+        }
         let w = word.as_bytes();
         let letters = w.iter().filter(|c| c.is_ascii_alphabetic()).count();
         let mut out: Vec<u8> = Vec::with_capacity(w.len() + 2);

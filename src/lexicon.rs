@@ -67,7 +67,9 @@ fn valid_word(w: &str) -> bool {
     // Elongations like "hellll" / "sooo" are web noise, and they would compete
     // with the real word they stretch.
     let tripled = b.windows(3).any(|t| t[0] == t[1] && t[1] == t[2]);
-    !w.is_empty() && !tripled && b.iter().all(|&c| c.is_ascii_lowercase() || c == b'\'')
+    // Single letters other than "a" and "i" are not words people type on purpose.
+    let stray_letter = b.len() == 1 && w != "a" && w != "i";
+    !w.is_empty() && !tripled && !stray_letter && b.iter().all(|&c| c.is_ascii_lowercase() || c == b'\'')
 }
 
 impl Lexicon {
@@ -140,6 +142,11 @@ impl Lexicon {
     /// Is "a b" a frequent pair in the bigram data?
     pub fn has_bigram(&self, a: WordId, b: WordId) -> bool {
         self.bigrams.contains_key(&(a, b)) || self.ngrams.as_ref().is_some_and(|n| n.bigram(a, b) >= 20)
+    }
+
+    /// Has "a b" been seen at all (either source)?
+    pub fn seen_bigram(&self, a: WordId, b: WordId) -> bool {
+        self.bigrams.contains_key(&(a, b)) || self.ngrams.as_ref().is_some_and(|n| n.bigram(a, b) > 0)
     }
 
     /// P(w | prev) from the pair data: the larger of the Google Books estimate

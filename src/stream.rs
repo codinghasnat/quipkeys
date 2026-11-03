@@ -28,6 +28,8 @@ pub struct Token {
     pub core_start: usize,
     /// Never touch (code, names, numbers, URLs, acronyms...).
     pub protected: bool,
+    /// Capitalised mid-sentence: probably a name, so only fix when very sure.
+    pub name_like: bool,
     pub ends_sentence: bool,
 }
 
@@ -61,16 +63,18 @@ pub fn parse_token(raw: &str, sentence_start: bool) -> Token {
         || abbrev
         || !raw.is_ascii()
         || raw.bytes().any(|c| c.is_ascii_digit() || b"_/\\@#$%^&*=+<>|~`{}[]".contains(&c))
-        || core.bytes().any(|c| !(is_letter(c) || c == b'\''))
+        || core.bytes().any(|c| !(is_letter(c) || c == b'\'' || c == b'-'))
+        || core.contains("--")
         || lead.bytes().any(|c| c == b'.' || c == b'-' || c == b':')
         // Dialect elisions: "countin'", "'em".
         || (trail.starts_with('\'') && !trail.starts_with("'s"))
         || lead.ends_with('\'')
         || trail.contains("..") && !trail.ends_with("...")
         || trail.contains(['.', ':']) && trail.len() > 1 && trail.bytes().skip(1).any(is_letter);
+    let mut name_like = false;
     match case_of(core) {
-        None => protected = true, // ALL CAPS / camelCase
-        Some(Case::Capital) if !sentence_start && !(lower == "i" || lower.starts_with("i'")) => protected = true,
+        None if !shift_slip(core) => protected = true, // ALL CAPS / camelCase
+        Some(Case::Capital) if !sentence_start && !(lower == "i" || lower.starts_with("i'")) => name_like = true,
         _ => {}
     }
     Token {
@@ -79,11 +83,33 @@ pub fn parse_token(raw: &str, sentence_start: bool) -> Token {
         trail: trail.to_string(),
         core_start: s,
         protected,
+        name_like,
         ends_sentence,
     }
 }
 
+/// Shift-key timing slips: "THe" (Shift held one key too long), "hTe" (Shift
+/// landed on the wrong key). Not camelCase like "fooBar", which splits into
+/// two real-looking parts of 2+ letters.
+fn shift_slip(core: &str) -> bool {
+    let b = core.as_bytes();
+    if b.len() < 2 || !b.iter().all(|c| c.is_ascii_alphabetic()) {
+        return false;
+    }
+    let ups: Vec<usize> = (0..b.len()).filter(|&i| b[i].is_ascii_uppercase()).collect();
+    match ups.as_slice() {
+        [0, 1] => b.len() >= 3 && b[2..].iter().all(|c| c.is_ascii_lowercase()),
+        [1] => true,
+        _ => false,
+    }
+}
+
 fn case_of(core: &str) -> Option<Case> {
+    if shift_slip(core) {
+        // Treat as a capitalised word at sentence start, lowercase otherwise
+        // (decided by the caller from context); "THe" -> "The".
+        return Some(Case::Capital);
+    }
     let mut chars = core.chars().filter(|c| c.is_ascii_alphabetic());
     let first = chars.next()?;
     let rest_lower = chars.all(|c| c.is_ascii_lowercase());
@@ -134,6 +160,10 @@ pub struct Word {
 
 impl Word {
     fn capital(&self) -> bool {
+        if shift_slip(&self.tok.core) {
+            // A capital was typed, so Shift was meant: "uSre" -> "Sure".
+            return true;
+        }
         case_of(&self.tok.core) == Some(Case::Capital)
     }
     fn core_times(&self) -> Option<&[f32]> {
@@ -257,6 +287,33 @@ impl<'e> Stream<'e> {
                         }
                     }
                 }
+                // Second look-back: two words of context on each side.
+                if self.engine.cfg.lookback2 {
+                    if let Some(pp) = self.prev_index(p) {
+                        let w2 = &self.words[pp];
+                        let (n1, n2) = (self.words[p].out_id, self.words[i].out_id);
+                        if !w2.changed
+                            && !w2.protected
+                            && !w2.tok.ends_sentence
+                            && !self.words[p].tok.ends_sentence
+                            && n1.is_some()
+                            && n2.is_some()
+                        {
+                            let ctx = Ctx {
+                                prev2: self.ctx_prev2(pp),
+                                prev: self.ctx_prev(pp),
+                                next: n1,
+                                next2: n2,
+                                ..Default::default()
+                            };
+                            let known = self.engine.lx.id(&w2.tok.core.to_ascii_lowercase()).is_some();
+                            let tau = if known { Some(self.engine.cfg.tau_revise) } else { None };
+                            if let Some(e) = self.try_word(pp, ctx, tau, true) {
+                                edits.push(e);
+                            }
+                        }
+                    }
+                }
             }
         }
         edits
@@ -282,7 +339,53 @@ impl<'e> Stream<'e> {
             let old = self.set_output(i, new.clone());
             return Some(Edit { index: i, old, new, confidence: 1.0, revision });
         }
-        let s = self.engine.decide(&lower, w.core_times(), &ctx, tau)?;
+        let tau = if w.tok.name_like { Some(tau.unwrap_or(0.0).max(self.engine.cfg.tau_capital)) } else { tau };
+        if lower.contains('-') {
+            // Hyphenated: fix each non-word part on its own ("out-fo-doors").
+            if revision {
+                return None;
+            }
+            let mut changed = false;
+            let parts: Vec<String> = lower
+                .split('-')
+                .map(|part| {
+                    if part.len() >= 2 && self.engine.lx.id(part).is_none() {
+                        if let Some(s) = self.engine.decide(part, None, &Ctx::default(), tau) {
+                            if !s.text.contains(' ') {
+                                changed = true;
+                                return s.text;
+                            }
+                        }
+                    }
+                    part.to_string()
+                })
+                .collect();
+            if !changed {
+                return None;
+            }
+            let new = format!("{}{}{}", w.tok.lead, recase(&parts.join("-"), w.capital()), w.tok.trail);
+            let old = self.set_output(i, new.clone());
+            return Some(Edit { index: i, old, new, confidence: 1.0, revision });
+        }
+        let slip = shift_slip(&w.tok.core);
+        // "uSre": the Shift went with the second key, so the first two keys
+        // rolled over. If swapping them gives a word, that is the reading.
+        let rolled = (slip && w.tok.core.as_bytes()[1].is_ascii_uppercase())
+            .then(|| {
+                let mut b = lower.clone().into_bytes();
+                b.swap(0, 1);
+                String::from_utf8(b).ok()
+            })
+            .flatten()
+            .filter(|r| self.engine.lx.id(r).is_some());
+        let fixed_case = (slip && self.engine.lx.id(&lower).is_some()).then(|| lower.clone());
+        let s = match rolled {
+            Some(r) => crate::decoder::Suggestion { text: r, confidence: 1.0 },
+            None => match self.engine.decide(&lower, w.core_times(), &ctx, tau) {
+                Some(s) => s,
+                None => crate::decoder::Suggestion { text: fixed_case?, confidence: 1.0 },
+            },
+        };
         let new = format!("{}{}{}", w.tok.lead, recase(&s.text, w.capital()), w.tok.trail);
         if new == w.output {
             return None;
@@ -324,7 +427,7 @@ impl<'e> Stream<'e> {
     /// Reconsider the space between the previous chunk and chunk `i`.
     fn try_boundary(&mut self, i: usize) -> Vec<Edit> {
         let Some(p) = self.prev_index(i) else { return Vec::new() };
-        if p + 1 != i {
+        if p + 1 != i || !self.engine.cfg.boundary {
             return Vec::new();
         }
         let (pw, cw) = (&self.words[p], &self.words[i]);
@@ -374,7 +477,7 @@ impl<'e> Stream<'e> {
         let merge_extra = if base_known { e.cfg.merge_margin } else { 0.0 };
         let sm = if known(&m) { sm + merge_extra } else { f32::INFINITY };
         alts.push((m, String::new(), sm + e.cfg.space_cost));
-        for d in [-2i32, -1, 1, 2] {
+        for d in [-1i32, 1] {
             let k = a.len() as i32 + d;
             if k < 1 || k >= joined.len() as i32 {
                 continue;
@@ -461,7 +564,12 @@ mod tests {
         ] {
             assert!(parse_token(raw, false).protected, "{raw}");
         }
-        assert!(parse_token("Smith", false).protected);
+        assert!(parse_token("Smith", false).name_like);
+        assert!(!parse_token("THe", true).protected);
+        assert!(!parse_token("hTe", false).protected);
+        assert!(parse_token("fooBar", false).protected);
+        assert!(!parse_token("out-fo-doors,", false).protected);
+        assert!(parse_token("--force", false).protected);
         assert!(!parse_token("Thsi", true).protected);
         assert!(!parse_token("stpre.", false).protected);
         assert!(!parse_token("(relaly)", false).protected);
