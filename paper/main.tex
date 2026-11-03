@@ -37,7 +37,7 @@
 \maketitle
 
 \begin{abstract}
-Phone keyboards stopped asking for precision years ago: they decode where a finger probably meant to land. Physical keyboards never made that transition, and desktop autocorrect remains a conservative dictionary spellchecker. We present \qk{}, an offline decoder for physical-keyboard typing that aims to let people type fast and imprecisely, without looking and without reaching for backspace, and still get the words they intended. \qk{} combines a keyboard-geometry error model, a weighted edit-distance search over a dictionary trie, an interpolated trigram language model built from 1.4 billion words of text, and a sliding-window lattice decoder whose confidence is the posterior probability of each correction summed over all decoding paths. Safety mechanisms (name and code protection, a morphology guard, hysteresis, undo-driven learning) keep false corrections near one in a thousand correctly typed words. Beyond letter slips, it repairs misplaced spaces, whole-hand shifts, Shift-key slips and accidental Caps Lock.
+Phone keyboards stopped asking for precision years ago: they decode where a finger probably meant to land. Physical keyboards never made that transition, and desktop autocorrect remains a conservative dictionary spellchecker. We present \qk{}, an offline decoder for physical-keyboard typing that aims to let people type fast and imprecisely, without looking and without reaching for backspace, and still get the words they intended. \qk{} combines a keyboard-geometry error model, a weighted edit-distance search over a dictionary trie, an interpolated trigram language model built from 1.4 billion words of text, and a sliding-window lattice decoder whose confidence is the posterior probability of each correction summed over all decoding paths. Safety mechanisms (name and code protection, a morphology guard, hysteresis, undo-driven learning) keep false corrections to about one in 750 correctly typed words. Beyond letter slips, it repairs misplaced spaces, whole-hand shifts, Shift-key slips and accidental Caps Lock.
 
 On a held-out benchmark of simulated sloppy typing, \qk{} fixes \ModFix\% of mistyped words at moderate error rates (a frequency-only spellchecker: \ModFixPlain\%) and lifts word accuracy for ``blind'' typing (10\% of letters wrong) from \BlindNone\% to \BlindAcc\%. In a first real-typing study with one participant typing 33 passages at a median of 85~words per minute with the text hidden and backspace disabled, words typed exactly right rose from 75.4\% to 91.5\% (92.5\% with an error model fitted to the participant), and the held-out half of the data shows the gains generalise. The real data also overturned two assumptions the simulator had baked in: this typist's extra letters are rarely neighbouring keys, so keyboard geometry contributed nothing on real typing, and swapped letters happen at normal speed rather than as fast roll-overs. We release the engine, benchmark and data-collection tools, and discuss what remains before such a decoder could replace autocorrect.
 \end{abstract}
@@ -201,7 +201,7 @@ rough & Gaussian aim & $\approx$49\% & fingers land roughly near the key \\
 \section{Results}
 
 \subsection{Simulated typing}
-Table~\ref{tab:main} gives held-out results. \qk{} fixes 20--28 points more mistyped words than the frequency-only baseline at every level. Its false-correction rate is higher than the far more passive baseline's but stays near or below one in 700 correctly typed words. For blind typing, word accuracy rises from \BlindNone\% to \BlindAcc\%.
+Table~\ref{tab:main} gives held-out results. \qk{} fixes 24--34 points more mistyped words than the frequency-only baseline at every level. Its false-correction rate is higher than the far more passive baseline's but stays at or below about one in 750 correctly typed words. For blind typing, word accuracy rises from \BlindNone\% to \BlindAcc\%.
 
 \begin{table}[t]
 \centering\small
@@ -210,7 +210,7 @@ Table~\ref{tab:main} gives held-out results. \qk{} fixes 20--28 points more mist
 \input{table_main}
 \end{table}
 
-\paragraph{Ablations.} Table~\ref{tab:ablate} switches components off one at a time. On simulated typing, keyboard geometry is the most valuable single component (4--7 points), followed by the trigram context (2--3 points), boundary repair (about 3 points) and the lattice decoder (about 1 point, plus fewer false corrections). The rough-aim error model is worth about 5 points on rough typing, and the switching rule keeps it off for careful typing.
+\paragraph{Ablations.} Table~\ref{tab:ablate} switches components off one at a time. On simulated typing, keyboard geometry is the most valuable single component (5--6 points, and 17 points under rough aim), followed by the trigram context (about 3 points), boundary repair (about 3 points) and the lattice decoder (0.2--2 points). The rough-aim error model adds 3.5 points on rough typing, and the switching rule keeps it off for careful typing.
 
 \begin{table}[t]
 \centering\small
@@ -287,7 +287,7 @@ Letters mistyped & 8.8\% & 10\% (blind) \\
 \paragraph{What remains.} Of the 81 words still wrong across all runs, half are real-word slips (\ttw{ship} for \emph{shop}, \ttw{our}/\ttw{out}, \ttw{nice} for \emph{nine}, \ttw{quite}/\ttw{quiet}). Trigram context cannot overrule these safely. The other half are non-words with two or more slips or a genuinely ambiguous reading (\ttw{asn}: \emph{and} or \emph{an}? \ttw{thei}: \emph{this}, \emph{their} or \emph{the}?).
 
 \subsection{Speed}
-Median latency is 0.5--1.0~ms per word, and the 99th percentile is 3--5~ms (8~ms when the rough-aim model is active). That is well below perceptible delay. The engine loads in about 0.3~s and runs unchanged in a browser through WebAssembly.
+Median latency is 0.5--1.2~ms per word, and the 99th percentile is 3--10~ms, the upper end under rough aim. That is well below perceptible delay. The engine loads in about 1~s and compiles unchanged to WebAssembly for use in a browser.
 
 \subsection{Negative results and lessons}
 \label{sec:lessons}

@@ -20,7 +20,7 @@ def col(level, cfg, i):  # fixed wrong left realword falsecorr wordacc effwpm p5
 
 nums = {
     "ModFix": col("moderate", "full", 0), "ModFixPlain": col("moderate", "plain", 0),
-    "BlindNone": col("blind", "no-correct", 5), "BlindAcc": col("blind", "full", 5),
+    "BlindNone": f'{float(col("blind", "no-correct", 5)):.1f}', "BlindAcc": f'{float(col("blind", "full", 5)):.1f}',
 }
 with open("numbers.tex", "w") as f:
     for k, v in nums.items():
