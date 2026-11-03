@@ -96,3 +96,9 @@ fn proper_nouns() {
     check("i love london", "I love London");
     check("We met Colman and Barcus", "We met Colman and Barcus");
 }
+
+#[test]
+fn common_misspellings_are_not_dictionary_words() {
+    check("will actyaly have meaningbful improvements", "will actually have meaningful improvements");
+    check("I allready told you, it is realy excelent", "I already told you, it is really excellent");
+}
