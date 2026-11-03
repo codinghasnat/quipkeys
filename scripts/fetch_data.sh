@@ -38,5 +38,6 @@ for c in gutenberg webtext nps_chat movie_reviews abc reuters; do
   (cd "$tmp/nltk" && unzip -q -o "$c.zip")
 done
 python3 -I scripts/prep_nltk_text.py "$tmp/nltk"
-cargo run --release --bin qk-ngrams -- data/en_ngrams.bin --min2 3 --min3 3 \
+cargo run --release --bin qk-ngrams -- data/en_ngrams.bin --caps data/en_capitalized.txt --min2 3 --min3 3 \
   "1:$tmp/wiki.txt" "1:$tmp/nltk/news.txt" "5:$tmp/nltk/chatty.txt"
+# (the same qk-ngrams run also writes data/en_capitalized.txt when given --caps)

@@ -121,14 +121,16 @@ fn case_of(core: &str) -> Option<Case> {
     }
 }
 
-/// Apply the typed word's capitalisation to a lowercase replacement.
-fn recase(word: &str, capital: bool) -> String {
+/// Apply the typed word's capitalisation to a lowercase replacement, and
+/// capitalise words that are normally written that way (london -> London).
+fn recase_lx(lx: &crate::lexicon::Lexicon, word: &str, capital: bool) -> String {
     let mut out = String::with_capacity(word.len());
     for (i, w) in word.split(' ').enumerate() {
         if i > 0 {
             out.push(' ');
         }
-        let make_cap = (capital && i == 0) || w == "i" || w.starts_with("i'");
+        let proper = w.split('-').next().is_some_and(|p| lx.cap_share(p) >= CAP_SHARE);
+        let make_cap = (capital && i == 0) || w == "i" || w.starts_with("i'") || proper;
         if make_cap {
             let mut cs = w.chars();
             if let Some(f) = cs.next() {
@@ -141,6 +143,11 @@ fn recase(word: &str, capital: bool) -> String {
     }
     out
 }
+
+/// A word written capitalised at least this often mid-sentence is a proper noun.
+const CAP_SHARE: f32 = 0.97;
+/// ...and this often before we capitalise a correctly spelled lowercase word.
+const CAP_FIX_SHARE: f32 = 0.995;
 
 #[derive(Clone, Debug)]
 pub struct Word {
@@ -364,7 +371,7 @@ impl<'e> Stream<'e> {
             if !changed {
                 return None;
             }
-            let new = format!("{}{}{}", w.tok.lead, recase(&parts.join("-"), w.capital()), w.tok.trail);
+            let new = format!("{}{}{}", w.tok.lead, recase_lx(&self.engine.lx, &parts.join("-"), w.capital()), w.tok.trail);
             let old = self.set_output(i, new.clone());
             return Some(Edit { index: i, old, new, confidence: 1.0, revision });
         }
@@ -379,15 +386,40 @@ impl<'e> Stream<'e> {
             })
             .flatten()
             .filter(|r| self.engine.lx.id(r).is_some());
-        let fixed_case = (slip && self.engine.lx.id(&lower).is_some()).then(|| lower.clone());
+        let lx = &self.engine.lx;
+        let fixed_case = (slip && lx.id(&lower).is_some()).then(|| lower.clone());
+        // "london" typed in lowercase: just capitalise it.
+        let cap_fix = (!slip && w.tok.core == lower && lx.cap_share(&lower) >= CAP_FIX_SHARE).then(|| lower.clone());
+        // A capitalised word mid-sentence may be a name, so it normally needs
+        // near-certainty. But if the fix is itself a known proper noun
+        // ("Calicornia" -> California), the usual bar is enough.
+        let proper_fix = if w.tok.name_like {
+            let plain = Ctx { name_like: false, ..ctx };
+            self.engine
+                .decide(&lower, w.core_times(), &plain, None)
+                .filter(|s| !s.text.contains(' ') && lx.cap_share(&s.text) >= 0.9)
+                // Only a single clean keyboard slip (adjacent key, roll-over swap,
+                // doubled/dropped repeat), never in the first letter: names
+                // differ from each other by spelling variants (Colman/Coleman).
+                .filter(|s| {
+                    let id = lx.id(&s.text);
+                    self.engine
+                        .candidates(&lower, w.core_times())
+                        .iter()
+                        .any(|c| Some(c.word) == id && c.channel < self.engine.cfg.proper_fix_max_channel)
+                        && s.text.as_bytes().first() == lower.as_bytes().first()
+                })
+        } else {
+            None
+        };
         let s = match rolled {
             Some(r) => crate::decoder::Suggestion { text: r, confidence: 1.0 },
-            None => match self.engine.decide(&lower, w.core_times(), &ctx, tau) {
+            None => match proper_fix.or_else(|| self.engine.decide(&lower, w.core_times(), &ctx, tau)) {
                 Some(s) => s,
-                None => crate::decoder::Suggestion { text: fixed_case?, confidence: 1.0 },
+                None => crate::decoder::Suggestion { text: fixed_case.or(cap_fix)?, confidence: 1.0 },
             },
         };
-        let new = format!("{}{}{}", w.tok.lead, recase(&s.text, w.capital()), w.tok.trail);
+        let new = format!("{}{}{}", w.tok.lead, recase_lx(&self.engine.lx, &s.text, w.capital()), w.tok.trail);
         if new == w.output {
             return None;
         }
@@ -417,7 +449,7 @@ impl<'e> Stream<'e> {
                 continue;
             }
             if let Some(word) = self.engine.hand_shift(b) {
-                let new = format!("{}{}", recase(&word, capital), &raw[b.len()..]);
+                let new = format!("{}{}", recase_lx(&self.engine.lx, &word, capital), &raw[b.len()..]);
                 let old = self.set_output(i, new.clone());
                 return Some(Edit { index: i, old, new, confidence: 1.0, revision: false });
             }
@@ -505,9 +537,9 @@ impl<'e> Stream<'e> {
         let (cap_p, lead_p) = (self.words[p].capital(), self.words[p].tok.lead.clone());
         let trail_c = self.words[i].tok.trail.clone();
         let (new_p, new_c) = if best_alt.1.is_empty() {
-            (format!("{lead_p}{}{trail_c}", recase(&best_alt.0, cap_p)), String::new())
+            (format!("{lead_p}{}{trail_c}", recase_lx(lx, &best_alt.0, cap_p)), String::new())
         } else {
-            (format!("{lead_p}{}", recase(&best_alt.0, cap_p)), format!("{}{trail_c}", recase(&best_alt.1, false)))
+            (format!("{lead_p}{}", recase_lx(lx, &best_alt.0, cap_p)), format!("{}{trail_c}", recase_lx(lx, &best_alt.1, false)))
         };
         let mut edits = Vec::new();
         for (k, new) in [(p, new_p), (i, new_c)] {

@@ -41,6 +41,13 @@ pub struct Lexicon {
     pub trie: Trie,
     /// Corpus bigram/trigram counts (Wikipedia + conversational text).
     pub ngrams: Option<Ngrams>,
+    /// Words normally written capitalised (London, Monday): share of
+    /// mid-sentence uses that are capitalised.
+    caps: HashMap<WordId, f32>,
+    /// Letter-trigram model over dictionary word types: how "English-looking"
+    /// a string is. log P(c | two previous letters), add-one smoothed.
+    chars: HashMap<[u8; 3], f32>,
+    char_ctx: HashMap<[u8; 2], f32>,
 }
 
 /// Knobs for the context model.
@@ -61,6 +68,7 @@ const BIGRAMS: &str = include_str!("../data/en_bigrams.txt");
 const WORDFREQ: &str = include_str!("../data/en_wordfreq.txt");
 const SUPPLEMENT: &str = include_str!("../data/en_supplement.txt");
 const NGRAMS: &[u8] = include_bytes!("../data/en_ngrams.bin");
+const CAPITALIZED: &str = include_str!("../data/en_capitalized.txt");
 
 fn valid_word(w: &str) -> bool {
     let b = w.as_bytes();
@@ -77,6 +85,13 @@ impl Lexicon {
     pub fn english() -> Self {
         let mut lx = Self::english_without_ngrams();
         lx.ngrams = Ngrams::load(NGRAMS, lx.len(), |w| lx.id(w));
+        for line in CAPITALIZED.lines().filter(|l| !l.starts_with('#')) {
+            if let Some((w, r)) = line.split_once(' ') {
+                if let (Some(id), Ok(r)) = (lx.id(w), r.parse::<f32>()) {
+                    lx.caps.insert(id, r);
+                }
+            }
+        }
         lx
     }
 
@@ -120,7 +135,36 @@ impl Lexicon {
         }
 
         let trie = build_trie(&words);
-        Lexicon { words, counts, total, index, bigrams: bigram_map, bigram_scale: 60.0, trie, ngrams: None }
+        // Letter trigrams over word types (each word counted once).
+        let mut chars: HashMap<[u8; 3], f32> = HashMap::new();
+        let mut char_ctx: HashMap<[u8; 2], f32> = HashMap::new();
+        for w in &words {
+            let b: Vec<u8> = [b'^', b'^'].into_iter().chain(w.bytes()).chain([b'$']).collect();
+            for t in b.windows(3) {
+                *chars.entry([t[0], t[1], t[2]]).or_insert(0.0) += 1.0;
+                *char_ctx.entry([t[0], t[1]]).or_insert(0.0) += 1.0;
+            }
+        }
+        Lexicon { words, counts, total, index, bigrams: bigram_map, bigram_scale: 60.0, trie, ngrams: None, caps: HashMap::new(), chars, char_ctx }
+    }
+
+    /// Lowest log-probability of any letter in `w` under the letter-trigram
+    /// model (nats). Real words and names have no "impossible" spots; typos
+    /// often do ("chjna": h-j-n).
+    pub fn worst_letter(&self, w: &str) -> f32 {
+        let b: Vec<u8> = [b'^', b'^'].into_iter().chain(w.bytes().map(|c| c.to_ascii_lowercase())).chain([b'$']).collect();
+        b.windows(3)
+            .map(|t| {
+                let c = self.chars.get(&[t[0], t[1], t[2]]).copied().unwrap_or(0.0);
+                let n = self.char_ctx.get(&[t[0], t[1]]).copied().unwrap_or(0.0);
+                ((c + 0.1) / (n + 2.8)).ln()
+            })
+            .fold(0.0, f32::min)
+    }
+
+    /// Share of mid-sentence uses written capitalised (0 if not a proper noun).
+    pub fn cap_share(&self, w: &str) -> f32 {
+        self.id(w).and_then(|id| self.caps.get(&id).copied()).unwrap_or(0.0)
     }
 
     pub fn id(&self, w: &str) -> Option<WordId> {

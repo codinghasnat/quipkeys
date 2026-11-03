@@ -42,6 +42,9 @@ pub struct Config {
     pub bound_max: f32,
     /// Confidence needed to correct a capitalised word mid-sentence (could be a name).
     pub tau_capital: f32,
+    /// A capitalised word may be fixed to a known proper noun with the usual
+    /// bar only if the slip costs less than this (one clean keyboard slip).
+    pub proper_fix_max_channel: f32,
     /// Score of "this unknown word is exactly what the user meant".
     pub oov_keep_base: f32,
     pub oov_keep_per_char: f32,
@@ -89,6 +92,7 @@ impl Default for Config {
             bound_per_char: 2.5,
             bound_max: 19.0,
             tau_capital: 0.999,
+            proper_fix_max_channel: 6.0,
             oov_keep_base: 12.0,
             oov_keep_per_char: 2.0,
             oov_len_cap: 10,

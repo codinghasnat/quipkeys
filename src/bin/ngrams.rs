@@ -18,12 +18,17 @@ fn main() {
     let out = &args[1];
     let mut min2 = 2u32;
     let mut min3 = 3u32;
+    let mut caps_out: Option<String> = None;
     let mut inputs = Vec::new();
     let mut i = 2;
     while i < args.len() {
         match args[i].as_str() {
             "--min2" => {
                 min2 = args[i + 1].parse().unwrap();
+                i += 1;
+            }
+            "--caps" => {
+                caps_out = Some(args[i + 1].clone());
                 i += 1;
             }
             "--min3" => {
@@ -43,12 +48,20 @@ fn main() {
     let mut tri: HashMap<u64, u32> = HashMap::new();
     let v = lx.len() as u64;
     let mut tokens = 0u64;
+    // Mid-sentence capitalised vs lowercase occurrences, per lexicon word.
+    let mut cap: Vec<u32> = vec![0; lx.len()];
+    let mut low: Vec<u32> = vec![0; lx.len()];
     for (weight, path) in &inputs {
         let f = BufReader::with_capacity(1 << 20, std::fs::File::open(path).expect("open input"));
         for line in f.lines() {
             let Ok(line) = line else { continue };
             let (mut p2, mut p1): (Option<u32>, Option<u32>) = (None, None);
+            let mut sentence_start = true;
             for raw in line.split_whitespace() {
+                let starts_sentence = std::mem::replace(&mut sentence_start, false);
+                if raw.bytes().rev().take_while(|c| !c.is_ascii_alphabetic()).any(|c| b".!?".contains(&c)) {
+                    sentence_start = true;
+                }
                 let b = raw.as_bytes();
                 let s = b.iter().position(|c| c.is_ascii_alphabetic());
                 let id = s.and_then(|s| {
@@ -60,6 +73,17 @@ fn main() {
                     lx.id(&core).or_else(|| core.strip_suffix("'s").and_then(|st| lx.id(st)))
                 });
                 tokens += 1;
+                if let (Some(w), Some(s)) = (id, s) {
+                    let b = &raw.as_bytes()[s..];
+                    let rest_lower = b[1..].iter().take_while(|c| c.is_ascii_alphabetic()).all(|c| c.is_ascii_lowercase());
+                    if !starts_sentence && rest_lower {
+                        if b[0].is_ascii_uppercase() {
+                            cap[w as usize] += 1;
+                        } else {
+                            low[w as usize] += 1;
+                        }
+                    }
+                }
                 match id {
                     Some(w) => {
                         uni[w as usize] += *weight as u64;
@@ -85,6 +109,17 @@ fn main() {
             }
         }
         eprintln!("{path}: {tokens} tokens so far, {} bigrams, {} trigrams", bi.len(), tri.len());
+    }
+    if let Some(path) = caps_out {
+        let mut out = String::from("# Words written capitalised mid-sentence >= 90% of the time (count >= 20).\n# word share-capitalised\n");
+        for id in 0..lx.len() {
+            let (c, l) = (cap[id] as f64, low[id] as f64);
+            if c + l >= 20.0 && c / (c + l) >= 0.9 && lx.word(id as u32) != "i" && !lx.word(id as u32).starts_with("i'") {
+                out.push_str(&format!("{} {:.3}\n", lx.word(id as u32), c / (c + l)));
+            }
+        }
+        std::fs::write(&path, out).unwrap();
+        eprintln!("wrote {path}");
     }
     let counts = NgramCounts {
         unigrams: uni,
