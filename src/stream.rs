@@ -340,6 +340,7 @@ impl<'e> Stream<'e> {
             return Some(Edit { index: i, old, new, confidence: 1.0, revision });
         }
         let tau = if w.tok.name_like { Some(tau.unwrap_or(0.0).max(self.engine.cfg.tau_capital)) } else { tau };
+        let ctx = Ctx { name_like: w.tok.name_like, ..ctx };
         if lower.contains('-') {
             // Hyphenated: fix each non-word part on its own ("out-fo-doors").
             if revision {
@@ -431,7 +432,9 @@ impl<'e> Stream<'e> {
             return Vec::new();
         }
         let (pw, cw) = (&self.words[p], &self.words[i]);
-        let eligible = |w: &Word| !w.protected && !w.resegmented && w.tok.core.bytes().all(|c| c.is_ascii_alphabetic());
+        let eligible = |w: &Word| {
+            !w.protected && !w.resegmented && !w.tok.name_like && w.tok.core.bytes().all(|c| c.is_ascii_alphabetic())
+        };
         if !eligible(pw) || !eligible(cw) || !pw.tok.trail.is_empty() || !cw.tok.lead.is_empty() {
             return Vec::new();
         }

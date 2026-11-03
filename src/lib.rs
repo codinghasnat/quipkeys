@@ -12,6 +12,8 @@ pub mod ngrams;
 pub mod search;
 pub mod sim;
 pub mod stream;
+#[cfg(target_arch = "wasm32")]
+pub mod wasm;
 
 pub use decoder::{Config, Ctx, Engine, Suggestion};
 pub use stream::{Edit, Stream};

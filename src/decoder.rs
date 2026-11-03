@@ -45,6 +45,11 @@ pub struct Config {
     /// Score of "this unknown word is exactly what the user meant".
     pub oov_keep_base: f32,
     pub oov_keep_per_char: f32,
+    /// Letters beyond this don't make an unknown word less plausible
+    /// (long unknown words are usually real technical terms).
+    pub oov_len_cap: usize,
+    /// Cost of an inflected form of a known word being exactly what was meant.
+    pub morph_cost: f32,
     /// Extra cost for replacing a word that is already in the dictionary.
     pub real_word_extra: f32,
     /// Posterior probability the best candidate needs before we act.
@@ -83,13 +88,15 @@ impl Default for Config {
             bound: 13.0,
             bound_per_char: 2.5,
             bound_max: 19.0,
-            tau_capital: 0.99,
-            oov_keep_base: 14.0,
-            oov_keep_per_char: 1.5,
-            real_word_extra: 1.5,
+            tau_capital: 0.999,
+            oov_keep_base: 12.0,
+            oov_keep_per_char: 2.0,
+            oov_len_cap: 10,
+            morph_cost: 3.0,
+            real_word_extra: 0.0,
             tau_nonword: 0.9,
-            tau_realword: 0.98,
-            tau_revise: 0.98,
+            tau_realword: 0.95,
+            tau_revise: 0.95,
             split_cost: 6.0,
             space_cost: 5.0,
             tau_reseg: 0.9,
@@ -113,6 +120,8 @@ pub struct Ctx {
     pub next: Option<WordId>,
     /// There is a following word, but it is not in the dictionary.
     pub next_unknown: bool,
+    /// Capitalised mid-sentence (likely a name): keeping it unknown is cheap.
+    pub name_like: bool,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -216,18 +225,21 @@ impl Engine {
 
     pub fn hypotheses_within(&self, core: &str, times: Option<&[f32]>, ctx: &Ctx, bound: Option<f32>) -> Vec<(Hyp, f32)> {
         let typed_id = self.lx.id(core);
+        let morph = if typed_id.is_none() { self.morph_stem(core) } else { None };
         let cands = match bound {
             Some(b) => self.candidates_within(core, times, b),
             None => self.candidates(core, times),
         };
         let w = self.cfg.lm_weight;
         let mut hyps = Vec::with_capacity(cands.len() + 4);
-        let keep = match typed_id {
+        let keep = match typed_id.or(morph) {
+            // An inflection of a known word ("freewheelers") is scored like
+            // the stem plus a small cost: it is almost certainly a real word.
+            Some(t) if typed_id.is_none() => self.cfg.morph_cost + w * (self.lm3(ctx.prev2, ctx.prev, t) + self.right(Some(t), ctx)),
             Some(t) => w * (self.lm3(ctx.prev2, ctx.prev, t) + self.right(Some(t), ctx)),
             None => {
-                self.cfg.oov_keep_base
-                    + self.cfg.oov_keep_per_char * core.len() as f32
-                    + w * self.right(None, ctx)
+                let len = if ctx.name_like { 0 } else { core.len().min(self.cfg.oov_len_cap) };
+                self.cfg.oov_keep_base + self.cfg.oov_keep_per_char * len as f32 + w * self.right(None, ctx)
             }
         };
         hyps.push((Hyp::Keep, keep));
@@ -250,6 +262,52 @@ impl Engine {
             }
         }
         hyps
+    }
+
+    /// If `core` is a known word plus a regular prefix/suffix
+    /// ("banquetings", "overnighters", "unfriendly"), return the known word.
+    pub fn morph_stem(&self, core: &str) -> Option<WordId> {
+        if core.len() < 6 {
+            return None;
+        }
+        let known = |w: &str| if w.len() >= 3 { self.lx.id(w) } else { None };
+        const SUFFIXES: &[(&str, &[&str])] = &[
+            ("ings", &["", "e"]), ("ers", &["", "e"]), ("ships", &[""]), ("ship", &[""]), ("ments", &[""]),
+            ("ment", &[""]), ("ness", &[""]), ("less", &[""]), ("ful", &[""]), ("ably", &["able"]),
+            ("ally", &["", "al"]), ("ily", &["y"]), ("ly", &["", "le"]), ("ies", &["y"]), ("ied", &["y"]),
+            ("ing", &["", "e"]), ("ed", &["", "e"]), ("er", &["", "e"]), ("es", &[""]), ("s", &[""]),
+            ("ism", &[""]), ("ist", &[""]), ("ists", &[""]), ("ization", &["ize"]), ("isation", &["ise"]),
+            ("izer", &["ize"]), ("izers", &["ize"]), ("iser", &["ise"]), ("isers", &["ise"]),
+        ];
+        for (suf, adds) in SUFFIXES {
+            if let Some(stem) = core.strip_suffix(suf) {
+                for add in *adds {
+                    let cand = format!("{stem}{add}");
+                    if let Some(id) = known(&cand) {
+                        return Some(id);
+                    }
+                }
+                // Doubled final consonant: "stopped" -> stop.
+                let b = stem.as_bytes();
+                if b.len() >= 4 && b[b.len() - 1] == b[b.len() - 2] && (*suf == "ed" || *suf == "ing" || *suf == "er") {
+                    if let Some(id) = known(&stem[..stem.len() - 1]) {
+                        return Some(id);
+                    }
+                }
+            }
+        }
+        const PREFIXES: &[&str] =
+            &["over", "under", "inter", "super", "counter", "non", "un", "re", "pre", "mis", "out", "sub", "anti", "semi", "multi"];
+        for pre in PREFIXES {
+            if let Some(rest) = core.strip_prefix(pre) {
+                if rest.len() >= 4 {
+                    if let Some(id) = known(rest).or_else(|| self.morph_stem(rest)) {
+                        return Some(id);
+                    }
+                }
+            }
+        }
+        None
     }
 
     /// Run-together words with a slip in one of them ("andfharts" -> and charts):
@@ -398,7 +456,7 @@ impl Engine {
             return None;
         }
         let conf = 1.0 / z;
-        let known = self.lx.id(core).is_some();
+        let known = self.lx.id(core).is_some() || self.morph_stem(core).is_some();
         let tau = tau.unwrap_or(if known { self.cfg.tau_realword } else { self.cfg.tau_nonword });
         if conf < tau {
             return None;
