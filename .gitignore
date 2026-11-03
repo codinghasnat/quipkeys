@@ -1,2 +1,4 @@
 target/
 trainer/quipkeys.wasm
+__pycache__/
+*.pt
