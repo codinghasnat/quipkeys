@@ -1,5 +1,21 @@
 # Training the neural re-ranker on a GPU
 
+## Quick start (Windows PC with an NVIDIA GPU, everything on D:)
+
+```powershell
+D:
+git clone https://github.com/codinghasnat/quipkeys D:\quipkeys\repo
+cd D:\quipkeys\repo; git checkout ccr-9d6287c2-w4on6w
+# use an env that already has PyTorch with CUDA (check: prints "True")
+conda run -n whisperkeys python -c "import torch; print(torch.__version__, torch.cuda.is_available())"
+conda run -n whisperkeys --no-capture-output python scripts\nn\gpu_train.py --work D:\quipkeys\work
+```
+
+It downloads about 2.5 GB into `D:\quipkeys\work`, prints progress, and after about 4–8 hours writes
+`D:\quipkeys\work\en_nnlm.bin` (about 25 MB). Put that file in `data\en_nnlm.bin` and push, or attach it in
+the chat. Re-running resumes from whatever is already downloaded or tokenised.
+
+
 QuipKeys can use a small neural word language model to break ties between candidate
 words when the n-gram context isn't enough (`I wnt home` vs `I wnt a coffee`). The engine
 runs it in pure Rust on the CPU. Training needs a GPU: an RTX 2060 (6 GB) is plenty,

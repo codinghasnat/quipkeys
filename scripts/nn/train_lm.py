@@ -117,7 +117,10 @@ def main():
     print(f"{sum(p.numel() for p in model.parameters()) / 1e6:.1f}M parameters")
     opt = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=0.01, betas=(0.9, 0.98))
     amp = torch.autocast("cuda", dtype=torch.float16) if dev == "cuda" else torch.autocast("cpu", enabled=False)
-    scaler = torch.amp.GradScaler(enabled=dev == "cuda")
+    try:
+        scaler = torch.amp.GradScaler(enabled=dev == "cuda")
+    except (AttributeError, TypeError):  # older PyTorch
+        scaler = torch.cuda.amp.GradScaler(enabled=dev == "cuda")
     rng = np.random.default_rng(0)
 
     def batch(src):

@@ -48,6 +48,10 @@ fn configs() -> Vec<(&'static str, Config)> {
     sloppy2.channel.sub_per_key = 6.0;
     let mut no4 = Config::default();
     no4.lambda4 = 0.0;
+    let mut nn = Config::default();
+    nn.nn_weight = 0.5;
+    let mut nn2 = Config::default();
+    nn2.nn_weight = 1.0;
     let mut lat = Config::default();
     lat.lattice = false;
     let mut no_time = Config::default();
@@ -63,6 +67,8 @@ fn configs() -> Vec<(&'static str, Config)> {
         ("no-lookback2", no_lb2),
         ("no-memory", no_mem),
         ("word-by-word", lat),
+        ("nn", nn),
+        ("nn-strong", nn2),
         ("no-4gram", no4),
         ("sloppy", sloppy),
         ("sloppier", sloppy2),
