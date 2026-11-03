@@ -40,12 +40,9 @@ fn configs() -> Vec<(&'static str, Config)> {
     no_mem.learned_weight = 0.0;
     // Error model matched to rough aim: adjacent slips cheap, far keys steep.
     let mut sloppy = Config::default();
-    sloppy.channel.sub_adjacent = 3.0;
-    sloppy.channel.sub_per_key = 5.0;
-    sloppy.channel.first_letter = 0.5;
-    let mut sloppy2 = sloppy.clone();
-    sloppy2.channel.sub_adjacent = 2.0;
-    sloppy2.channel.sub_per_key = 6.0;
+    sloppy.sloppy_on = -1.0; // always the sloppy error model
+    let mut precise = Config::default();
+    precise.sloppy_on = 0.0; // never
     let mut no4 = Config::default();
     no4.lambda4 = 0.0;
     let mut nn = Config::default();
@@ -70,8 +67,8 @@ fn configs() -> Vec<(&'static str, Config)> {
         ("nn", nn),
         ("nn-strong", nn2),
         ("no-4gram", no4),
-        ("sloppy", sloppy),
-        ("sloppier", sloppy2),
+        ("always-sloppy", sloppy),
+        ("always-precise", precise),
         ("no-timing", no_time),
     ]
 }

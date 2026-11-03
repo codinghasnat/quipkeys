@@ -220,6 +220,9 @@ pub struct Stream<'e> {
     /// Unknown words left exactly as typed, by count.
     typed_oov: HashMap<String, u32>,
     learned_upto: usize,
+    /// Recent plain words: was each typed as a non-word? (sloppiness estimate)
+    recent_oov: std::collections::VecDeque<bool>,
+    pub sloppy: bool,
 }
 
 impl<'e> Stream<'e> {
@@ -235,6 +238,8 @@ impl<'e> Stream<'e> {
             counted: Vec::new(),
             typed_oov: HashMap::new(),
             learned_upto: 0,
+            recent_oov: Default::default(),
+            sloppy: false,
         }
     }
 
@@ -299,9 +304,45 @@ impl<'e> Stream<'e> {
     /// Commit a finished word (the raw token between spaces, including any
     /// punctuation). `times` are optional key-down timestamps (ms), one per byte.
     pub fn push(&mut self, raw: &str, times: Option<Vec<f32>>) -> Vec<Edit> {
+        self.estimate_sloppiness(raw);
+        let sloppy = self.sloppy;
+        crate::decoder::SLOPPY.with(|s| s.set(sloppy));
         let edits = self.push_inner(raw, times);
+        crate::decoder::SLOPPY.with(|s| s.set(false));
         self.update_memory();
         edits
+    }
+
+    /// How sloppy is this typist? Share of recent plain words that were typed
+    /// as non-words, with hysteresis so the error model doesn't flap.
+    fn estimate_sloppiness(&mut self, raw: &str) {
+        let cfg = &self.engine.cfg;
+        if cfg.sloppy_on < 0.0 {
+            self.sloppy = true;
+            return;
+        }
+        if cfg.sloppy_on == 0.0 {
+            return;
+        }
+        let t = parse_token(raw, false);
+        let lower = t.core.to_ascii_lowercase();
+        if t.protected || lower.len() < 2 || !lower.bytes().all(|c| c.is_ascii_lowercase()) {
+            return;
+        }
+        let oov = self.engine.lx.id(&lower).is_none() && !self.ignore.contains(&lower);
+        self.recent_oov.push_back(oov);
+        if self.recent_oov.len() > cfg.sloppy_window {
+            self.recent_oov.pop_front();
+        }
+        if self.recent_oov.len() < 8 {
+            return;
+        }
+        let rate = self.recent_oov.iter().filter(|&&x| x).count() as f32 / self.recent_oov.len() as f32;
+        if !self.sloppy && rate >= cfg.sloppy_on {
+            self.sloppy = true;
+        } else if self.sloppy && rate <= cfg.sloppy_off {
+            self.sloppy = false;
+        }
     }
 
     /// Keep the document cache in sync with the latest outputs, and learn

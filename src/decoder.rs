@@ -9,6 +9,8 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 thread_local! {
+    /// Set by the stream while it judges the typist sloppy (rough aim).
+    pub static SLOPPY: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
     static CACHE: RefCell<HashMap<String, Rc<Vec<Candidate>>>> = RefCell::new(HashMap::new());
 }
 
@@ -19,6 +21,16 @@ pub struct Config {
     pub context: bool,
     /// Allow revising the previous word once the next word is known.
     pub right_context: bool,
+    /// Switch to the sloppy error model when the share of recent words typed
+    /// as non-words rises above `sloppy_on` (back below `sloppy_off`).
+    /// 0 for both = never; set both to 0 and `sloppy_on` < 0 = always.
+    pub sloppy_on: f32,
+    pub sloppy_off: f32,
+    /// Recent words looked at for that estimate.
+    pub sloppy_window: usize,
+    pub sloppy_sub_adjacent: f32,
+    pub sloppy_sub_per_key: f32,
+    pub sloppy_first_letter: f32,
     /// Preferred English: 1 = UK (default), 2 = US. When a typo is corrected,
     /// the other variety's spelling (color vs colour) costs `variety_cost` more.
     /// Correctly typed words are never changed either way.
@@ -107,6 +119,12 @@ impl Default for Config {
             splits: true,
             boundary: true,
             lookback2: true,
+            sloppy_on: 0.45,
+            sloppy_off: 0.35,
+            sloppy_window: 50,
+            sloppy_sub_adjacent: 3.0,
+            sloppy_sub_per_key: 5.0,
+            sloppy_first_letter: 0.5,
             english: 1,
             variety_cost: 2.5,
             nn_weight: 0.0,
@@ -295,6 +313,9 @@ pub struct Engine {
     pub nn: Option<crate::nnlm::NnLm>,
     pub lx: Lexicon,
     pub ch: Channel,
+    /// Error model for rough aim (adjacent slips cheap, far keys steep),
+    /// used while the stream judges the typist to be sloppy.
+    pub ch_sloppy: Channel,
     pub cfg: Config,
 }
 
@@ -308,7 +329,11 @@ impl Engine {
             cfg.gate = Gate::parse(GATE);
         }
         let nn = if cfg.nn_weight > 0.0 { crate::nnlm::NnLm::load(NNLM) } else { None };
-        Engine { ch: Channel::new(cfg.channel.clone()), lx, cfg, nn }
+        let mut sp = cfg.channel.clone();
+        sp.sub_adjacent = cfg.sloppy_sub_adjacent;
+        sp.sub_per_key = cfg.sloppy_sub_per_key;
+        sp.first_letter = cfg.sloppy_first_letter;
+        Engine { ch: Channel::new(cfg.channel.clone()), ch_sloppy: Channel::new(sp), lx, cfg, nn }
     }
 
     fn lm_params(&self) -> LmParams {
@@ -386,6 +411,15 @@ impl Engine {
         }
     }
 
+    /// The error model in force (precise, or sloppy while the stream says so).
+    pub fn chan(&self) -> &Channel {
+        if SLOPPY.with(|s| s.get()) {
+            &self.ch_sloppy
+        } else {
+            &self.ch
+        }
+    }
+
     /// Dictionary candidates for `core`, memoised: while typing, each chunk is
     /// searched again at the next space (boundary repair, look-back), so a
     /// small per-thread cache saves most repeat work.
@@ -395,17 +429,18 @@ impl Engine {
     }
 
     pub fn candidates_within(&self, core: &str, times: Option<&[f32]>, bound: f32) -> Rc<Vec<Candidate>> {
-        let tc = self.ch.typed_costs(core.as_bytes(), times);
+        let ch = self.chan();
+        let tc = ch.typed_costs(core.as_bytes(), times);
         // Timing only matters through the transposition costs, so key on those.
         let mut key = core.to_string();
-        key.push_str(&format!("|{bound}|"));
+        key.push_str(&format!("|{bound}|{}|", SLOPPY.with(|s| s.get()) as u8));
         for t in &tc.trans {
             key.push(char::from(b'0' + (*t as u8).min(9)));
         }
         if let Some(c) = CACHE.with(|m| m.borrow().get(&key).cloned()) {
             return c;
         }
-        let c = Rc::new(search(&self.lx, &self.ch, &tc, bound));
+        let c = Rc::new(search(&self.lx, ch, &tc, bound));
         CACHE.with(|m| {
             let mut m = m.borrow_mut();
             if m.len() > 256 {
@@ -454,13 +489,13 @@ impl Engine {
         // prior from how often they've been used here.
         if let Some(cache) = ctx.cache {
             if !cache.learned.is_empty() && typed_id.is_none() {
-                let tc = self.ch.typed_costs(core.as_bytes(), times);
+                let tc = self.chan().typed_costs(core.as_bytes(), times);
                 let total = cache.total.max(10) as f32;
                 for (lw, n) in &cache.learned {
                     if lw == core || lw.len().abs_diff(core.len()) > 2 {
                         continue;
                     }
-                    let d = self.ch.distance(lw.as_bytes(), &tc);
+                    let d = self.chan().distance(lw.as_bytes(), &tc);
                     if d <= self.cfg.bound {
                         let prior = -(self.cfg.learned_weight * *n as f32 / total).ln();
                         hyps.push((Hyp::Learned(lw.clone()), d + w * (prior + self.right(None, ctx))));

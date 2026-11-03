@@ -186,13 +186,13 @@ impl<'e> Stream<'e> {
         }
         // Words learned in this session.
         if !self.cache.learned.is_empty() {
-            let tc = e.ch.typed_costs(core.as_bytes(), times);
+            let tc = e.chan().typed_costs(core.as_bytes(), times);
             let total = self.cache.total.max(10) as f32;
             for (lw, n) in &self.cache.learned {
                 if *lw == core || lw.len().abs_diff(core.len()) > 2 {
                     continue;
                 }
-                let d = e.ch.distance(lw.as_bytes(), &tc);
+                let d = e.chan().distance(lw.as_bytes(), &tc);
                 if d <= cfg.bound {
                     let prior = -(cfg.learned_weight * *n as f32 / total).ln();
                     out.push(Reading { start: k, span: 1, words: vec![None], outs: vec![lw.clone()], cost: d + prior, keep: false });
