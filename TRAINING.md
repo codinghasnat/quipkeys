@@ -11,7 +11,7 @@ conda run -n whisperkeys python -c "import torch; print(torch.__version__, torch
 conda run -n whisperkeys --no-capture-output python scripts\nn\gpu_train.py --work D:\quipkeys\work
 ```
 
-It downloads about 2.5 GB into `D:\quipkeys\work`, prints progress, and after about 4–8 hours writes
+It downloads about 2.5 GB into `D:\quipkeys\work`, prints progress, and after about 1–2 hours writes
 `D:\quipkeys\work\en_nnlm.bin` (about 25 MB). Put that file in `data\en_nnlm.bin` and push, or attach it in
 the chat. Re-running resumes from whatever is already downloaded or tokenised.
 
