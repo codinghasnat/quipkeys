@@ -38,6 +38,16 @@ fn configs() -> Vec<(&'static str, Config)> {
     let mut no_mem = Config::default();
     no_mem.doc_cache = 0.0;
     no_mem.learned_weight = 0.0;
+    // Error model matched to rough aim: adjacent slips cheap, far keys steep.
+    let mut sloppy = Config::default();
+    sloppy.channel.sub_adjacent = 3.0;
+    sloppy.channel.sub_per_key = 5.0;
+    sloppy.channel.first_letter = 0.5;
+    let mut sloppy2 = sloppy.clone();
+    sloppy2.channel.sub_adjacent = 2.0;
+    sloppy2.channel.sub_per_key = 6.0;
+    let mut no4 = Config::default();
+    no4.lambda4 = 0.0;
     let mut lat = Config::default();
     lat.lattice = false;
     let mut no_time = Config::default();
@@ -53,6 +63,9 @@ fn configs() -> Vec<(&'static str, Config)> {
         ("no-lookback2", no_lb2),
         ("no-memory", no_mem),
         ("word-by-word", lat),
+        ("no-4gram", no4),
+        ("sloppy", sloppy),
+        ("sloppier", sloppy2),
         ("no-timing", no_time),
     ]
 }
@@ -423,7 +436,7 @@ fn main() {
     let t0 = Instant::now();
     let base = Engine::new(Config::default());
     eprintln!("dictionary: {} words, loaded in {:.0} ms", base.lx.len(), t0.elapsed().as_secs_f64() * 1e3);
-    let levels: Vec<&str> = if level == "all" { vec!["light", "moderate", "messy", "blind"] } else { vec![level.as_str()] };
+    let levels: Vec<&str> = if level == "all" { vec!["light", "moderate", "messy", "blind", "rough"] } else { vec![level.as_str()] };
 
     for lvl in levels {
         let p = SimParams::level(lvl);

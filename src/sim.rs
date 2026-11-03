@@ -44,6 +44,10 @@ pub struct SimParams {
     pub shifted_space_rate: f32,
     /// Probability that a whole word is typed with the hand one key off.
     pub hand_shift_rate: f32,
+    /// "Rough aim" model (the north star): every press lands at a random
+    /// point around the intended key, Gaussian with this spread in key
+    /// widths, and the nearest key fires. 0 = off (discrete slips only).
+    pub aim_sigma: f32,
 }
 
 impl SimParams {
@@ -55,6 +59,7 @@ impl SimParams {
                 premature_space_rate: 0.002,
                 shifted_space_rate: 0.003,
                 hand_shift_rate: 0.0,
+                aim_sigma: 0.0,
             },
             "messy" => SimParams {
                 char_error_rate: 0.06,
@@ -62,6 +67,7 @@ impl SimParams {
                 premature_space_rate: 0.008,
                 shifted_space_rate: 0.012,
                 hand_shift_rate: 0.002,
+                aim_sigma: 0.0,
             },
             // The north star: typing without looking, fast and loose.
             "blind" => SimParams {
@@ -70,6 +76,16 @@ impl SimParams {
                 premature_space_rate: 0.012,
                 shifted_space_rate: 0.02,
                 hand_shift_rate: 0.006,
+                aim_sigma: 0.0,
+            },
+            // Fingers land roughly near the key, fast, without looking.
+            "rough" | "rougher" => SimParams {
+                char_error_rate: 0.04, // roll-overs, dropped and doubled keys on top
+                missing_space_rate: 0.02,
+                premature_space_rate: 0.012,
+                shifted_space_rate: 0.02,
+                hand_shift_rate: 0.004,
+                aim_sigma: if name == "rough" { 0.30 } else { 0.38 },
             },
             _ => SimParams {
                 char_error_rate: 0.03,
@@ -77,6 +93,7 @@ impl SimParams {
                 premature_space_rate: 0.004,
                 shifted_space_rate: 0.006,
                 hand_shift_rate: 0.001,
+                aim_sigma: 0.0,
             },
         }
     }
@@ -162,7 +179,34 @@ impl Typist {
             .collect()
     }
 
+    fn gauss(&mut self) -> f32 {
+        let (u1, u2) = (self.rng.f().max(1e-7), self.rng.f());
+        (-2.0 * u1.ln()).sqrt() * (2.0 * std::f32::consts::PI * u2).cos()
+    }
+
+    /// Where a press aimed at `c` actually lands (nearest letter key).
+    fn aim(&mut self, c: u8) -> u8 {
+        let Some((x, y)) = self.kb.position(c) else { return c };
+        let (px, py) = (x + self.p.aim_sigma * self.gauss(), y + 0.8 * self.p.aim_sigma * self.gauss());
+        let mut best = (f32::MAX, c.to_ascii_lowercase());
+        for k in b'a'..=b'z' {
+            let (kx, ky) = self.kb.position(k).unwrap();
+            let d = (kx - px).powi(2) + (ky - py).powi(2);
+            if d < best.0 {
+                best = (d, k);
+            }
+        }
+        match_case(best.1, c)
+    }
+
     fn type_word(&mut self, word: &str) -> (Vec<u8>, Vec<f32>) {
+        let aimed: String;
+        let word = if self.p.aim_sigma > 0.0 && word.bytes().filter(|c| c.is_ascii_alphabetic()).count() >= 2 {
+            aimed = word.bytes().map(|c| if c.is_ascii_alphabetic() { self.aim(c) as char } else { c as char }).collect();
+            aimed.as_str()
+        } else {
+            word
+        };
         if word.len() >= 3 && word.bytes().all(|c| c.is_ascii_alphabetic()) && self.rng.f() < self.p.hand_shift_rate {
             if let Some(t) = self.hand_shifted(word) {
                 let gaps = t.iter().map(|_| self.iki()).collect();
@@ -179,7 +223,9 @@ impl Typist {
             let lc = c.to_ascii_lowercase();
             let corruptible = c.is_ascii_alphabetic() && letters >= 2;
             if corruptible && self.rng.f() < self.p.char_error_rate {
-                match choose_err(self.rng.f()) {
+                let r = self.rng.f();
+                let kind = if self.p.aim_sigma > 0.0 { choose_err(0.36 + r * 0.6) } else { choose_err(r) };
+                match kind {
                     Err::Adjacent => {
                         let n = self.kb.neighbours(lc);
                         let n: Vec<u8> = n.into_iter().filter(|k| k.is_ascii_alphabetic()).collect();

@@ -128,7 +128,7 @@ impl<'e> Stream<'e> {
                 span: 1,
                 words: vec![Some(wid)],
                 outs: vec![lx.word(wid).to_string()],
-                cost: ch + extra,
+                cost: ch + extra + e.variety_cost(wid),
                 keep: false,
             });
         }
@@ -248,7 +248,7 @@ impl<'e> Stream<'e> {
                 span: 2,
                 words: vec![Some(wid)],
                 outs: vec![lx.word(wid).to_string(), String::new()],
-                cost: ch + cfg.space_cost + merge_margin,
+                cost: ch + cfg.space_cost + merge_margin + e.variety_cost(wid),
                 keep: false,
             });
         }

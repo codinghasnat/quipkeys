@@ -19,6 +19,11 @@ pub struct Config {
     pub context: bool,
     /// Allow revising the previous word once the next word is known.
     pub right_context: bool,
+    /// Preferred English: 1 = UK (default), 2 = US. When a typo is corrected,
+    /// the other variety's spelling (color vs colour) costs `variety_cost` more.
+    /// Correctly typed words are never changed either way.
+    pub english: u8,
+    pub variety_cost: f32,
     /// Weight of the neural re-ranker on candidate readings (0 = off).
     pub nn_weight: f32,
     /// Learned decision gate (None = fixed confidence thresholds).
@@ -102,6 +107,8 @@ impl Default for Config {
             splits: true,
             boundary: true,
             lookback2: true,
+            english: 1,
+            variety_cost: 2.5,
             nn_weight: 0.0,
             gate: None,
             use_gate: true,
@@ -113,7 +120,7 @@ impl Default for Config {
             trigrams: true,
             lambda3: 0.7,
             k3: 5.0,
-            lambda4: 0.6,
+            lambda4: 0.0,
             k4: 5.0,
             lm_weight: 1.0,
             bound: 13.0,
@@ -369,6 +376,16 @@ impl Engine {
         }
     }
 
+    /// Extra cost of correcting *to* `w` given the preferred English.
+    pub fn variety_cost(&self, w: WordId) -> f32 {
+        let v = self.lx.variety(w);
+        if v != 0 && v != self.cfg.english {
+            self.cfg.variety_cost
+        } else {
+            0.0
+        }
+    }
+
     /// Dictionary candidates for `core`, memoised: while typing, each chunk is
     /// searched again at the next space (boundary repair, look-back), so a
     /// small per-thread cache saves most repeat work.
@@ -430,7 +447,7 @@ impl Engine {
                 continue;
             }
             let extra = if typed_id.is_some() { self.cfg.real_word_extra } else { 0.0 };
-            let s = c.channel + extra + w * (self.lm_doc(ctx, c.word) + self.right(Some(c.word), ctx));
+            let s = c.channel + extra + self.variety_cost(c.word) + w * (self.lm_doc(ctx, c.word) + self.right(Some(c.word), ctx));
             hyps.push((Hyp::Word(c.word), s));
         }
         // Words learned in this session compete like dictionary words, with a

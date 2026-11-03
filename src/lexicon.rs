@@ -44,6 +44,8 @@ pub struct Lexicon {
     /// Words normally written capitalised (London, Monday): share of
     /// mid-sentence uses that are capitalised.
     caps: HashMap<WordId, f32>,
+    /// UK/US spelling pairs: for each word, 1 = UK form, 2 = US form.
+    variety: HashMap<WordId, u8>,
     /// Letter-trigram model over dictionary word types: how "English-looking"
     /// a string is. log P(c | two previous letters), add-one smoothed.
     chars: HashMap<[u8; 3], f32>,
@@ -72,6 +74,7 @@ const WORDFREQ: &str = include_str!("../data/en_wordfreq.txt");
 const SUPPLEMENT: &str = include_str!("../data/en_supplement.txt");
 const NGRAMS: &[u8] = include_bytes!("../data/en_ngrams.bin");
 const CAPITALIZED: &str = include_str!("../data/en_capitalized.txt");
+const VARIANTS: &str = include_str!("../data/en_variants.txt");
 
 fn valid_word(w: &str) -> bool {
     let b = w.as_bytes();
@@ -88,6 +91,14 @@ impl Lexicon {
     pub fn english() -> Self {
         let mut lx = Self::english_without_ngrams();
         lx.ngrams = Ngrams::load(NGRAMS, lx.len(), |w| lx.id(w));
+        for line in VARIANTS.lines().filter(|l| !l.starts_with('#')) {
+            if let Some((uk, us)) = line.split_once(' ') {
+                if let (Some(a), Some(b)) = (lx.id(uk), lx.id(us.trim())) {
+                    lx.variety.insert(a, 1);
+                    lx.variety.insert(b, 2);
+                }
+            }
+        }
         for line in CAPITALIZED.lines().filter(|l| !l.starts_with('#')) {
             if let Some((w, r)) = line.split_once(' ') {
                 if let (Some(id), Ok(r)) = (lx.id(w), r.parse::<f32>()) {
@@ -148,7 +159,7 @@ impl Lexicon {
                 *char_ctx.entry([t[0], t[1]]).or_insert(0.0) += 1.0;
             }
         }
-        Lexicon { words, counts, total, index, bigrams: bigram_map, bigram_scale: 60.0, trie, ngrams: None, caps: HashMap::new(), chars, char_ctx }
+        Lexicon { words, counts, total, index, bigrams: bigram_map, bigram_scale: 60.0, trie, ngrams: None, caps: HashMap::new(), variety: HashMap::new(), chars, char_ctx }
     }
 
     /// Lowest log-probability of any letter in `w` under the letter-trigram
@@ -163,6 +174,11 @@ impl Lexicon {
                 ((c + 0.1) / (n + 2.8)).ln()
             })
             .fold(0.0, f32::min)
+    }
+
+    /// 1 if `w` is the UK spelling of a UK/US pair, 2 if the US one, 0 otherwise.
+    pub fn variety(&self, w: WordId) -> u8 {
+        self.variety.get(&w).copied().unwrap_or(0)
     }
 
     /// Share of mid-sentence uses written capitalised (0 if not a proper noun).
