@@ -102,3 +102,9 @@ fn common_misspellings_are_not_dictionary_words() {
     check("will actyaly have meaningbful improvements", "will actually have meaningful improvements");
     check("I allready told you, it is realy excelent", "I already told you, it is really excellent");
 }
+
+#[test]
+fn accidental_caps_lock() {
+    check("w NEED TO FINSIH THIS VEFORE THE END", "we need to finish this before the end");
+    check("The NASA team met at JPL today", "The NASA team met at JPL today");
+}

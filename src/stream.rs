@@ -149,6 +149,10 @@ fn recase_lx(lx: &crate::lexicon::Lexicon, word: &str, capital: bool) -> String 
     out
 }
 
+fn swapcase(s: &str) -> String {
+    s.chars().map(|c| if c.is_ascii_uppercase() { c.to_ascii_lowercase() } else { c.to_ascii_uppercase() }).collect()
+}
+
 /// A word written capitalised at least this often mid-sentence is a proper noun.
 const CAP_SHARE: f32 = 0.97;
 /// ...and this often before we capitalise a correctly spelled lowercase word.
@@ -223,6 +227,9 @@ pub struct Stream<'e> {
     /// Recent plain words: was each typed as a non-word? (sloppiness estimate)
     recent_oov: std::collections::VecDeque<bool>,
     pub sloppy: bool,
+    /// Caps Lock appears to be on by accident (inverted case: "w NEED tHIS").
+    pub caps_lock: bool,
+    caps_run: usize,
 }
 
 impl<'e> Stream<'e> {
@@ -240,6 +247,8 @@ impl<'e> Stream<'e> {
             learned_upto: 0,
             recent_oov: Default::default(),
             sloppy: false,
+            caps_lock: false,
+            caps_run: 0,
         }
     }
 
@@ -304,13 +313,78 @@ impl<'e> Stream<'e> {
     /// Commit a finished word (the raw token between spaces, including any
     /// punctuation). `times` are optional key-down timestamps (ms), one per byte.
     pub fn push(&mut self, raw: &str, times: Option<Vec<f32>>) -> Vec<Edit> {
+        let mut pre = Vec::new();
+        let raw_owned;
+        let raw = match self.caps_lock_check(raw, &mut pre) {
+            Some(fixed) => {
+                raw_owned = fixed;
+                raw_owned.as_str()
+            }
+            None => raw,
+        };
         self.estimate_sloppiness(raw);
         let sloppy = self.sloppy;
         crate::decoder::SLOPPY.with(|s| s.set(sloppy));
-        let edits = self.push_inner(raw, times);
+        let mut edits = self.push_inner(raw, times);
         crate::decoder::SLOPPY.with(|s| s.set(false));
         self.update_memory();
-        edits
+        pre.append(&mut edits);
+        pre
+    }
+
+    /// Accidental Caps Lock: three inverted-case words in a row ("w NEED TO")
+    /// switch it on; from then on words are case-flipped before decoding, and
+    /// the words that triggered it are flipped back too. Two normally-cased
+    /// words switch it off. One genuine acronym (NASA) never triggers it.
+    fn caps_lock_check(&mut self, raw: &str, edits: &mut Vec<Edit>) -> Option<String> {
+        let letters: Vec<u8> = raw.bytes().filter(|c| c.is_ascii_alphabetic()).collect();
+        if letters.len() < 2 {
+            return self.caps_lock.then(|| swapcase(raw));
+        }
+        let rest_upper = letters[1..].iter().all(|c| c.is_ascii_uppercase());
+        let inverted = rest_upper; // "NEED", "tHIS", "mY"
+        let normal = letters[1..].iter().all(|c| c.is_ascii_lowercase());
+        if self.caps_lock {
+            if normal {
+                self.caps_run += 1;
+                if self.caps_run >= 2 {
+                    self.caps_lock = false;
+                    self.caps_run = 0;
+                }
+                return None;
+            }
+            self.caps_run = 0;
+            return inverted.then(|| swapcase(raw));
+        }
+        if !inverted {
+            self.caps_run = 0;
+            return None;
+        }
+        self.caps_run += 1;
+        if self.caps_run < 3 {
+            return None;
+        }
+        self.caps_lock = true;
+        self.caps_run = 0;
+        // Flip back the earlier words of this run.
+        let n = self.words.len();
+        for k in n.saturating_sub(2)..n {
+            let w = &self.words[k];
+            if w.changed || w.typed.bytes().filter(|c| c.is_ascii_alphabetic()).skip(1).any(|c| c.is_ascii_lowercase()) {
+                continue;
+            }
+            let fixed = swapcase(&w.typed);
+            let tok = parse_token(&fixed, w.sentence_start);
+            let old = std::mem::replace(&mut self.words[k].output, fixed.clone());
+            let w = &mut self.words[k];
+            w.protected = tok.protected;
+            w.tok = tok;
+            w.typed = fixed.clone();
+            edits.push(Edit { index: k, old, new: fixed, confidence: 1.0, revision: true });
+            let id = self.id_of(&self.words[k].output);
+            self.words[k].out_id = id;
+        }
+        Some(swapcase(raw))
     }
 
     /// How sloppy is this typist? Share of recent plain words that were typed

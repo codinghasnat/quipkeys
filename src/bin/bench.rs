@@ -49,6 +49,12 @@ fn configs() -> Vec<(&'static str, Config)> {
     nn.nn_weight = 0.5;
     let mut nn2 = Config::default();
     nn2.nn_weight = 1.0;
+    let mut personal = Config::default();
+    personal.channel.ins_other = 7.0;
+    personal.channel.del_other = 4.5;
+    personal.channel.transpose = 4.5;
+    personal.channel.timing = false;
+    personal.channel.sub_per_key = 2.0;
     let mut lat = Config::default();
     lat.lattice = false;
     let mut no_time = Config::default();
@@ -64,6 +70,7 @@ fn configs() -> Vec<(&'static str, Config)> {
         ("no-lookback2", no_lb2),
         ("no-memory", no_mem),
         ("word-by-word", lat),
+        ("personal", personal),
         ("nn", nn),
         ("nn-strong", nn2),
         ("no-4gram", no4),
