@@ -32,6 +32,10 @@ pub struct Config {
     pub split_cost: f32,
     /// Cost of a misplaced space (pressed too early / late / extra).
     pub space_cost: f32,
+    /// Extra evidence (nats) needed to merge two chunks that already read as real words.
+    pub merge_margin: f32,
+    /// Extra evidence needed to move a space through a correctly typed word.
+    pub shift_margin: f32,
     /// Confidence needed to move word boundaries.
     pub tau_reseg: f32,
     /// A hand-shifted word must be at least this common (LM cost, nats).
@@ -50,15 +54,17 @@ impl Default for Config {
             lambda: 0.6,
             lm_weight: 1.0,
             bound: 13.0,
-            oov_keep_base: 20.0,
-            oov_keep_per_char: 0.0,
-            real_word_extra: 3.0,
-            tau_nonword: 0.6,
-            tau_realword: 0.95,
-            tau_revise: 0.95,
+            oov_keep_base: 14.0,
+            oov_keep_per_char: 1.5,
+            real_word_extra: 1.5,
+            tau_nonword: 0.9,
+            tau_realword: 0.98,
+            tau_revise: 0.98,
             split_cost: 6.0,
             space_cost: 5.0,
             tau_reseg: 0.9,
+            merge_margin: 6.0,
+            shift_margin: 2.0,
             hand_shift_max_cost: 14.0,
             min_len: 2,
         }
@@ -182,6 +188,12 @@ impl Engine {
         if ws.len() < 2 {
             return None;
         }
+        // Real run-together typing joins words people write next to each other
+        // ("nice to meet you"); an unknown compound ("autofluorescence") rarely
+        // splits into a frequent pair. Require every junction to be one.
+        if !ws.windows(2).all(|p| self.lx.has_bigram(p[0], p[1])) {
+            return None;
+        }
         // Return the pure LM part; the caller adds split costs.
         let lm = (s - self.cfg.split_cost * (ws.len() - 1) as f32) / self.cfg.lm_weight.max(1e-6);
         Some((ws, lm))
@@ -245,6 +257,9 @@ impl Engine {
         if core.len() < self.cfg.min_len {
             return None;
         }
+        if let Some(full) = restore_apostrophe(core) {
+            return Some(Suggestion { text: full.to_string(), confidence: 1.0 });
+        }
         let hyps = self.hypotheses(core, times, ctx);
         if hyps.len() == 1 {
             return None;
@@ -263,4 +278,22 @@ impl Engine {
         }
         Some(Suggestion { text: self.hyp_text(&best.0, core), confidence: conf })
     }
+}
+
+/// Contractions typed without the apostrophe. Forms that are also real words
+/// ("wont", "cant", "ill", "were", "its", "shed", "hell", "well", "id") are
+/// deliberately absent: those go through the normal real-word path.
+pub fn restore_apostrophe(core: &str) -> Option<&'static str> {
+    const TABLE: &[(&str, &str)] = &[
+        ("dont", "don't"), ("im", "i'm"), ("ive", "i've"), ("didnt", "didn't"), ("doesnt", "doesn't"),
+        ("isnt", "isn't"), ("wasnt", "wasn't"), ("werent", "weren't"), ("arent", "aren't"),
+        ("havent", "haven't"), ("hasnt", "hasn't"), ("hadnt", "hadn't"), ("couldnt", "couldn't"),
+        ("wouldnt", "wouldn't"), ("shouldnt", "shouldn't"), ("thats", "that's"), ("whats", "what's"),
+        ("youre", "you're"), ("theyre", "they're"), ("youve", "you've"), ("theyve", "they've"),
+        ("weve", "we've"), ("youll", "you'll"), ("theyll", "they'll"), ("itll", "it'll"),
+        ("didn", "didn't"), ("doesn", "doesn't"), ("couldve", "could've"), ("wouldve", "would've"),
+        ("shouldve", "should've"), ("theres", "there's"), ("heres", "here's"),
+        ("aint", "ain't"), ("mustnt", "mustn't"), ("neednt", "needn't"),
+    ];
+    TABLE.iter().find(|(k, _)| *k == core).map(|(_, v)| *v)
 }

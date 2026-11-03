@@ -345,14 +345,19 @@ impl<'e> Stream<'e> {
             };
             let (bx, sx) = e.best(x, tx, &ctx(prev));
             let (by, sy) = e.best(y, ty, &ctx(lx.id(bx.rsplit(' ').next().unwrap_or(&bx))));
-            let ok = !strict || (known(&bx) && known(&by));
+            let single = |t: &str| !t.contains(' ');
+            let ok = !strict || (known(&bx) && known(&by) && single(&bx) && single(&by));
             (bx, by, if ok { sx + sy } else { f32::INFINITY })
         };
         // As typed (each side may still be spell-corrected).
         let (base_a, base_b, base) = pair(a.len(), false);
         let mut alts: Vec<(String, String, f32)> = Vec::new();
         let (m, sm) = e.best(&joined, jt, &ctx(prev));
-        let sm = if known(&m) { sm } else { f32::INFINITY };
+        let base_known = known(&base_a) && known(&base_b);
+        // Gluing two real words together is how compounds get mangled
+        // ("soy beans" -> "soybeans"): demand much stronger evidence.
+        let merge_extra = if base_known { e.cfg.merge_margin } else { 0.0 };
+        let sm = if known(&m) { sm + merge_extra } else { f32::INFINITY };
         alts.push((m, String::new(), sm + e.cfg.space_cost));
         for d in [-2i32, -1, 1, 2] {
             let k = a.len() as i32 + d;
@@ -360,7 +365,10 @@ impl<'e> Stream<'e> {
                 continue;
             }
             let (x, y, s) = pair(k as usize, true);
-            alts.push((x, y, s + e.cfg.space_cost));
+            // Moving a space through a correctly typed word costs extra.
+            let touches_clean = (lx.id(&a).is_some() && x != base_a) || (lx.id(&b).is_some() && y != base_b);
+            let extra = if touches_clean { e.cfg.shift_margin } else { 0.0 };
+            alts.push((x, y, s + e.cfg.space_cost + extra));
         }
         let best_alt = alts.iter().min_by(|x, y| x.2.partial_cmp(&y.2).unwrap()).unwrap().clone();
         if !best_alt.2.is_finite() || best_alt.2 >= base {

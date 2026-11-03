@@ -44,14 +44,14 @@ cargo test --release
 | 3 | Missing characters | Helo → Hello | ✅ with context (alone, "Help" wins) |
 | 4 | Swapped characters | Hlelo → Hello | ✅ (timing makes roll-over swaps cheaper) |
 | 5 | Wrong spacing | Hellon ice → Hello nice | ✅ |
-| 6 | Missing spacing | thecat, Nicetomeetyou | ✅ two words; longer runs depend on tuning |
+| 6 | Missing spacing | thecat → the cat | ✅ two words; ❌ 3+ (`Nicetomeetyou`) not yet |
 | 7 | Premature spacing | Meetin g → Meeting | ✅ |
 | 8 | Delayed spacing | Mee tyou → Meet you | ✅ |
 | 9 | Several at once | Hellon ice to mee tyou | ✅ |
 | 10 | Repeated keys | I amm → I am | ✅ |
 | 17 | Hand off by one key | Gello → Hello; `jr;;p` → hello | ✅ |
 | 18 | Long messy runs | I wamt tp gp tp thr stpre | ✅ |
-| 14 | Missing apostrophes | Dont / im → Don't / I'm | ✅ partial (no comma insertion) |
+| 14 | Missing apostrophes | Dont / im → Don't / I'm | ✅ (table of unambiguous forms; no comma insertion) |
 | 11–13, 15, 16 | Phonetic, homophones, casing, wrong word, missing word | | later (needs more than bigrams) |
 
 Never touched: code-like tokens (`snake_case`, `fooBar`, `src/main.rs`, `--force`, URLs, e-mails), anything

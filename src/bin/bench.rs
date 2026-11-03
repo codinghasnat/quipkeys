@@ -121,7 +121,7 @@ fn evaluate(engine: Option<&Engine>, lx: &Lexicon, sim: &[Vec<SimToken>], show: 
             }
         };
         // Group tokens into units (spacing errors span 2 tokens and/or 2 words).
-        let mut units: Vec<(String, String, String, usize)> = Vec::new();
+        let mut units: Vec<(String, String, String, usize, bool)> = Vec::new();
         for (t, out) in toks.iter().zip(&outputs) {
             match units.last_mut() {
                 Some(u) if u.3 == t.unit => {
@@ -130,18 +130,15 @@ fn evaluate(engine: Option<&Engine>, lx: &Lexicon, sim: &[Vec<SimToken>], show: 
                         u.2 = if u.2.is_empty() { out.clone() } else { format!("{} {}", u.2, out) };
                     }
                 }
-                _ => units.push((t.intended.clone(), t.typed.clone(), out.clone(), t.unit)),
+                _ => units.push((t.intended.clone(), t.typed.clone(), out.clone(), t.unit, t.spacing)),
             }
         }
-        for (intended, typed, out, _) in &units {
+        for (intended, typed, out, _, spacing) in &units {
             let t = Unit { intended, typed };
             let len = t.intended.len() as u64 + 1;
             st.chars_intended += len;
             st.chars_typed += t.typed.len() as u64 + 1;
-            // Spacing error: the typed spaces don't match the intended ones.
-            let spacing = t.intended.split(' ').count() != t.typed.split(' ').count()
-                || t.intended.split(' ').map(str::len).ne(t.typed.split(' ').map(str::len));
-            if spacing {
+            if *spacing {
                 st.sp_err += 1;
                 if out == intended {
                     st.sp_fixed += 1;

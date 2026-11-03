@@ -76,6 +76,8 @@ pub struct SimToken {
     /// covering 1-2 words). Only the first token of a unit carries it.
     pub intended: String,
     pub unit: usize,
+    /// The unit contains a spacing error.
+    pub spacing: bool,
     /// What they typed.
     pub typed: String,
     /// Key-down time (ms) for each byte of `typed`.
@@ -236,6 +238,7 @@ impl Typist {
         // Then type every chunk with letter-level slips and timing.
         let mut toks = Vec::new();
         for (u, (intended, chunks)) in units.into_iter().enumerate() {
+            let spacing = chunks.len() > 1 || intended.contains(' ');
             for (k, chunk) in chunks.iter().enumerate() {
                 let (mut typed, mut gaps) = self.type_word(chunk);
                 if !typed.iter().any(|c| c.is_ascii_alphanumeric()) {
@@ -253,6 +256,7 @@ impl Typist {
                 toks.push(SimToken {
                     intended: if k == 0 { intended.clone() } else { String::new() },
                     unit: u,
+                    spacing,
                     typed: String::from_utf8(typed).unwrap(),
                     times,
                 });

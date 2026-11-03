@@ -44,7 +44,11 @@ const WORDFREQ: &str = include_str!("../data/en_wordfreq.txt");
 const SUPPLEMENT: &str = include_str!("../data/en_supplement.txt");
 
 fn valid_word(w: &str) -> bool {
-    !w.is_empty() && w.bytes().all(|b| b.is_ascii_lowercase() || b == b'\'')
+    let b = w.as_bytes();
+    // Elongations like "hellll" / "sooo" are web noise, and they would compete
+    // with the real word they stretch.
+    let tripled = b.windows(3).any(|t| t[0] == t[1] && t[1] == t[2]);
+    !w.is_empty() && !tripled && b.iter().all(|&c| c.is_ascii_lowercase() || c == b'\'')
 }
 
 impl Lexicon {
@@ -105,6 +109,11 @@ impl Lexicon {
 
     pub fn is_empty(&self) -> bool {
         self.words.is_empty()
+    }
+
+    /// Is "a b" a frequent pair in the bigram data?
+    pub fn has_bigram(&self, a: WordId, b: WordId) -> bool {
+        self.bigrams.contains_key(&(a, b))
     }
 
     pub fn unigram_p(&self, w: WordId) -> f64 {
