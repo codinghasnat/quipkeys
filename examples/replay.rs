@@ -12,6 +12,26 @@ fn main() {
         cfg.channel.timing = false;
         cfg.channel.sub_per_key = 2.0;
     }
+    match std::env::var("QK_CONFIG").as_deref() {
+        Ok("plain") => {
+            cfg.channel.geometry = false;
+            cfg.channel.timing = false;
+            cfg.context = false;
+            cfg.right_context = false;
+            cfg.splits = false;
+            cfg.boundary = false;
+            cfg.lattice = false;
+        }
+        Ok("no-geometry") => cfg.channel.geometry = false,
+        Ok("no-context") => {
+            cfg.context = false;
+            cfg.right_context = false;
+        }
+        Ok("no-trigram") => cfg.trigrams = false,
+        Ok("word-by-word") => cfg.lattice = false,
+        Ok("no-boundary") => cfg.boundary = false,
+        _ => {}
+    }
     let e: &'static quipkeys::Engine = Box::leak(Box::new(quipkeys::Engine::new(cfg)));
     let mut s = quipkeys::Stream::new(e);
     let lines: Vec<String> = std::io::stdin().lock().lines().map(|l| l.unwrap()).collect();

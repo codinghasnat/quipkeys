@@ -1,0 +1,110 @@
+\begin{thebibliography}{16}
+\providecommand{\natexlab}[1]{#1}
+\providecommand{\url}[1]{\texttt{#1}}
+\expandafter\ifx\csname urlstyle\endcsname\relax
+  \providecommand{\doi}[1]{doi: #1}\else
+  \providecommand{\doi}{doi: \begingroup \urlstyle{rm}\Url}\fi
+
+\bibitem[Brill and Moore(2000)]{brill2000}
+Eric Brill and Robert~C. Moore.
+\newblock An improved error model for noisy channel spelling correction.
+\newblock In \emph{Proceedings of the 38th Annual Meeting of the Association
+  for Computational Linguistics (ACL)}, pages 286--293, 2000.
+
+\bibitem[Damerau(1964)]{damerau1964}
+Fred~J. Damerau.
+\newblock A technique for computer detection and correction of spelling errors.
+\newblock \emph{Communications of the ACM}, 7\penalty0 (3):\penalty0 171--176,
+  1964.
+
+\bibitem[Dhakal et~al.(2018)Dhakal, Feit, Kristensson, and
+  Oulasvirta]{dhakal2018}
+Vivek Dhakal, Anna~Maria Feit, Per~Ola Kristensson, and Antti Oulasvirta.
+\newblock Observations on typing from 136 million keystrokes.
+\newblock In \emph{Proceedings of the 2018 CHI Conference on Human Factors in
+  Computing Systems}, 2018.
+
+\bibitem[Francis and Ku{\v{c}}era(1979)]{francis1979}
+W.~Nelson Francis and Henry Ku{\v{c}}era.
+\newblock \emph{Brown Corpus Manual}.
+\newblock Department of Linguistics, Brown University, 1979.
+
+\bibitem[Garbe(2012)]{garbe2012symspell}
+Wolf Garbe.
+\newblock {SymSpell}: Symmetric delete spelling correction algorithm, 2012.
+\newblock Software, \url{https://github.com/wolfgarbe/SymSpell}.
+
+\bibitem[Goodman et~al.(2002)Goodman, Venolia, Steury, and Parker]{goodman2002}
+Joshua Goodman, Gina Venolia, Keith Steury, and Chauncey Parker.
+\newblock Language modeling for soft keyboards.
+\newblock In \emph{Proceedings of the 7th International Conference on
+  Intelligent User Interfaces (IUI)}, pages 194--195, 2002.
+
+\bibitem[Guo et~al.(2020)Guo, Dai, Vrande{\v{c}}i{\'c}, and
+  Al-Rfou]{guo2020wiki40b}
+Mandy Guo, Zihang Dai, Denny Vrande{\v{c}}i{\'c}, and Rami Al-Rfou.
+\newblock {Wiki-40B}: Multilingual language model dataset.
+\newblock In \emph{Proceedings of the 12th Language Resources and Evaluation
+  Conference (LREC)}, 2020.
+
+\bibitem[Hagiwara and Mita(2020)]{hagiwara2020}
+Masato Hagiwara and Masato Mita.
+\newblock {GitHub} typo corpus: A large-scale multilingual dataset of
+  misspellings and grammatical errors.
+\newblock In \emph{Proceedings of the 12th Language Resources and Evaluation
+  Conference (LREC)}, 2020.
+
+\bibitem[Kernighan et~al.(1990)Kernighan, Church, and Gale]{kernighan1990}
+Mark~D. Kernighan, Kenneth~W. Church, and William~A. Gale.
+\newblock A spelling correction program based on a noisy channel model.
+\newblock In \emph{Proceedings of the 13th International Conference on
+  Computational Linguistics (COLING)}, 1990.
+
+\bibitem[Kristensson and Zhai(2004)]{kristensson2004}
+Per~Ola Kristensson and Shumin Zhai.
+\newblock {SHARK}$^2$: A large vocabulary shorthand writing system for
+  pen-based computers.
+\newblock In \emph{Proceedings of the 17th Annual ACM Symposium on User
+  Interface Software and Technology (UIST)}, pages 43--52, 2004.
+
+\bibitem[Levenshtein(1966)]{levenshtein1966}
+Vladimir~I. Levenshtein.
+\newblock Binary codes capable of correcting deletions, insertions, and
+  reversals.
+\newblock \emph{Soviet Physics Doklady}, 10\penalty0 (8):\penalty0 707--710,
+  1966.
+
+\bibitem[Mays et~al.(1991)Mays, Damerau, and Mercer]{mays1991}
+Eric Mays, Fred~J. Damerau, and Robert~L. Mercer.
+\newblock Context based spelling correction.
+\newblock \emph{Information Processing \& Management}, 27\penalty0
+  (5):\penalty0 517--522, 1991.
+
+\bibitem[Michel et~al.(2011)]{michel2011}
+Jean-Baptiste Michel et~al.
+\newblock Quantitative analysis of culture using millions of digitized books.
+\newblock \emph{Science}, 331\penalty0 (6014):\penalty0 176--182, 2011.
+
+\bibitem[Rabiner(1989)]{rabiner1989}
+Lawrence~R. Rabiner.
+\newblock A tutorial on hidden {Markov} models and selected applications in
+  speech recognition.
+\newblock \emph{Proceedings of the IEEE}, 77\penalty0 (2):\penalty0 257--286,
+  1989.
+
+\bibitem[Speer et~al.(2018)Speer, Chin, Lin, Jewett, and
+  Nathan]{speer2018wordfreq}
+Robyn Speer, Joshua Chin, Andrew Lin, Sara Jewett, and Lance Nathan.
+\newblock {LuminosoInsight/wordfreq}: v2.2, 2018.
+\newblock Zenodo, doi:10.5281/zenodo.1443582.
+
+\bibitem[Vertanen et~al.(2015)Vertanen, Memmi, Emge, Reyal, and
+  Kristensson]{vertanen2015}
+Keith Vertanen, Haythem Memmi, Justin Emge, Shyam Reyal, and Per~Ola
+  Kristensson.
+\newblock {VelociTap}: Investigating fast mobile text entry using
+  sentence-based decoding of touchscreen keyboard input.
+\newblock In \emph{Proceedings of the 33rd Annual ACM Conference on Human
+  Factors in Computing Systems (CHI)}, pages 659--668, 2015.
+
+\end{thebibliography}

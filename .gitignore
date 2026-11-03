@@ -2,3 +2,9 @@ target/
 trainer/quipkeys.wasm
 __pycache__/
 *.pt
+paper/*.aux
+paper/*.log
+paper/*.out
+paper/*.blg
+paper/*.fls
+paper/*.fdb_latexmk
