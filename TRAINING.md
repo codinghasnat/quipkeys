@@ -43,7 +43,7 @@ python3 scripts/nn/train_lm.py --data train.u16 --vocab 32768 \
 
 | Setup | Model | Time (rough) |
 |---|---|---|
-| RTX 2060 6 GB | d=384, 6 layers (about 23M params) | 4–8 h for 60k steps |
+| RTX 2060 6 GB | d=384, 6 layers (about 23M params) | about 1–2 h for 40k steps, including download (add `--steps 80000` for a better model) |
 | GCP L4 / A100 | d=512, 8 layers, `--batch 256` | 2–4 h |
 | CPU (proof of concept) | d=128, 2 layers | 1 h, weak model |
 
