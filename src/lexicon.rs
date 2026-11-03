@@ -1,0 +1,189 @@
+//! Dictionary, word frequencies, word-pair frequencies and the trie used for
+//! candidate search.
+
+use std::collections::HashMap;
+
+pub type WordId = u32;
+pub const NO_WORD: u32 = u32::MAX;
+
+/// Compact trie in CSR form: node `n`'s children are
+/// `child_chars[child_start[n]..child_start[n+1]]` (sorted) with matching
+/// `child_nodes`.
+pub struct Trie {
+    pub child_start: Vec<u32>,
+    pub child_chars: Vec<u8>,
+    pub child_nodes: Vec<u32>,
+    pub node_word: Vec<WordId>,
+}
+
+impl Trie {
+    #[inline]
+    pub fn children(&self, n: u32) -> impl Iterator<Item = (u8, u32)> + '_ {
+        let s = self.child_start[n as usize] as usize;
+        let e = self.child_start[n as usize + 1] as usize;
+        self.child_chars[s..e].iter().copied().zip(self.child_nodes[s..e].iter().copied())
+    }
+}
+
+pub struct Lexicon {
+    pub words: Vec<String>,
+    pub counts: Vec<f64>,
+    pub total: f64,
+    index: HashMap<String, WordId>,
+    bigrams: HashMap<(WordId, WordId), f64>,
+    /// Bigram counts in the source data are on a ~60x larger scale than the
+    /// unigram counts (different corpus snapshot). Estimated from pairs like
+    /// "able to", where nearly every "able" is followed by "to".
+    bigram_scale: f64,
+    pub trie: Trie,
+}
+
+const UNIGRAMS: &str = include_str!("../data/en_unigrams.txt");
+const BIGRAMS: &str = include_str!("../data/en_bigrams.txt");
+const WORDFREQ: &str = include_str!("../data/en_wordfreq.txt");
+const SUPPLEMENT: &str = include_str!("../data/en_supplement.txt");
+
+fn valid_word(w: &str) -> bool {
+    !w.is_empty() && w.bytes().all(|b| b.is_ascii_lowercase() || b == b'\'')
+}
+
+impl Lexicon {
+    /// Built-in English data.
+    pub fn english() -> Self {
+        let extra = format!("{WORDFREQ}\n{SUPPLEMENT}");
+        Self::from_sources(UNIGRAMS, BIGRAMS, &extra)
+    }
+
+    pub fn from_sources(unigrams: &str, bigrams: &str, supplement: &str) -> Self {
+        let mut counts_map: HashMap<String, f64> = HashMap::new();
+        for line in unigrams.lines().chain(supplement.lines()) {
+            if line.starts_with('#') {
+                continue;
+            }
+            let mut it = line.split_whitespace();
+            if let (Some(w), Some(c)) = (it.next(), it.next()) {
+                if valid_word(w) {
+                    if let Ok(c) = c.parse::<f64>() {
+                        counts_map.insert(w.to_string(), c);
+                    }
+                }
+            }
+        }
+        let mut entries: Vec<(String, f64)> = counts_map.into_iter().collect();
+        entries.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap().then(a.0.cmp(&b.0)));
+        let words: Vec<String> = entries.iter().map(|e| e.0.clone()).collect();
+        let counts: Vec<f64> = entries.iter().map(|e| e.1).collect();
+        let total = counts.iter().sum();
+        let index: HashMap<String, WordId> =
+            words.iter().enumerate().map(|(i, w)| (w.clone(), i as WordId)).collect();
+
+        let mut bigram_map = HashMap::new();
+        for line in bigrams.lines() {
+            let mut it = line.split_whitespace();
+            if let (Some(a), Some(b), Some(c)) = (it.next(), it.next(), it.next()) {
+                if let (Some(&ia), Some(&ib), Ok(c)) = (index.get(a), index.get(b), c.parse::<f64>()) {
+                    bigram_map.insert((ia, ib), c);
+                }
+            }
+        }
+
+        let trie = build_trie(&words);
+        Lexicon { words, counts, total, index, bigrams: bigram_map, bigram_scale: 60.0, trie }
+    }
+
+    pub fn id(&self, w: &str) -> Option<WordId> {
+        self.index.get(w).copied()
+    }
+
+    pub fn word(&self, id: WordId) -> &str {
+        &self.words[id as usize]
+    }
+
+    pub fn len(&self) -> usize {
+        self.words.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.words.is_empty()
+    }
+
+    pub fn unigram_p(&self, w: WordId) -> f64 {
+        self.counts[w as usize] / self.total
+    }
+
+    /// Negative log probability (nats) of `w` given the previous word.
+    /// Interpolates a scaled bigram estimate with the unigram prior, so a pair
+    /// missing from the (frequent-pairs-only) bigram list falls back gracefully.
+    pub fn cost(&self, prev: Option<WordId>, w: WordId, lambda: f64) -> f64 {
+        let pu = self.unigram_p(w);
+        let p = match prev {
+            Some(p) if lambda > 0.0 => {
+                let pb = self
+                    .bigrams
+                    .get(&(p, w))
+                    .map(|c| (c / (self.bigram_scale * self.counts[p as usize])).min(1.0))
+                    .unwrap_or(0.0);
+                lambda * pb + (1.0 - lambda) * pu
+            }
+            _ => pu,
+        };
+        -p.ln()
+    }
+}
+
+fn build_trie(words: &[String]) -> Trie {
+    // Build with a simple pointer trie, then flatten.
+    struct N {
+        kids: Vec<(u8, usize)>,
+        word: WordId,
+    }
+    let mut nodes = vec![N { kids: Vec::new(), word: NO_WORD }];
+    for (id, w) in words.iter().enumerate() {
+        let mut cur = 0usize;
+        for &b in w.as_bytes() {
+            cur = match nodes[cur].kids.iter().find(|k| k.0 == b) {
+                Some(&(_, n)) => n,
+                None => {
+                    nodes.push(N { kids: Vec::new(), word: NO_WORD });
+                    let n = nodes.len() - 1;
+                    nodes[cur].kids.push((b, n));
+                    n
+                }
+            };
+        }
+        nodes[cur].word = id as WordId;
+    }
+    let mut child_start = Vec::with_capacity(nodes.len() + 1);
+    let mut child_chars = Vec::new();
+    let mut child_nodes = Vec::new();
+    let mut node_word = Vec::with_capacity(nodes.len());
+    for n in nodes.iter_mut() {
+        n.kids.sort();
+        child_start.push(child_chars.len() as u32);
+        for &(c, k) in &n.kids {
+            child_chars.push(c);
+            child_nodes.push(k as u32);
+        }
+        node_word.push(n.word);
+    }
+    child_start.push(child_chars.len() as u32);
+    Trie { child_start, child_chars, child_nodes, node_word }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn context_prefers_plausible_pairs() {
+        let lx = Lexicon::english();
+        let to = lx.id("to");
+        let bed = lx.id("bed").unwrap();
+        let bad = lx.id("bad").unwrap();
+        // "went to bed" vs "went to bad"
+        assert!(lx.cost(to, bed, 0.6) < lx.cost(to, bad, 0.6));
+        // Without context, "bad" is the more common word.
+        assert!(lx.cost(None, bad, 0.6) < lx.cost(None, bed, 0.6));
+        assert!(lx.id("don't").is_some());
+    }
+}

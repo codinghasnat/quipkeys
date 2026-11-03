@@ -1,0 +1,2 @@
+# Manual overrides / additions, applied last ("word count", Google Books scale:
+# ~5.4e11 tokens in total). Use this for words QuipKeys should always know.

@@ -1,0 +1,20 @@
+[package]
+name = "quipkeys"
+version = "0.1.0"
+edition = "2021"
+description = "Offline probabilistic typing decoder: types what you meant, not what you hit."
+license = "MIT"
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "qk"
+path = "src/bin/qk.rs"
+
+[[bin]]
+name = "qk-bench"
+path = "src/bin/bench.rs"
+
+[profile.release]
+debug = 1
