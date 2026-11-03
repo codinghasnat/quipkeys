@@ -16,12 +16,12 @@ raw keys + timing
    ▼  search.rs   geometry-weighted Damerau-Levenshtein over a dictionary trie
 candidates ─────── (adjacent keys cheap, far keys expensive, fast roll-over swaps cheap)
    │
-   ▼  decoder.rs  noisy channel: error cost + bigram context (left, and right on revision)
+   ▼  decoder.rs  noisy channel: error cost + 3-word context (left; both sides on look-back)
 ranked readings ── incl. "keep it as typed" and run-together words ("nicetomeetyou")
    │
    ▼  confidence gate (posterior probability vs. threshold)
    │
-   ▼  stream.rs   per-word decisions at space/punctuation, one look-back revision,
+   ▼  stream.rs   per-word decisions at space/punctuation, two look-backs,
 corrected text ─── word-boundary repair ("hellon ice", "mee tyou", "meetin g"), hysteresis
 ```
 
@@ -34,6 +34,23 @@ echo "Hellon ice to mee tyou i hopw ypur doimg wel" | ./target/release/qk --expl
 ./target/release/qk-bench --level all     # accuracy / false corrections / latency / eff-WPM
 cargo test --release
 ```
+
+## Typing trainer
+
+A practice page that runs the real engine in your browser (WebAssembly, offline):
+
+```sh
+scripts/trainer.sh        # builds trainer/quipkeys.wasm, serves http://localhost:8000
+```
+
+* **QuipKeys on / Raw:** type with live correction, or with none.
+* **Every run is scored both ways:** the same keystrokes replayed with and without QuipKeys, so you
+  can see what it's worth to you.
+* **Effective WPM** counts only words that end up exactly right, the metric that matters.
+  **Raw WPM** counts keys.
+* **No-backspace mode:** practise the north star, typing through mistakes without looking.
+* **Progress chart and Export:** the export is a JSON of every keystroke with timing, which is the
+  real-typing data the engine still lacks, for tuning QuipKeys to your fingers.
 
 ## What it handles (from the typo taxonomy)
 

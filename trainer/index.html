@@ -1,0 +1,333 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>QuipKeys Trainer</title>
+<style>
+  :root {
+    --bg: #f6f5f1; --panel: #ffffff; --ink: #1f2328; --muted: #6b6f76; --faint: #c9cbcf;
+    --accent: #2f6fdb; --good: #1f8a52; --bad: #c2412d; --fix: #b7791f; --line: #e3e2dc;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #15171a; --panel: #1d2024; --ink: #e8e9eb; --muted: #9aa0a8; --faint: #444a52;
+      --accent: #6ea0ff; --good: #4cc38a; --bad: #ff7a66; --fix: #e3b05a; --line: #2c3036;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 900px; margin: 0 auto; padding: 24px 16px 64px; }
+  header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  h1 { font-size: 20px; margin: 0; letter-spacing: -0.01em; }
+  h1 span { color: var(--muted); font-weight: 400; }
+  .controls { display: flex; gap: 8px; flex-wrap: wrap; margin: 16px 0; }
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--panel); }
+  .seg button { border: 0; background: transparent; color: var(--muted); padding: 6px 12px; font: inherit; font-size: 14px; cursor: pointer; }
+  .seg button[aria-pressed="true"] { background: var(--accent); color: #fff; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 20px; }
+  #target { font-family: var(--mono); font-size: 20px; line-height: 1.8; color: var(--muted); word-wrap: break-word; }
+  #target .w { padding: 0 1px; border-radius: 3px; }
+  #target .done { color: var(--faint); }
+  #target .cur { color: var(--ink); background: color-mix(in srgb, var(--accent) 15%, transparent); }
+  #typed { font-family: var(--mono); font-size: 20px; line-height: 1.8; min-height: 3.6em; margin-top: 16px; padding-top: 16px; border-top: 1px dashed var(--line); word-wrap: break-word; }
+  #typed .ok { color: var(--good); }
+  #typed .bad { color: var(--bad); text-decoration: underline wavy; text-underline-offset: 4px; }
+  #typed .fixed { border-bottom: 2px solid var(--fix); }
+  #typed .live { color: var(--ink); }
+  #typed .caret { display: inline-block; width: 2px; height: 1.1em; background: var(--accent); vertical-align: -0.15em; animation: blink 1s steps(1) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+  .hint { color: var(--muted); font-size: 14px; margin-top: 12px; }
+  .live-stats { display: flex; gap: 20px; font-family: var(--mono); font-size: 14px; color: var(--muted); margin-top: 12px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-top: 16px; }
+  .stat { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px; }
+  .stat b { display: block; font-size: 28px; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
+  .stat small { color: var(--muted); font-size: 13px; }
+  .stat.hero b { color: var(--accent); }
+  h2 { font-size: 15px; margin: 28px 0 8px; color: var(--muted); font-weight: 600; }
+  svg text { fill: var(--muted); font-size: 11px; }
+  .legend { display: flex; gap: 16px; font-size: 13px; color: var(--muted); }
+  .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+  .btn { border: 1px solid var(--line); background: var(--panel); color: var(--ink); border-radius: 8px; padding: 6px 12px; font: inherit; font-size: 14px; cursor: pointer; }
+  .btn:hover { border-color: var(--accent); }
+  #loading { color: var(--muted); }
+  .compare { font-size: 14px; color: var(--muted); margin-top: 10px; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>QuipKeys Trainer <span>— type like nobody's checking</span></h1>
+    <span id="loading">Loading engine…</span>
+  </header>
+
+  <div class="controls">
+    <div class="seg" id="mode" role="group" aria-label="Mode">
+      <button data-v="qk" aria-pressed="true">QuipKeys on</button>
+      <button data-v="raw" aria-pressed="false">Raw</button>
+    </div>
+    <div class="seg" id="len" role="group" aria-label="Length">
+      <button data-v="15" aria-pressed="false">15 words</button>
+      <button data-v="30" aria-pressed="true">30</button>
+      <button data-v="60" aria-pressed="false">60</button>
+    </div>
+    <div class="seg" id="bs" role="group" aria-label="Backspace">
+      <button data-v="on" aria-pressed="true">Backspace allowed</button>
+      <button data-v="off" aria-pressed="false">No backspace</button>
+    </div>
+  </div>
+
+  <div class="card" id="pad" tabindex="0" aria-label="Typing area">
+    <div id="target"></div>
+    <div id="typed"></div>
+    <div class="live-stats"><span id="lt">0.0s</span><span id="lw">0 wpm</span><span id="lf">0 fixes</span></div>
+    <div class="hint">Just start typing — don't look at the keys. Space commits a word. Backspace right after a fix undoes it. Esc restarts.</div>
+  </div>
+
+  <div id="result" hidden>
+    <div class="grid">
+      <div class="stat hero"><small>Effective WPM</small><b id="r-eff">–</b><small id="r-eff-sub"></small></div>
+      <div class="stat"><small>Raw WPM (keys typed)</small><b id="r-raw">–</b></div>
+      <div class="stat"><small>Words correct</small><b id="r-acc">–</b></div>
+      <div class="stat"><small>Fixed by QuipKeys</small><b id="r-fix">–</b><small id="r-fix-sub"></small></div>
+      <div class="stat"><small>Backspaces</small><b id="r-bs">–</b></div>
+    </div>
+    <div class="compare" id="r-compare"></div>
+  </div>
+
+  <h2>Progress</h2>
+  <div class="card">
+    <div class="legend"><span><i style="background:var(--accent)"></i>Effective WPM with QuipKeys</span><span><i style="background:var(--faint)"></i>Same keystrokes, no correction</span></div>
+    <svg id="chart" width="100%" height="200" role="img" aria-label="Effective WPM over runs"></svg>
+    <div class="row">
+      <button class="btn" id="export">Export typing data (JSON)</button>
+      <button class="btn" id="clear">Clear history</button>
+    </div>
+    <div class="hint">The export contains every keystroke with its timing — real data to tune QuipKeys to <em>your</em> fingers. It stays in this browser unless you download it.</div>
+  </div>
+</main>
+
+<script src="sentences.js"></script>
+<script>
+"use strict";
+// ---------- engine (WebAssembly) ----------
+let X = null;
+const enc = new TextEncoder(), dec = new TextDecoder();
+function readOut(ptr) { return dec.decode(new Uint8Array(X.memory.buffer, ptr, X.qk_out_len())); }
+function qkPush(word, times) {
+  const b = enc.encode(word);
+  const p = X.qk_alloc(b.length);
+  new Uint8Array(X.memory.buffer, p, b.length).set(b);
+  let tp = 0, n = 0;
+  if (times && times.length === b.length) {
+    n = times.length; tp = X.qk_alloc(n * 4);
+    new Float32Array(X.memory.buffer, tp, n).set(times);
+  }
+  const r = JSON.parse(readOut(X.qk_push(p, b.length, tp, n)));
+  X.qk_free(p, b.length); if (tp) X.qk_free(tp, n * 4);
+  return r.edits;
+}
+async function loadEngine() {
+  const res = await fetch("quipkeys.wasm");
+  const { instance } = await WebAssembly.instantiate(await res.arrayBuffer(), {});
+  X = instance.exports; X.qk_init();
+}
+// Run a list of typed words through a fresh session; returns final outputs.
+function replay(words) {
+  X.qk_reset();
+  const out = words.map(w => w.typed);
+  for (let i = 0; i < words.length; i++) {
+    for (const e of qkPush(words[i].typed, words[i].times)) out[e.i] = e.new;
+  }
+  return out;
+}
+
+// ---------- state ----------
+const store = {
+  get(k, d) { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
+};
+const opts = Object.assign({ mode: "qk", len: "30", bs: "on" }, store.get("qk-opts", {}));
+let target = [], words = [], cur = "", curTimes = [], keylog = [], t0 = 0, done = false;
+let fixes = 0, backspaces = 0, lastEditIdx = -1, timer = null;
+
+function pickText(n) {
+  const s = window.QK_SENTENCES, out = [];
+  while (out.length < n) out.push(...s[Math.floor(Math.random() * s.length)].split(" "));
+  return out.slice(0, n);
+}
+function reset() {
+  target = pickText(+opts.len); words = []; cur = ""; curTimes = []; keylog = [];
+  t0 = 0; done = false; fixes = 0; backspaces = 0; lastEditIdx = -1;
+  if (X) X.qk_reset();
+  document.getElementById("result").hidden = true;
+  clearInterval(timer); timer = null;
+  render(); document.getElementById("pad").focus();
+}
+
+// ---------- scoring ----------
+// Longest common subsequence of words: merges/splits can shift positions.
+function matched(out, tgt) {
+  const a = out.join(" ").split(" ").filter(Boolean);
+  const n = a.length, m = tgt.length, dp = Array.from({ length: n + 1 }, () => new Int32Array(m + 1));
+  for (let i = 1; i <= n; i++) for (let j = 1; j <= m; j++)
+    dp[i][j] = a[i - 1] === tgt[j - 1] ? dp[i - 1][j - 1] + 1 : Math.max(dp[i - 1][j], dp[i][j - 1]);
+  const ok = []; let i = n, j = m;
+  while (i > 0 && j > 0) {
+    if (a[i - 1] === tgt[j - 1]) { ok.push(tgt[j - 1]); i--; j--; }
+    else if (dp[i - 1][j] >= dp[i][j - 1]) i--; else j--;
+  }
+  return ok;
+}
+function effWpm(out, mins) {
+  const ok = matched(out, target);
+  return { wpm: ok.reduce((s, w) => s + w.length + 1, 0) / 5 / mins, correct: ok.length };
+}
+
+// ---------- typing ----------
+function now() { return performance.now(); }
+function commit() {
+  if (!cur) return;
+  const w = { typed: cur, times: curTimes.map(t => t - t0), out: cur, fixed: false };
+  words.push(w); cur = ""; curTimes = [];
+  if (opts.mode === "qk") {
+    lastEditIdx = -1;
+    for (const e of qkPush(w.typed, w.times)) {
+      const tw = words[e.i]; tw.out = e.new; tw.fixed = true; fixes++; lastEditIdx = e.i;
+    }
+  }
+  if (words.length >= target.length) finish();
+}
+function reopenLast() {
+  const w = words.pop(); cur = w.typed; curTimes = w.times.map(t => t + t0);
+  if (opts.mode === "qk") {
+    const out = replay(words);
+    words.forEach((x, i) => { x.fixed = out[i] !== x.typed; x.out = out[i]; });
+  }
+  lastEditIdx = -1;
+}
+function onKey(e) {
+  if (!X || done || e.ctrlKey || e.metaKey || e.altKey) return;
+  if (e.key === "Escape") { reset(); return; }
+  const k = e.key;
+  if (k === " " || k === "Backspace" || k.length === 1) e.preventDefault(); else return;
+  if (!t0) { t0 = now(); timer = setInterval(tick, 200); }
+  keylog.push([Math.round(now() - t0), k]);
+  if (k === " ") commit();
+  else if (k === "Backspace") {
+    if (opts.bs === "off") return;
+    backspaces++;
+    if (cur) { cur = cur.slice(0, -1); curTimes.pop(); }
+    else if (lastEditIdx >= 0 && opts.mode === "qk") {
+      const r = JSON.parse(readOut(X.qk_reject(lastEditIdx)));
+      if (r) { const w = words[r.i]; w.out = r.new; w.fixed = false; fixes--; }
+      lastEditIdx = -1;
+    } else if (words.length) reopenLast();
+  } else {
+    cur += k; curTimes.push(now());
+    // Finish on the last word without needing a trailing space.
+    if (words.length === target.length - 1 && cur === target[target.length - 1]) commit();
+  }
+  render();
+}
+function tick() {
+  const s = (now() - t0) / 1000;
+  document.getElementById("lt").textContent = s.toFixed(1) + "s";
+  const chars = words.reduce((a, w) => a + w.typed.length + 1, 0) + cur.length;
+  document.getElementById("lw").textContent = Math.round(chars / 5 / (s / 60) || 0) + " wpm";
+}
+
+// ---------- results ----------
+function finish() {
+  done = true; clearInterval(timer);
+  const mins = (now() - t0) / 60000;
+  const rawOut = words.map(w => w.typed);
+  const qkOut = opts.mode === "qk" ? words.map(w => w.out) : replay(words);
+  const withQk = effWpm(qkOut, mins), without = effWpm(rawOut, mins);
+  const typedChars = words.reduce((a, w) => a + w.typed.length + 1, 0);
+  const mine = opts.mode === "qk" ? withQk : without;
+  const run = {
+    at: new Date().toISOString(), mode: opts.mode, bs: opts.bs, words: target.length,
+    secs: +(mins * 60).toFixed(1), raw: +(typedChars / 5 / mins).toFixed(1),
+    eff_qk: +withQk.wpm.toFixed(1), eff_raw: +without.wpm.toFixed(1),
+    acc: +(100 * mine.correct / target.length).toFixed(1), fixes, backspaces,
+    target: target.join(" "), typed: rawOut, output: qkOut, keys: keylog,
+  };
+  const runs = store.get("qk-runs", []); runs.push(run); store.set("qk-runs", runs.slice(-200));
+  const $ = id => document.getElementById(id);
+  $("r-eff").textContent = Math.round(mine.wpm);
+  $("r-eff-sub").textContent = opts.mode === "qk" ? "with QuipKeys" : "raw mode";
+  $("r-raw").textContent = Math.round(run.raw);
+  $("r-acc").textContent = run.acc + "%";
+  $("r-fix").textContent = opts.mode === "qk" ? fixes : "–";
+  $("r-fix-sub").textContent = opts.mode === "qk" ? "" : "off in raw mode";
+  $("r-bs").textContent = backspaces;
+  const d = withQk.wpm - without.wpm;
+  $("r-compare").textContent = opts.mode === "qk"
+    ? `Same keystrokes without QuipKeys: ${Math.round(without.wpm)} effective WPM (${d >= 0 ? "+" : ""}${Math.round(d)} from QuipKeys).`
+    : `If QuipKeys had been on for these exact keystrokes: ${Math.round(withQk.wpm)} effective WPM (${d >= 0 ? "+" : ""}${Math.round(d)}).`;
+  $("result").hidden = false;
+  render(); chart();
+}
+
+// ---------- rendering ----------
+function esc(s) { return s.replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c])); }
+function render() {
+  const n = words.length;
+  document.getElementById("target").innerHTML = target.map((w, i) =>
+    `<span class="w ${i < n ? "done" : i === n && !done ? "cur" : ""}">${esc(w)}</span>`).join(" ");
+  const parts = words.map((w, i) => {
+    if (!w.out) return "";
+    const ok = w.out === target[i];
+    return `<span class="${ok ? "ok" : "bad"} ${w.fixed ? "fixed" : ""}" title="${w.fixed ? "typed: " + esc(w.typed) : ""}">${esc(w.out)}</span>`;
+  }).filter(Boolean);
+  if (!done) parts.push(`<span class="live">${esc(cur)}</span><span class="caret"></span>`);
+  document.getElementById("typed").innerHTML = parts.join(" ");
+  document.getElementById("lf").textContent = fixes + " fixes";
+}
+function chart() {
+  const runs = store.get("qk-runs", []).slice(-40), svg = document.getElementById("chart");
+  const W = svg.clientWidth || 800, H = 200, P = 28;
+  if (!runs.length) { svg.innerHTML = `<text x="${P}" y="${H / 2}">Finish a run to start your progress chart.</text>`; return; }
+  const max = Math.max(20, ...runs.map(r => Math.max(r.eff_qk, r.eff_raw))) * 1.1;
+  const x = i => P + (runs.length === 1 ? (W - 2 * P) / 2 : i * (W - 2 * P) / (runs.length - 1));
+  const y = v => H - P - v / max * (H - 2 * P);
+  const line = (k, color, dash) => `<polyline fill="none" stroke="${color}" stroke-width="2" ${dash ? 'stroke-dasharray="4 4"' : ""} points="${runs.map((r, i) => x(i) + "," + y(r[k])).join(" ")}"/>` +
+    runs.map((r, i) => `<circle cx="${x(i)}" cy="${y(r[k])}" r="3" fill="${color}"><title>${r[k]} wpm · ${r.mode === "qk" ? "QuipKeys on" : "raw"} · ${r.at.slice(0, 10)}</title></circle>`).join("");
+  let grid = "";
+  for (let v = 0; v <= max; v += max > 100 ? 40 : 20)
+    grid += `<line x1="${P}" x2="${W - P}" y1="${y(v)}" y2="${y(v)}" stroke="var(--line)"/><text x="2" y="${y(v) + 4}">${v}</text>`;
+  svg.innerHTML = grid + line("eff_raw", "var(--faint)", true) + line("eff_qk", "var(--accent)", false);
+}
+
+// ---------- controls ----------
+function seg(id, key) {
+  const el = document.getElementById(id);
+  const sync = () => el.querySelectorAll("button").forEach(b => b.setAttribute("aria-pressed", b.dataset.v === opts[key]));
+  el.addEventListener("click", e => {
+    const b = e.target.closest("button"); if (!b) return;
+    opts[key] = b.dataset.v; store.set("qk-opts", opts); sync(); reset();
+  });
+  sync();
+}
+seg("mode", "mode"); seg("len", "len"); seg("bs", "bs");
+document.getElementById("export").onclick = () => {
+  const blob = new Blob([JSON.stringify(store.get("qk-runs", []), null, 1)], { type: "application/json" });
+  const a = document.createElement("a"); a.href = URL.createObjectURL(blob);
+  a.download = "quipkeys-typing-" + new Date().toISOString().slice(0, 10) + ".json"; a.click();
+};
+document.getElementById("clear").onclick = () => { if (confirm("Delete all saved runs?")) { store.set("qk-runs", []); chart(); } };
+window.addEventListener("keydown", onKey);
+window.addEventListener("resize", chart);
+
+loadEngine().then(() => {
+  document.getElementById("loading").textContent = "Engine ready";
+  reset(); chart();
+}).catch(err => {
+  document.getElementById("loading").textContent = "Couldn't load quipkeys.wasm — run scripts/trainer.sh (" + err.message + ")";
+});
+</script>
+</body>
+</html>
