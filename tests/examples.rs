@@ -107,4 +107,6 @@ fn common_misspellings_are_not_dictionary_words() {
 fn accidental_caps_lock() {
     check("w NEED TO FINSIH THIS VEFORE THE END", "we need to finish this before the end");
     check("The NASA team met at JPL today", "The NASA team met at JPL today");
+    // Mistimed Shift under Caps Lock gives mixed words.
+    check("WE WATCH AN OLD FILM. thANSK FOR HELPONG", "we watch an old film. Thanks for helping");
 }

@@ -354,7 +354,10 @@ impl<'e> Stream<'e> {
                 return None;
             }
             self.caps_run = 0;
-            return inverted.then(|| swapcase(raw));
+            // Under Caps Lock a mistimed Shift gives mixed words ("thANSK",
+            // "cpULD"): flip anything that is mostly capitals.
+            let ups = letters.iter().filter(|c| c.is_ascii_uppercase()).count();
+            return (ups * 2 >= letters.len()).then(|| swapcase(raw));
         }
         if !inverted {
             self.caps_run = 0;
