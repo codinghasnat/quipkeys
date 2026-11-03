@@ -3,6 +3,9 @@
 
 use std::collections::HashMap;
 
+pub use crate::ngrams::{write_ngrams, NgramCounts};
+use crate::ngrams::Ngrams;
+
 pub type WordId = u32;
 pub const NO_WORD: u32 = u32::MAX;
 
@@ -36,12 +39,28 @@ pub struct Lexicon {
     /// "able to", where nearly every "able" is followed by "to".
     bigram_scale: f64,
     pub trie: Trie,
+    /// Corpus bigram/trigram counts (Wikipedia + conversational text).
+    pub ngrams: Option<Ngrams>,
+}
+
+/// Knobs for the context model.
+#[derive(Clone, Copy, Debug)]
+pub struct LmParams {
+    /// Weight of the bigram estimate vs. the unigram prior.
+    pub lambda: f64,
+    /// Max weight of the trigram estimate.
+    pub lambda3: f64,
+    /// Trigram confidence: weight = lambda3 * c(u,v) / (c(u,v) + k3).
+    pub k3: f64,
+    /// Use corpus trigrams at all.
+    pub trigrams: bool,
 }
 
 const UNIGRAMS: &str = include_str!("../data/en_unigrams.txt");
 const BIGRAMS: &str = include_str!("../data/en_bigrams.txt");
 const WORDFREQ: &str = include_str!("../data/en_wordfreq.txt");
 const SUPPLEMENT: &str = include_str!("../data/en_supplement.txt");
+const NGRAMS: &[u8] = include_bytes!("../data/en_ngrams.bin");
 
 fn valid_word(w: &str) -> bool {
     let b = w.as_bytes();
@@ -54,6 +73,13 @@ fn valid_word(w: &str) -> bool {
 impl Lexicon {
     /// Built-in English data.
     pub fn english() -> Self {
+        let mut lx = Self::english_without_ngrams();
+        lx.ngrams = Ngrams::load(NGRAMS, lx.len(), |w| lx.id(w));
+        lx
+    }
+
+    /// The dictionary and Google pair counts only (used to build the n-grams).
+    pub fn english_without_ngrams() -> Self {
         let extra = format!("{WORDFREQ}\n{SUPPLEMENT}");
         Self::from_sources(UNIGRAMS, BIGRAMS, &extra)
     }
@@ -92,7 +118,7 @@ impl Lexicon {
         }
 
         let trie = build_trie(&words);
-        Lexicon { words, counts, total, index, bigrams: bigram_map, bigram_scale: 60.0, trie }
+        Lexicon { words, counts, total, index, bigrams: bigram_map, bigram_scale: 60.0, trie, ngrams: None }
     }
 
     pub fn id(&self, w: &str) -> Option<WordId> {
@@ -113,7 +139,51 @@ impl Lexicon {
 
     /// Is "a b" a frequent pair in the bigram data?
     pub fn has_bigram(&self, a: WordId, b: WordId) -> bool {
-        self.bigrams.contains_key(&(a, b))
+        self.bigrams.contains_key(&(a, b)) || self.ngrams.as_ref().is_some_and(|n| n.bigram(a, b) >= 20)
+    }
+
+    /// P(w | prev) from the pair data: the larger of the Google Books estimate
+    /// and the corpus estimate (each list misses many pairs the other has).
+    fn p_bigram(&self, prev: WordId, w: WordId) -> f64 {
+        let g = self
+            .bigrams
+            .get(&(prev, w))
+            .map(|c| (c / (self.bigram_scale * self.counts[prev as usize])).min(1.0))
+            .unwrap_or(0.0);
+        let c = match &self.ngrams {
+            Some(n) => {
+                let cp = n.unigram(prev);
+                if cp >= 50 {
+                    n.bigram(prev, w) as f64 / cp as f64
+                } else {
+                    0.0
+                }
+            }
+            None => 0.0,
+        };
+        g.max(c)
+    }
+
+    /// Negative log probability (nats) of `w` after `prev2 prev`.
+    /// Interpolated trigram -> bigram -> unigram.
+    pub fn cost3(&self, prev2: Option<WordId>, prev: Option<WordId>, w: WordId, p: &LmParams) -> f64 {
+        let pu = self.unigram_p(w);
+        let Some(p1) = prev else { return -pu.ln() };
+        let p2gram = p.lambda * self.p_bigram(p1, w) + (1.0 - p.lambda) * pu;
+        let pr = match (prev2, &self.ngrams) {
+            (Some(p0), Some(n)) if p.trigrams => {
+                let ctx = n.bigram(p0, p1) as f64;
+                if ctx > 0.0 {
+                    let l3 = p.lambda3 * ctx / (ctx + p.k3);
+                    let pt = n.trigram(p0, p1, w) as f64 / ctx;
+                    l3 * pt.min(1.0) + (1.0 - l3) * p2gram
+                } else {
+                    p2gram
+                }
+            }
+            _ => p2gram,
+        };
+        -pr.ln()
     }
 
     pub fn unigram_p(&self, w: WordId) -> f64 {

@@ -8,6 +8,7 @@ pub mod channel;
 pub mod decoder;
 pub mod keyboard;
 pub mod lexicon;
+pub mod ngrams;
 pub mod search;
 pub mod sim;
 pub mod stream;

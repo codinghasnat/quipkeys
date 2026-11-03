@@ -28,6 +28,8 @@ fn configs() -> Vec<(&'static str, Config)> {
     no_ctx.right_context = false;
     let mut no_right = Config::default();
     no_right.right_context = false;
+    let mut no_tri = Config::default();
+    no_tri.trigrams = false;
     let mut no_time = Config::default();
     no_time.channel.timing = false;
     vec![
@@ -36,6 +38,7 @@ fn configs() -> Vec<(&'static str, Config)> {
         ("no-geometry", no_geo),
         ("no-context", no_ctx),
         ("no-right-ctx", no_right),
+        ("no-trigram", no_tri),
         ("no-timing", no_time),
     ]
 }

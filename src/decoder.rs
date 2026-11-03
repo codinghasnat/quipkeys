@@ -2,7 +2,7 @@
 //! single word, given whatever context is available.
 
 use crate::channel::{Channel, ChannelParams};
-use crate::lexicon::{Lexicon, WordId};
+use crate::lexicon::{Lexicon, LmParams, WordId};
 use crate::search::search;
 
 #[derive(Clone, Debug)]
@@ -16,6 +16,11 @@ pub struct Config {
     pub splits: bool,
     /// Bigram interpolation weight.
     pub lambda: f64,
+    /// Use corpus trigrams (three-word context).
+    pub trigrams: bool,
+    /// Max trigram weight, and its confidence constant.
+    pub lambda3: f64,
+    pub k3: f64,
     /// Weight of the language model relative to the error model.
     pub lm_weight: f32,
     /// Largest channel cost considered (nats). Roughly "two slips".
@@ -52,6 +57,9 @@ impl Default for Config {
             right_context: true,
             splits: true,
             lambda: 0.6,
+            trigrams: true,
+            lambda3: 0.7,
+            k3: 5.0,
             lm_weight: 1.0,
             bound: 13.0,
             oov_keep_base: 14.0,
@@ -75,7 +83,11 @@ impl Default for Config {
 /// neighbouring words (already corrected), when known and in the dictionary.
 #[derive(Clone, Copy, Default, Debug)]
 pub struct Ctx {
+    /// Two words back (for trigram context).
+    pub prev2: Option<WordId>,
     pub prev: Option<WordId>,
+    /// Two words ahead (only known when revising).
+    pub next2: Option<WordId>,
     pub next: Option<WordId>,
     /// There is a following word, but it is not in the dictionary.
     pub next_unknown: bool,
@@ -112,15 +124,34 @@ impl Engine {
         Engine { ch: Channel::new(cfg.channel.clone()), lx, cfg }
     }
 
+    fn lm_params(&self) -> LmParams {
+        LmParams { lambda: self.cfg.lambda, lambda3: self.cfg.lambda3, k3: self.cfg.k3, trigrams: self.cfg.trigrams }
+    }
+
+    /// Context cost of `w` after `prev2 prev`.
+    pub fn lm3(&self, prev2: Option<WordId>, prev: Option<WordId>, w: WordId) -> f32 {
+        if !self.cfg.context {
+            return self.lx.cost3(None, None, w, &self.lm_params()) as f32;
+        }
+        let prev2 = if prev.is_some() { prev2 } else { None };
+        self.lx.cost3(prev2, prev, w, &self.lm_params()) as f32
+    }
+
     fn lm(&self, prev: Option<WordId>, w: WordId) -> f32 {
-        let prev = if self.cfg.context { prev } else { None };
-        self.lx.cost(prev, w, self.cfg.lambda) as f32
+        self.lm3(None, prev, w)
     }
 
     /// Cost of the following word given hypothesis `w` (right context).
+    /// Cost of the following word(s) given hypothesis `w` (right context).
     fn right(&self, w: Option<WordId>, ctx: &Ctx) -> f32 {
         match ctx.next {
-            Some(n) if self.cfg.context => self.lm(w, n),
+            Some(n) if self.cfg.context => {
+                let mut c = self.lm3(ctx.prev, w, n);
+                if let Some(n2) = ctx.next2 {
+                    c += self.lm3(w, Some(n), n2);
+                }
+                c
+            }
             _ => 0.0,
         }
     }
@@ -134,7 +165,7 @@ impl Engine {
         let w = self.cfg.lm_weight;
         let mut hyps = Vec::with_capacity(cands.len() + 4);
         let keep = match typed_id {
-            Some(t) => w * (self.lm(ctx.prev, t) + self.right(Some(t), ctx)),
+            Some(t) => w * (self.lm3(ctx.prev2, ctx.prev, t) + self.right(Some(t), ctx)),
             None => {
                 self.cfg.oov_keep_base
                     + self.cfg.oov_keep_per_char * core.len() as f32
@@ -147,11 +178,11 @@ impl Engine {
                 continue;
             }
             let extra = if typed_id.is_some() { self.cfg.real_word_extra } else { 0.0 };
-            let s = c.channel + extra + w * (self.lm(ctx.prev, c.word) + self.right(Some(c.word), ctx));
+            let s = c.channel + extra + w * (self.lm3(ctx.prev2, ctx.prev, c.word) + self.right(Some(c.word), ctx));
             hyps.push((Hyp::Word(c.word), s));
         }
         if self.cfg.splits && typed_id.is_none() && core.len() >= 3 {
-            if let Some((ws, lm)) = self.segment(core, ctx.prev) {
+            if let Some((ws, lm)) = self.segment(core, ctx.prev2, ctx.prev) {
                 let s = self.cfg.split_cost * (ws.len() - 1) as f32
                     + w * (lm + self.right(ws.last().copied(), ctx));
                 hyps.push((Hyp::Seg(ws), s));
@@ -162,7 +193,7 @@ impl Engine {
 
     /// Best way to cut `core` into 2+ dictionary words (exact pieces),
     /// returning the words and their summed language-model cost.
-    pub fn segment(&self, core: &str, prev: Option<WordId>) -> Option<(Vec<WordId>, f32)> {
+    pub fn segment(&self, core: &str, prev2: Option<WordId>, prev: Option<WordId>) -> Option<(Vec<WordId>, f32)> {
         let n = core.len();
         let mut best: Vec<Option<(f32, Vec<WordId>)>> = vec![None; n + 1];
         best[0] = Some((0.0, Vec::new()));
@@ -174,8 +205,12 @@ impl Engine {
                     continue;
                 }
                 let (Some(id), Some((s0, ws))) = (self.lx.id(piece), best[i].as_ref()) else { continue };
-                let p = ws.last().copied().or(prev);
-                let s = s0 + self.lm(p, id) * self.cfg.lm_weight + if i > 0 { self.cfg.split_cost } else { 0.0 };
+                let (q2, q1) = match ws.len() {
+                    0 => (prev2, prev),
+                    1 => (prev, Some(ws[0])),
+                    k => (Some(ws[k - 2]), Some(ws[k - 1])),
+                };
+                let s = s0 + self.lm3(q2, q1, id) * self.cfg.lm_weight + if i > 0 { self.cfg.split_cost } else { 0.0 };
                 if cur.as_ref().is_none_or(|c| s < c.0) {
                     let mut v = ws.clone();
                     v.push(id);

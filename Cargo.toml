@@ -16,5 +16,9 @@ path = "src/bin/qk.rs"
 name = "qk-bench"
 path = "src/bin/bench.rs"
 
+[[bin]]
+name = "qk-ngrams"
+path = "src/bin/ngrams.rs"
+
 [profile.release]
 debug = 1

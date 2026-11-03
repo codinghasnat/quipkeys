@@ -169,6 +169,20 @@ impl<'e> Stream<'e> {
         (0..i).rev().find(|&k| !self.words[k].output.is_empty())
     }
 
+    /// Context two words back from chunk `i`.
+    fn ctx_prev2(&self, i: usize) -> Option<WordId> {
+        let p = self.prev_index(i)?;
+        if self.ctx_prev(i).is_none() {
+            return None;
+        }
+        // A split chunk ("the cat") has its own internal previous word.
+        let out = &self.words[p].output;
+        if let Some((head, _)) = out.rsplit_once(' ') {
+            return self.id_of(head);
+        }
+        self.ctx_prev(p)
+    }
+
     fn ctx_prev(&self, i: usize) -> Option<WordId> {
         let p = &self.words[self.prev_index(i)?];
         if p.tok.ends_sentence {
@@ -224,7 +238,7 @@ impl<'e> Stream<'e> {
         if !reseg.is_empty() {
             return reseg;
         }
-        let ctx = Ctx { prev: self.ctx_prev(i), next: None, next_unknown: false };
+        let ctx = Ctx { prev2: self.ctx_prev2(i), prev: self.ctx_prev(i), ..Default::default() };
         if let Some(e) = self.try_word(i, ctx, None, false) {
             edits.push(e);
         }
@@ -234,7 +248,7 @@ impl<'e> Stream<'e> {
                 if !pw.changed && !pw.protected && !pw.tok.ends_sentence {
                     let next = self.words[i].out_id;
                     if next.is_some() {
-                        let ctx = Ctx { prev: self.ctx_prev(p), next, next_unknown: false };
+                        let ctx = Ctx { prev2: self.ctx_prev2(p), prev: self.ctx_prev(p), next, ..Default::default() };
                         // Real words need tau_revise; a non-word just needs the usual bar.
                         let known = self.engine.lx.id(&pw.tok.core.to_ascii_lowercase()).is_some();
                         let tau = if known { Some(self.engine.cfg.tau_revise) } else { None };
@@ -327,13 +341,14 @@ impl<'e> Stream<'e> {
         }
         let e = self.engine;
         let prev = self.ctx_prev(p);
+        let prev2 = self.ctx_prev2(p);
         let joined = format!("{a}{b}");
         let joined_times: Option<Vec<f32>> = match (pw.core_times(), cw.core_times()) {
             (Some(x), Some(y)) => Some(x.iter().chain(y).copied().collect()),
             _ => None,
         };
         let jt = joined_times.as_deref();
-        let ctx = |prev| Ctx { prev, next: None, next_unknown: false };
+        let ctx = |prev2, prev| Ctx { prev2, prev, ..Default::default() };
         // Score of reading `x` as word(s); an unknown word can never be the
         // *result* of moving a space, so it costs infinity there.
         let known = |text: &str| text.split(' ').all(|w| lx.id(w).is_some());
@@ -343,8 +358,8 @@ impl<'e> Stream<'e> {
                 Some(t) => (Some(&t[..k]), Some(&t[k..])),
                 None => (None, None),
             };
-            let (bx, sx) = e.best(x, tx, &ctx(prev));
-            let (by, sy) = e.best(y, ty, &ctx(lx.id(bx.rsplit(' ').next().unwrap_or(&bx))));
+            let (bx, sx) = e.best(x, tx, &ctx(prev2, prev));
+            let (by, sy) = e.best(y, ty, &ctx(prev, lx.id(bx.rsplit(' ').next().unwrap_or(&bx))));
             let single = |t: &str| !t.contains(' ');
             let ok = !strict || (known(&bx) && known(&by) && single(&bx) && single(&by));
             (bx, by, if ok { sx + sy } else { f32::INFINITY })
@@ -352,7 +367,7 @@ impl<'e> Stream<'e> {
         // As typed (each side may still be spell-corrected).
         let (base_a, base_b, base) = pair(a.len(), false);
         let mut alts: Vec<(String, String, f32)> = Vec::new();
-        let (m, sm) = e.best(&joined, jt, &ctx(prev));
+        let (m, sm) = e.best(&joined, jt, &ctx(prev2, prev));
         let base_known = known(&base_a) && known(&base_b);
         // Gluing two real words together is how compounds get mangled
         // ("soy beans" -> "soybeans"): demand much stronger evidence.

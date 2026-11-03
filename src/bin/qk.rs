@@ -13,7 +13,7 @@ fn main() {
     if let Some(i) = args.iter().position(|a| a == "--why") {
         let engine = Engine::new(Config::default());
         let w = |s: Option<&String>| s.filter(|s| *s != "-").and_then(|s| engine.lx.id(s));
-        let ctx = quipkeys::Ctx { prev: w(args.get(i + 1)), next: w(args.get(i + 3)), next_unknown: false };
+        let ctx = quipkeys::Ctx { prev: w(args.get(i + 1)), next: w(args.get(i + 3)), ..Default::default() };
         let core = &args[i + 2];
         let mut h = engine.hypotheses(core, None, &ctx);
         let min = h.iter().map(|x| x.1).fold(f32::INFINITY, f32::min);
