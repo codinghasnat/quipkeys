@@ -19,6 +19,12 @@ pub struct Config {
     pub context: bool,
     /// Allow revising the previous word once the next word is known.
     pub right_context: bool,
+    /// Decode a sliding window of chunks jointly (whole-sentence decoder)
+    /// instead of word-by-word decisions with look-backs.
+    pub lattice: bool,
+    pub lattice_window: usize,
+    pub lattice_beam: usize,
+    pub lattice_cands: usize,
     /// Second look-back with two words of right context.
     pub lookback2: bool,
     /// Repair misplaced spaces between consecutive chunks.
@@ -87,6 +93,10 @@ impl Default for Config {
             splits: true,
             boundary: true,
             lookback2: true,
+            lattice: true,
+            lattice_window: 4,
+            lattice_beam: 8,
+            lattice_cands: 8,
             lambda: 0.6,
             trigrams: true,
             lambda3: 0.7,

@@ -37,6 +37,8 @@ fn configs() -> Vec<(&'static str, Config)> {
     let mut no_mem = Config::default();
     no_mem.doc_cache = 0.0;
     no_mem.learned_weight = 0.0;
+    let mut lat = Config::default();
+    lat.lattice = false;
     let mut no_time = Config::default();
     no_time.channel.timing = false;
     vec![
@@ -49,6 +51,7 @@ fn configs() -> Vec<(&'static str, Config)> {
         ("no-boundary", no_space),
         ("no-lookback2", no_lb2),
         ("no-memory", no_mem),
+        ("word-by-word", lat),
         ("no-timing", no_time),
     ]
 }

@@ -19,6 +19,8 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use crate::decoder::{Ctx, DocCache, Engine};
+
+mod lattice;
 use crate::lexicon::WordId;
 
 /// How a raw token splits into punctuation + correctable core.
@@ -150,7 +152,7 @@ fn recase_lx(lx: &crate::lexicon::Lexicon, word: &str, capital: bool) -> String 
 /// A word written capitalised at least this often mid-sentence is a proper noun.
 const CAP_SHARE: f32 = 0.97;
 /// ...and this often before we capitalise a correctly spelled lowercase word.
-const CAP_FIX_SHARE: f32 = 0.995;
+pub(crate) const CAP_FIX_SHARE: f32 = 0.995;
 
 #[derive(Clone, Debug)]
 pub struct Word {
@@ -345,6 +347,18 @@ impl<'e> Stream<'e> {
         }
         if let Some(e) = self.try_hand_shift(i) {
             edits.push(e);
+            return edits;
+        }
+        if self.engine.cfg.lattice {
+            // Special tokens (names, hyphenated, shift slips, "i", "dont") keep
+            // their dedicated handling; plain words are decoded jointly.
+            if !self.lattice_open(i) {
+                let ctx = Ctx { prev2: self.ctx_prev2(i), prev: self.ctx_prev(i), cache: Some(&cache), ..Default::default() };
+                if let Some(e) = self.try_word(i, ctx, None, false) {
+                    edits.push(e);
+                }
+            }
+            edits.extend(self.lattice_step(i));
             return edits;
         }
         let reseg = self.try_boundary(i);
