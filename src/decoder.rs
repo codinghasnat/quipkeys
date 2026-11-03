@@ -19,6 +19,12 @@ pub struct Config {
     pub context: bool,
     /// Allow revising the previous word once the next word is known.
     pub right_context: bool,
+    /// Weight of the neural re-ranker on candidate readings (0 = off).
+    pub nn_weight: f32,
+    /// Learned decision gate (None = fixed confidence thresholds).
+    pub gate: Option<Gate>,
+    /// Load the built-in learned gate (data/gate.txt) when constructing the engine.
+    pub use_gate: bool,
     /// Decode a sliding window of chunks jointly (whole-sentence decoder)
     /// instead of word-by-word decisions with look-backs.
     pub lattice: bool,
@@ -38,6 +44,9 @@ pub struct Config {
     /// Max trigram weight, and its confidence constant.
     pub lambda3: f64,
     pub k3: f64,
+    /// Max 4-gram weight (0 = no 4-grams) and its confidence constant.
+    pub lambda4: f64,
+    pub k4: f64,
     /// Weight of the language model relative to the error model.
     pub lm_weight: f32,
     /// Largest channel cost considered (nats). Roughly "two slips".
@@ -93,6 +102,9 @@ impl Default for Config {
             splits: true,
             boundary: true,
             lookback2: true,
+            nn_weight: 0.0,
+            gate: None,
+            use_gate: true,
             lattice: true,
             lattice_window: 4,
             lattice_beam: 8,
@@ -101,6 +113,8 @@ impl Default for Config {
             trigrams: true,
             lambda3: 0.7,
             k3: 5.0,
+            lambda4: 0.6,
+            k4: 5.0,
             lm_weight: 1.0,
             bound: 13.0,
             bound_per_char: 2.5,
@@ -130,6 +144,90 @@ impl Default for Config {
 
 /// Context for one decision. `prev`/`next` are dictionary ids of the
 /// neighbouring words (already corrected), when known and in the dictionary.
+/// Inputs to the learned gate for one candidate change.
+pub struct GateInput {
+    pub conf: f32,
+    pub known: bool,
+    pub morph: bool,
+    pub span2: bool,
+    pub newest: bool,
+    pub back: usize,
+    pub cost: f32,
+    pub keep_cost: f32,
+    pub cand_freq: f32,
+    pub typed_len: usize,
+    pub split: bool,
+    pub learned: bool,
+    pub n_readings: usize,
+    pub capital: bool,
+}
+
+pub const GATE_FEATURES: &[&str] = &[
+    "bias", "logit_conf", "known", "morph", "span2", "newest", "back", "cost", "keep_cost", "cand_freq",
+    "typed_len", "split", "learned", "n_readings", "capital", "conf", "known_x_logit", "short",
+];
+
+pub fn gate_features(g: &GateInput) -> Vec<f32> {
+    let c = g.conf.clamp(1e-6, 1.0 - 1e-6);
+    let logit = (c / (1.0 - c)).ln().clamp(-12.0, 12.0);
+    let b = |x: bool| if x { 1.0 } else { 0.0 };
+    vec![
+        1.0,
+        logit / 4.0,
+        b(g.known),
+        b(g.morph),
+        b(g.span2),
+        b(g.newest),
+        g.back as f32 / 3.0,
+        g.cost / 10.0,
+        g.keep_cost / 20.0,
+        g.cand_freq / 20.0,
+        g.typed_len as f32 / 10.0,
+        b(g.split),
+        b(g.learned),
+        g.n_readings as f32 / 10.0,
+        b(g.capital),
+        g.conf,
+        b(g.known) * logit / 4.0,
+        b(g.typed_len <= 3),
+    ]
+}
+
+/// Learned logistic gate: P(change is right) from the features above.
+#[derive(Clone, Debug)]
+pub struct Gate {
+    pub w: Vec<f32>,
+    pub threshold: f32,
+}
+
+impl Gate {
+    pub fn prob(&self, f: &[f32]) -> f32 {
+        let z: f32 = self.w.iter().zip(f).map(|(a, b)| a * b).sum();
+        1.0 / (1.0 + (-z).exp())
+    }
+
+    /// Parse "name weight" lines plus "threshold t".
+    pub fn parse(text: &str) -> Option<Gate> {
+        let mut w = vec![0.0; GATE_FEATURES.len()];
+        let mut threshold = 0.5;
+        let mut any = false;
+        for line in text.lines().filter(|l| !l.starts_with('#')) {
+            let mut it = line.split_whitespace();
+            let (Some(k), Some(v)) = (it.next(), it.next().and_then(|v| v.parse::<f32>().ok())) else { continue };
+            if k == "threshold" {
+                threshold = v;
+            } else if let Some(i) = GATE_FEATURES.iter().position(|n| *n == k) {
+                w[i] = v;
+                any = true;
+            }
+        }
+        any.then_some(Gate { w, threshold })
+    }
+}
+
+const GATE: &str = include_str!("../data/gate.txt");
+const NNLM: &[u8] = include_bytes!("../data/en_nnlm.bin");
+
 /// What has been typed so far in this document/session.
 #[derive(Clone, Default, Debug)]
 pub struct DocCache {
@@ -153,6 +251,8 @@ impl DocCache {
 pub struct Ctx<'a> {
     /// Document memory, if any.
     pub cache: Option<&'a DocCache>,
+    /// Three words back (for 4-gram context).
+    pub prev3: Option<WordId>,
     /// Two words back (for trigram context).
     pub prev2: Option<WordId>,
     pub prev: Option<WordId>,
@@ -184,6 +284,8 @@ pub enum Hyp {
 }
 
 pub struct Engine {
+    /// Optional neural re-ranker (data/en_nnlm.bin).
+    pub nn: Option<crate::nnlm::NnLm>,
     pub lx: Lexicon,
     pub ch: Channel,
     pub cfg: Config,
@@ -194,15 +296,34 @@ impl Engine {
         Self::with_lexicon(Lexicon::english(), cfg)
     }
 
-    pub fn with_lexicon(lx: Lexicon, cfg: Config) -> Self {
-        Engine { ch: Channel::new(cfg.channel.clone()), lx, cfg }
+    pub fn with_lexicon(lx: Lexicon, mut cfg: Config) -> Self {
+        if cfg.use_gate && cfg.gate.is_none() {
+            cfg.gate = Gate::parse(GATE);
+        }
+        let nn = if cfg.nn_weight > 0.0 { crate::nnlm::NnLm::load(NNLM) } else { None };
+        Engine { ch: Channel::new(cfg.channel.clone()), lx, cfg, nn }
     }
 
     fn lm_params(&self) -> LmParams {
-        LmParams { lambda: self.cfg.lambda, lambda3: self.cfg.lambda3, k3: self.cfg.k3, trigrams: self.cfg.trigrams }
+        LmParams {
+            lambda: self.cfg.lambda,
+            lambda3: self.cfg.lambda3,
+            k3: self.cfg.k3,
+            trigrams: self.cfg.trigrams,
+            lambda4: self.cfg.lambda4,
+            k4: self.cfg.k4,
+        }
     }
 
     /// Context cost of `w` after `prev2 prev`.
+    /// Context cost of `w` after `prev3 prev2 prev` (4-gram where available).
+    pub fn lm4(&self, prev3: Option<WordId>, prev2: Option<WordId>, prev: Option<WordId>, w: WordId) -> f32 {
+        if !self.cfg.context || prev.is_none() || prev2.is_none() {
+            return self.lm3(prev2, prev, w);
+        }
+        self.lx.cost4(prev3, prev2, prev, w, &self.lm_params()) as f32
+    }
+
     pub fn lm3(&self, prev2: Option<WordId>, prev: Option<WordId>, w: WordId) -> f32 {
         if !self.cfg.context {
             return self.lx.cost3(None, None, w, &self.lm_params()) as f32;
@@ -214,7 +335,7 @@ impl Engine {
     /// Left-context cost of `w`, mixed with how often it already appeared in
     /// this document (a cache language model).
     fn lm_doc(&self, ctx: &Ctx, w: WordId) -> f32 {
-        let base = self.lm3(ctx.prev2, ctx.prev, w);
+        let base = self.lm4(ctx.prev3, ctx.prev2, ctx.prev, w);
         match ctx.cache {
             Some(c) if self.cfg.doc_cache > 0.0 && c.total >= 10 => {
                 let n = c.counts.get(&w).copied().unwrap_or(0);
@@ -238,9 +359,9 @@ impl Engine {
     fn right(&self, w: Option<WordId>, ctx: &Ctx) -> f32 {
         match ctx.next {
             Some(n) if self.cfg.context => {
-                let mut c = self.lm3(ctx.prev, w, n);
+                let mut c = self.lm4(ctx.prev2, ctx.prev, w, n);
                 if let Some(n2) = ctx.next2 {
-                    c += self.lm3(w, Some(n), n2);
+                    c += self.lm4(ctx.prev, w, Some(n), n2);
                 }
                 c
             }

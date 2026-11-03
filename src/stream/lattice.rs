@@ -34,11 +34,15 @@ struct Reading {
 #[derive(Clone, Copy)]
 struct Node {
     score: f32,
+    p3: Option<WordId>,
     p2: Option<WordId>,
     p1: Option<WordId>,
     parent: usize,
     reading: usize,
 }
+
+type State = (Option<WordId>, Option<WordId>, Option<WordId>);
+type Memo = HashMap<(Option<WordId>, Option<WordId>, Option<WordId>, WordId), f32>;
 
 impl<'e> Stream<'e> {
     /// A chunk the lattice may change: a plain word, untouched so far.
@@ -279,18 +283,18 @@ impl<'e> Stream<'e> {
 
     /// Beam search over chunks `lo..hi` of the window. Returns the best score
     /// and the chosen reading indices (into `rs`).
-    fn viterbi(&self, lo: usize, hi: usize, rs: &[Reading], by_start: &[Vec<usize>], ctx: (Option<WordId>, Option<WordId>), memo: &mut HashMap<(Option<WordId>, Option<WordId>, WordId), f32>) -> Option<(f32, Vec<usize>)> {
+    fn viterbi(&self, lo: usize, hi: usize, rs: &[Reading], by_start: &[Vec<usize>], ctx: State, memo: &mut Memo) -> Option<(f32, Vec<usize>)> {
         let e = self.engine;
         let m = hi - lo;
         let mut beams: Vec<Vec<Node>> = vec![Vec::new(); m + 1];
-        beams[0].push(Node { score: 0.0, p2: ctx.0, p1: ctx.1, parent: usize::MAX, reading: usize::MAX });
+        beams[0].push(Node { score: 0.0, p3: ctx.0, p2: ctx.1, p1: ctx.2, parent: usize::MAX, reading: usize::MAX });
         let mut arena: Vec<Node> = Vec::new();
         for pos in 0..m {
             // Prune: best per LM state, then top-B.
             let mut cur = std::mem::take(&mut beams[pos]);
             cur.sort_by(|a, b| a.score.partial_cmp(&b.score).unwrap());
             let mut seen = std::collections::HashSet::new();
-            cur.retain(|n| seen.insert((n.p2, n.p1)));
+            cur.retain(|n| seen.insert((n.p3, n.p2, n.p1)));
             cur.truncate(e.cfg.lattice_beam);
             for node in cur {
                 let id = arena.len();
@@ -300,21 +304,18 @@ impl<'e> Stream<'e> {
                     if pos + r.span > m {
                         continue;
                     }
-                    let (mut p2, mut p1, mut s) = (node.p2, node.p1, node.score + r.cost);
+                    let (mut p3, mut p2, mut p1, mut s) = (node.p3, node.p2, node.p1, node.score + r.cost);
                     for &w in &r.words {
                         if let Some(wid) = w {
-                            let key = (p2, p1, wid);
-                            let c = *memo.entry(key).or_insert_with(|| e.lm3(p2, p1, wid));
+                            let c = *memo.entry((p3, p2, p1, wid)).or_insert_with(|| e.lm4(p3, p2, p1, wid));
                             s += e.cfg.lm_weight * c;
                         }
-                        p2 = p1;
-                        p1 = w;
+                        (p3, p2, p1) = (p2, p1, w);
                     }
                     if self.words[lo + pos + r.span - 1].tok.ends_sentence {
-                        p2 = None;
-                        p1 = None;
+                        (p3, p2, p1) = (None, None, None);
                     }
-                    beams[pos + r.span].push(Node { score: s, p2, p1, parent: id, reading: ri });
+                    beams[pos + r.span].push(Node { score: s, p3, p2, p1, parent: id, reading: ri });
                 }
             }
         }
@@ -329,23 +330,68 @@ impl<'e> Stream<'e> {
         Some((best.score, path))
     }
 
+    /// Neural re-ranking: each open chunk's single readings get
+    /// `nn_weight * (logsumexp - logit)` added, where logits come from the
+    /// neural LM given everything shown before that chunk.
+    fn nn_rerank(&mut self, nn: &crate::nnlm::NnLm, lo: usize, i: usize, rs: &mut [Reading]) {
+        let vocab_words = nn.vocab - 2;
+        let to_nn = |w: Option<WordId>| match w {
+            Some(id) if (id as usize) < vocab_words => id as u16,
+            _ => nn.unk(),
+        };
+        // Token history up to each chunk in the window.
+        let mut toks = vec![nn.bos()];
+        let mut before = vec![0usize; i + 1 - lo];
+        for c in 0..=i {
+            if c >= lo {
+                before[c - lo] = toks.len();
+            }
+            if c == i {
+                break;
+            }
+            let w = &self.words[c];
+            for p in w.output.split(' ').filter(|p| !p.is_empty()) {
+                toks.push(to_nn(self.engine.lx.id(&parse_token(p, true).core.to_ascii_lowercase())));
+            }
+            if w.tok.ends_sentence {
+                toks.push(nn.bos());
+            }
+        }
+        let alpha = self.engine.cfg.nn_weight;
+        for k in lo..=i {
+            let idx: Vec<usize> = (0..rs.len()).filter(|&r| rs[r].start == k && rs[r].span == 1).collect();
+            if idx.len() < 2 {
+                continue;
+            }
+            let mut st = std::mem::take(&mut self.nn_state);
+            nn.sync(&mut st, &toks[..before[k - lo]]);
+            let logits: Vec<f32> = idx.iter().map(|&r| nn.logit(&st, to_nn(rs[r].words.first().copied().flatten()))).collect();
+            self.nn_state = st;
+            let m = logits.iter().cloned().fold(f32::MIN, f32::max);
+            let lse = m + logits.iter().map(|l| (l - m).exp()).sum::<f32>().ln();
+            for (&r, l) in idx.iter().zip(&logits) {
+                rs[r].cost += alpha * (lse - l);
+            }
+        }
+    }
+
     /// Sum over all paths (forward algorithm, beam-pruned) whose text at the
     /// chunks in `req` equals the required text. Returns -ln(total probability).
     #[allow(clippy::too_many_arguments)]
-    fn forward(&self, lo: usize, hi: usize, rs: &[Reading], by_start: &[Vec<usize>], ctx: (Option<WordId>, Option<WordId>), req: &[(usize, &str)], memo: &mut HashMap<(Option<WordId>, Option<WordId>, WordId), f32>) -> f32 {
+    fn forward(&self, lo: usize, hi: usize, rs: &[Reading], by_start: &[Vec<usize>], ctx: State, req: &[(usize, &str)], memo: &mut Memo) -> f32 {
         let e = self.engine;
         let m = hi - lo;
         let lse = |a: f32, b: f32| {
             let (lo_, hi_) = if a < b { (a, b) } else { (b, a) };
             lo_ - (-(hi_ - lo_)).exp().ln_1p()
         };
-        let mut beams: Vec<HashMap<(Option<WordId>, Option<WordId>), f32>> = vec![HashMap::new(); m + 1];
+        let mut beams: Vec<HashMap<State, f32>> = vec![HashMap::new(); m + 1];
         beams[0].insert(ctx, 0.0);
         for pos in 0..m {
             let mut cur: Vec<_> = beams[pos].drain().collect();
             cur.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
             cur.truncate(e.cfg.lattice_beam * 2);
-            for ((p2s, p1s), score) in cur {
+            for ((p3s, p2s, p1s), score) in cur {
                 'reading: for &ri in &by_start[pos] {
                     let r = &rs[ri];
                     if pos + r.span > m {
@@ -356,20 +402,18 @@ impl<'e> Stream<'e> {
                             continue 'reading;
                         }
                     }
-                    let (mut p2, mut p1, mut s) = (p2s, p1s, score + r.cost);
+                    let (mut p3, mut p2, mut p1, mut s) = (p3s, p2s, p1s, score + r.cost);
                     for &w in &r.words {
                         if let Some(wid) = w {
-                            let c = *memo.entry((p2, p1, wid)).or_insert_with(|| e.lm3(p2, p1, wid));
+                            let c = *memo.entry((p3, p2, p1, wid)).or_insert_with(|| e.lm4(p3, p2, p1, wid));
                             s += e.cfg.lm_weight * c;
                         }
-                        p2 = p1;
-                        p1 = w;
+                        (p3, p2, p1) = (p2, p1, w);
                     }
                     if self.words[lo + pos + r.span - 1].tok.ends_sentence {
-                        p2 = None;
-                        p1 = None;
+                        (p3, p2, p1) = (None, None, None);
                     }
-                    let slot = beams[pos + r.span].entry((p2, p1)).or_insert(f32::INFINITY);
+                    let slot = beams[pos + r.span].entry((p3, p2, p1)).or_insert(f32::INFINITY);
                     *slot = if slot.is_finite() { lse(*slot, s) } else { s };
                 }
             }
@@ -415,12 +459,17 @@ impl<'e> Stream<'e> {
                 self.pair_readings(k, &mut rs);
             }
         }
+        if let Some(nn) = &e.nn {
+            if e.cfg.nn_weight > 0.0 {
+                self.nn_rerank(nn, lo, i, &mut rs);
+            }
+        }
         let m = i + 1 - lo;
         let mut by_start: Vec<Vec<usize>> = vec![Vec::new(); m];
         for (ri, r) in rs.iter().enumerate() {
             by_start[r.start - lo].push(ri);
         }
-        let ctx = (self.ctx_prev2(lo), self.ctx_prev(lo));
+        let ctx = (self.ctx_prev3(lo), self.ctx_prev2(lo), self.ctx_prev(lo));
         let mut memo = HashMap::new();
         let Some((_, path)) = self.viterbi(lo, i + 1, &rs, &by_start, ctx, &mut memo) else {
             return Vec::new();
@@ -440,7 +489,9 @@ impl<'e> Stream<'e> {
             let req: Vec<(usize, &str)> = r.outs.iter().enumerate().map(|(j, t)| (k + j, t.as_str())).collect();
             let conf = (total - self.forward(lo, i + 1, &rs, &by_start, ctx, &req, &mut memo)).exp();
             let core = self.words[k].tok.core.to_ascii_lowercase();
-            let known = e.lx.id(&core).is_some() || e.morph_stem(&core).is_some();
+            let typed_known = e.lx.id(&core).is_some();
+            let morph = !typed_known && e.morph_stem(&core).is_some();
+            let known = typed_known || morph;
             let tau = if r.span == 2 {
                 e.cfg.tau_reseg
             } else if known {
@@ -448,7 +499,36 @@ impl<'e> Stream<'e> {
             } else {
                 e.cfg.tau_nonword
             };
-            if conf < tau {
+            // Features for the learned gate (and for training it).
+            let keep_cost = rs.iter().find(|x| x.start == k && x.span == 1 && x.keep).map_or(0.0, |x| x.cost);
+            let n_here = rs.iter().filter(|x| x.start == k && x.span == 1).count();
+            let cand_freq = r.words.first().copied().flatten().map_or(25.0, |w| e.lm3(None, None, w));
+            let feats = crate::decoder::gate_features(&crate::decoder::GateInput {
+                conf,
+                known: typed_known,
+                morph,
+                span2: r.span == 2,
+                newest: k == i,
+                back: i - k,
+                cost: r.cost,
+                keep_cost: if known { 0.0 } else { keep_cost },
+                cand_freq,
+                typed_len: core.len(),
+                split: r.span == 1 && r.words.len() > 1,
+                learned: r.words.len() == 1 && r.words[0].is_none(),
+                n_readings: n_here,
+                capital: self.words[k].sentence_start,
+            });
+            // The learned gate decides non-word fixes. Changing a real word is
+            // the riskiest move there is, so it keeps the strict fixed bar.
+            let apply = match &e.cfg.gate {
+                Some(g) if !known && r.span == 1 => g.prob(&feats) >= g.threshold,
+                _ => conf >= tau,
+            };
+            if let Some(log) = &mut self.log {
+                log.push(super::GateExample { chunk: k, span: r.span, outs: r.outs.clone(), feats, applied: apply });
+            }
+            if !apply {
                 continue;
             }
             for (j, out) in r.outs.iter().enumerate() {

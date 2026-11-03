@@ -2,9 +2,12 @@
 //! arrays and looked up by binary search: compact, fast to load, no hashing.
 //!
 //! File format (little-endian):
-//!   "QKNG1\n", u32 V, V words each followed by '\n', V varint unigram counts,
+//!   "QKNG2\n", u32 V, V words each followed by '\n', V varint unigram counts,
 //!   u32 N2, N2 x (varint key-delta, varint count)   key = a*V + b
 //!   u32 N3, N3 x (varint key-delta, varint count)   key = (a*V + b)*V + c
+//!   u32 N4, N4 x (varint ctx-delta, varint d, varint count)
+//!                                                   ctx = (a*V + b)*V + c, sorted by (ctx, d)
+//! ("QKNG1" files are the same without the 4-gram section.)
 
 use std::collections::HashMap;
 
@@ -16,6 +19,8 @@ pub struct NgramCounts {
     /// Keys in lexicon-id space with V = lexicon size.
     pub bigrams: HashMap<u64, u32>,
     pub trigrams: HashMap<u64, u32>,
+    /// 4-grams over 16-bit lexicon ids: a<<48 | b<<32 | c<<16 | d.
+    pub fourgrams: HashMap<u64, u32>,
 }
 
 pub struct Ngrams {
@@ -27,6 +32,9 @@ pub struct Ngrams {
     bi_counts: Vec<u32>,
     tri_keys: Vec<u64>,
     tri_counts: Vec<u32>,
+    four_ctx: Vec<u64>,
+    four_w: Vec<u32>,
+    four_counts: Vec<u32>,
 }
 
 fn put_varint(out: &mut Vec<u8>, mut x: u64) {
@@ -73,7 +81,7 @@ pub fn write_ngrams(lx: &Lexicon, c: &NgramCounts) -> Vec<u8> {
         }
     }
     let v = vocab.len() as u64;
-    let mut out = b"QKNG1\n".to_vec();
+    let mut out = b"QKNG2\n".to_vec();
     out.extend((v as u32).to_le_bytes());
     for &id in &vocab {
         out.extend(lx.word(id as WordId).as_bytes());
@@ -113,15 +121,37 @@ pub fn write_ngrams(lx: &Lexicon, c: &NgramCounts) -> Vec<u8> {
         put_varint(&mut out, n as u64);
         last = k;
     }
+    let mut four: Vec<(u64, u32, u32)> = c
+        .fourgrams
+        .iter()
+        .filter_map(|(&k, &n)| {
+            let r = |x: u64| {
+                let m = remap[(x & 0xffff) as usize];
+                (m != u32::MAX).then_some(m as u64)
+            };
+            let (a, b, cc, d) = (r(k >> 48)?, r(k >> 32)?, r(k >> 16)?, r(k)?);
+            Some(((a * v + b) * v + cc, d as u32, n))
+        })
+        .collect();
+    four.sort_unstable();
+    out.extend((four.len() as u32).to_le_bytes());
+    let mut last = 0;
+    for (k, d, n) in four {
+        put_varint(&mut out, k - last);
+        put_varint(&mut out, d as u64);
+        put_varint(&mut out, n as u64);
+        last = k;
+    }
     out
 }
 
 impl Ngrams {
     /// Parse the binary file; `id_of` maps a word to its lexicon id.
     pub fn load(bytes: &[u8], lex_len: usize, id_of: impl Fn(&str) -> Option<WordId>) -> Option<Ngrams> {
-        if bytes.len() < 10 || &bytes[..6] != b"QKNG1\n" {
+        if bytes.len() < 10 || !(&bytes[..6] == b"QKNG1\n" || &bytes[..6] == b"QKNG2\n") {
             return None;
         }
+        let v2 = bytes[4] == b'2';
         let mut pos = 6;
         let v = get_u32(bytes, &mut pos) as usize;
         let mut map = vec![u32::MAX; lex_len];
@@ -146,7 +176,21 @@ impl Ngrams {
         };
         let (bi_keys, bi_counts) = read(&mut pos);
         let (tri_keys, tri_counts) = read(&mut pos);
-        Some(Ngrams { map, uni, v: v as u64, bi_keys, bi_counts, tri_keys, tri_counts })
+        let (mut four_ctx, mut four_w, mut four_counts) = (Vec::new(), Vec::new(), Vec::new());
+        if v2 && pos + 4 <= bytes.len() {
+            let n = get_u32(bytes, &mut pos) as usize;
+            four_ctx.reserve(n);
+            four_w.reserve(n);
+            four_counts.reserve(n);
+            let mut k = 0u64;
+            for _ in 0..n {
+                k += get_varint(bytes, &mut pos);
+                four_ctx.push(k);
+                four_w.push(get_varint(bytes, &mut pos) as u32);
+                four_counts.push(get_varint(bytes, &mut pos) as u32);
+            }
+        }
+        Some(Ngrams { map, uni, v: v as u64, bi_keys, bi_counts, tri_keys, tri_counts, four_ctx, four_w, four_counts })
     }
 
     #[inline]
@@ -171,7 +215,18 @@ impl Ngrams {
         self.tri_keys.binary_search(&k).map_or(0, |i| self.tri_counts[i])
     }
 
-    pub fn sizes(&self) -> (usize, usize) {
-        (self.bi_keys.len(), self.tri_keys.len())
+    pub fn fourgram(&self, a: WordId, b: WordId, c: WordId, d: WordId) -> u32 {
+        if self.four_ctx.is_empty() {
+            return 0;
+        }
+        let (Some(a), Some(b), Some(c), Some(d)) = (self.m(a), self.m(b), self.m(c), self.m(d)) else { return 0 };
+        let k = (a * self.v + b) * self.v + c;
+        let lo = self.four_ctx.partition_point(|&x| x < k);
+        let hi = lo + self.four_ctx[lo..].partition_point(|&x| x == k);
+        self.four_w[lo..hi].binary_search(&(d as u32)).map_or(0, |i| self.four_counts[lo + i])
+    }
+
+    pub fn sizes(&self) -> (usize, usize, usize) {
+        (self.bi_keys.len(), self.tri_keys.len(), self.four_ctx.len())
     }
 }

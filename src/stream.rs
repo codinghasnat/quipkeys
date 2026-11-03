@@ -194,8 +194,22 @@ pub struct Edit {
     pub revision: bool,
 }
 
+/// One change the decoder considered (for training the learned gate).
+#[derive(Clone, Debug)]
+pub struct GateExample {
+    pub chunk: usize,
+    pub span: usize,
+    pub outs: Vec<String>,
+    pub feats: Vec<f32>,
+    pub applied: bool,
+}
+
 pub struct Stream<'e> {
     pub engine: &'e Engine,
+    /// When set, every considered change is recorded here.
+    pub log: Option<Vec<GateExample>>,
+    /// Neural re-ranker cache.
+    nn_state: crate::nnlm::NnState,
     pub words: Vec<Word>,
     pub enabled: bool,
     ignore: HashSet<String>,
@@ -212,6 +226,8 @@ impl<'e> Stream<'e> {
     pub fn new(engine: &'e Engine) -> Self {
         Stream {
             engine,
+            log: None,
+            nn_state: Default::default(),
             words: Vec::new(),
             enabled: true,
             ignore: HashSet::new(),
@@ -225,6 +241,23 @@ impl<'e> Stream<'e> {
     /// Index of the last non-empty chunk before `i`.
     fn prev_index(&self, i: usize) -> Option<usize> {
         (0..i).rev().find(|&k| !self.words[k].output.is_empty())
+    }
+
+    /// Context three words back from chunk `i`.
+    fn ctx_prev3(&self, i: usize) -> Option<WordId> {
+        self.ctx_prev2(i)?;
+        let p = self.prev_index(i)?;
+        // If the previous chunk is a split ("the cat"), two of the context
+        // words come from it; otherwise step back one chunk.
+        let out = &self.words[p].output;
+        let parts: Vec<&str> = out.split(' ').collect();
+        if parts.len() >= 3 {
+            return self.id_of(parts[parts.len() - 3]);
+        }
+        if parts.len() == 2 {
+            return self.ctx_prev(p);
+        }
+        self.ctx_prev2(p)
     }
 
     /// Context two words back from chunk `i`.
@@ -353,7 +386,13 @@ impl<'e> Stream<'e> {
             // Special tokens (names, hyphenated, shift slips, "i", "dont") keep
             // their dedicated handling; plain words are decoded jointly.
             if !self.lattice_open(i) {
-                let ctx = Ctx { prev2: self.ctx_prev2(i), prev: self.ctx_prev(i), cache: Some(&cache), ..Default::default() };
+                let ctx = Ctx {
+            prev3: self.ctx_prev3(i),
+            prev2: self.ctx_prev2(i),
+            prev: self.ctx_prev(i),
+            cache: Some(&cache),
+            ..Default::default()
+        };
                 if let Some(e) = self.try_word(i, ctx, None, false) {
                     edits.push(e);
                 }
@@ -365,7 +404,13 @@ impl<'e> Stream<'e> {
         if !reseg.is_empty() {
             return reseg;
         }
-        let ctx = Ctx { prev2: self.ctx_prev2(i), prev: self.ctx_prev(i), cache: Some(&cache), ..Default::default() };
+        let ctx = Ctx {
+            prev3: self.ctx_prev3(i),
+            prev2: self.ctx_prev2(i),
+            prev: self.ctx_prev(i),
+            cache: Some(&cache),
+            ..Default::default()
+        };
         if let Some(e) = self.try_word(i, ctx, None, false) {
             edits.push(e);
         }

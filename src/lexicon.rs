@@ -61,6 +61,9 @@ pub struct LmParams {
     pub k3: f64,
     /// Use corpus trigrams at all.
     pub trigrams: bool,
+    /// Max 4-gram weight and its confidence constant (0 = off).
+    pub lambda4: f64,
+    pub k4: f64,
 }
 
 const UNIGRAMS: &str = include_str!("../data/en_unigrams.txt");
@@ -217,6 +220,23 @@ impl Lexicon {
 
     /// Negative log probability (nats) of `w` after `prev2 prev`.
     /// Interpolated trigram -> bigram -> unigram.
+    /// Negative log probability of `w` after `prev3 prev2 prev`:
+    /// interpolated 4-gram -> trigram -> bigram -> unigram.
+    pub fn cost4(&self, prev3: Option<WordId>, prev2: Option<WordId>, prev: Option<WordId>, w: WordId, p: &LmParams) -> f64 {
+        if let (Some(p3), Some(p2), Some(p1), Some(n)) = (prev3, prev2, prev, &self.ngrams) {
+            if p.lambda4 > 0.0 && p.trigrams {
+                let ctx = n.trigram(p3, p2, p1) as f64;
+                if ctx > 0.0 {
+                    let l4 = p.lambda4 * ctx / (ctx + p.k4);
+                    let p4 = (n.fourgram(p3, p2, p1, w) as f64 / ctx).min(1.0);
+                    let p3g = (-self.cost3(prev2, prev, w, p)).exp();
+                    return -(l4 * p4 + (1.0 - l4) * p3g).ln();
+                }
+            }
+        }
+        self.cost3(prev2, prev, w, p)
+    }
+
     pub fn cost3(&self, prev2: Option<WordId>, prev: Option<WordId>, w: WordId, p: &LmParams) -> f64 {
         let pu = self.unigram_p(w);
         let Some(p1) = prev else { return -pu.ln() };

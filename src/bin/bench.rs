@@ -6,6 +6,7 @@
 //!            [--show N] [--show-left]
 //!   qk-bench --tune [--data data/eval/dev.txt]   grid-search gate parameters
 
+use std::collections::HashMap;
 use std::time::Instant;
 
 use quipkeys::lexicon::Lexicon;
@@ -282,6 +283,112 @@ fn tune(sentences: &[&str], seed: u64) {
     }
 }
 
+/// Collect (features, label, weight) for every change the decoder considers.
+fn gate_examples(e: &Engine, sim: &[Vec<SimToken>]) -> Vec<(Vec<f32>, f32, f32, bool)> {
+    let norm = |x: &str| {
+        let t: String = x.chars().filter(|c| c.is_ascii_alphabetic() || *c == '\'' || *c == ' ').collect::<String>().to_ascii_lowercase();
+        t.split_whitespace().collect::<Vec<_>>().join(" ")
+    };
+    let mut out = Vec::new();
+    for toks in sim {
+        let mut s = Stream::new(e);
+        s.log = Some(Vec::new());
+        for t in toks {
+            s.push(&t.typed, Some(t.times.clone()));
+        }
+        // unit -> (first token, token count)
+        let mut first: HashMap<usize, (usize, usize)> = HashMap::new();
+        for (i, t) in toks.iter().enumerate() {
+            first.entry(t.unit).or_insert((i, 0)).1 += 1;
+        }
+        for ex in s.log.take().unwrap() {
+            let u = toks[ex.chunk].unit;
+            let (f0, n) = first[&u];
+            if f0 != ex.chunk || n != ex.span {
+                continue; // decision doesn't line up with one meaning unit
+            }
+            let intended = norm(&toks[f0].intended);
+            let typed = norm(&toks[f0..f0 + n].iter().map(|t| t.typed.as_str()).collect::<Vec<_>>().join(" "));
+            let new = norm(&ex.outs.join(" "));
+            let clean = typed == intended;
+            let (y, w) = if !clean && new == intended {
+                (1.0, 1.0)
+            } else if clean {
+                (0.0, 4.0)
+            } else {
+                (0.0, 1.5)
+            };
+            out.push((ex.feats, y, w, ex.applied));
+        }
+    }
+    out
+}
+
+/// Weighted logistic regression (full-batch Adam with light L2).
+fn fit_logistic(data: &[(Vec<f32>, f32, f32, bool)]) -> Vec<f32> {
+    let d = data[0].0.len();
+    let mut w = vec![0f32; d];
+    let (mut m, mut v) = (vec![0f32; d], vec![0f32; d]);
+    let wsum: f32 = data.iter().map(|x| x.2).sum();
+    for it in 1..=600 {
+        let mut g = vec![0f32; d];
+        for (x, y, wt, _) in data {
+            let z: f32 = w.iter().zip(x).map(|(a, b)| a * b).sum();
+            let p = 1.0 / (1.0 + (-z).exp());
+            for j in 0..d {
+                g[j] += wt * (p - y) * x[j];
+            }
+        }
+        for j in 0..d {
+            let gj = g[j] / wsum + 1e-4 * w[j];
+            m[j] = 0.9 * m[j] + 0.1 * gj;
+            v[j] = 0.999 * v[j] + 0.001 * gj * gj;
+            let mh = m[j] / (1.0 - 0.9f32.powi(it));
+            let vh = v[j] / (1.0 - 0.999f32.powi(it));
+            w[j] -= 0.05 * mh / (vh.sqrt() + 1e-8);
+        }
+    }
+    w
+}
+
+/// Objective of a set of decisions: +1 fix, -1.5 wrong change, -4 clean word changed.
+fn gate_objective(data: &[(Vec<f32>, f32, f32, bool)], apply: impl Fn(&[f32], bool) -> bool) -> f64 {
+    data.iter()
+        .filter(|(x, _, _, a)| apply(x, *a))
+        .map(|(_, y, w, _)| if *y > 0.5 { 1.0 } else { -(*w as f64) })
+        .sum()
+}
+
+fn train_gate(sentences: &[&str], seed: u64) {
+    let mut cfg = Config::default();
+    cfg.use_gate = false;
+    let e = Engine::new(cfg);
+    let half = sentences.len() / 2;
+    let mut train = Vec::new();
+    let mut valid = Vec::new();
+    for lvl in ["light", "moderate", "messy", "blind"] {
+        let sim = simulate(sentences, lvl, seed);
+        train.extend(gate_examples(&e, &sim[..half]));
+        valid.extend(gate_examples(&e, &sim[half..]));
+        eprintln!("{lvl}: {} train / {} valid examples so far", train.len(), valid.len());
+    }
+    let w = fit_logistic(&train);
+    let g = quipkeys::decoder::Gate { w: w.clone(), threshold: 0.5 };
+    for (name, set) in [("train", &train), ("valid", &valid)] {
+        let fixed = gate_objective(set, |_, a| a);
+        let learned = gate_objective(set, |x, _| g.prob(x) >= 0.5);
+        println!("{name}: objective with fixed thresholds {fixed:.0}, with learned gate {learned:.0}");
+    }
+    let mut txt = String::from("# Learned gate weights (qk-bench --train-gate on dev sentences, all typing levels).\n");
+    for (n, v) in quipkeys::decoder::GATE_FEATURES.iter().zip(&w) {
+        txt.push_str(&format!("{n} {v:.5}\n"));
+        println!("  {n:<14} {v:+.3}");
+    }
+    txt.push_str("threshold 0.5\n");
+    std::fs::write("data/gate.txt", txt).unwrap();
+    println!("wrote data/gate.txt");
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     let get = |k: &str| args.iter().position(|a| a == k).and_then(|i| args.get(i + 1)).cloned();
@@ -304,6 +411,10 @@ fn main() {
     };
     let sentences: Vec<&str> = units.iter().map(String::as_str).collect();
 
+    if args.iter().any(|a| a == "--train-gate") {
+        train_gate(&sentences, seed);
+        return;
+    }
     if args.iter().any(|a| a == "--tune") {
         tune(&sentences, seed);
         return;

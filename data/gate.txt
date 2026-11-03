@@ -1,0 +1,1 @@
+# Learned gate weights (written by qk-bench --train-gate). Empty = use fixed thresholds.

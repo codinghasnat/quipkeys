@@ -21,5 +21,9 @@ path = "src/bin/bench.rs"
 name = "qk-ngrams"
 path = "src/bin/ngrams.rs"
 
+[[bin]]
+name = "qk-tokenize"
+path = "src/bin/tokenize.rs"
+
 [profile.release]
 debug = 1

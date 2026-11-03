@@ -35,6 +35,25 @@ echo "Hellon ice to mee tyou i hopw ypur doimg wel" | ./target/release/qk --expl
 cargo test --release
 ```
 
+## Running it on your Mac
+
+```sh
+# one-time setup
+xcode-select --install                                         # Apple's command-line tools (git, compiler)
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh  # Rust; accept the defaults, then open a new terminal
+git clone https://github.com/codinghasnat/quipkeys && cd quipkeys
+git checkout ccr-9d6287c2-w4on6w                                # the branch with all of this work
+
+cargo test --release                       # behaviour tests (about 1 minute the first time, mostly compiling)
+cargo run --release --bin qk-bench -- --level all              # the scorecard (about 10–20 minutes)
+cargo run --release --bin qk-bench -- --level blind --sentences 300   # a quick 1-minute check
+echo "I wamt to gp to the stpre" | cargo run --release --bin qk -- --explain
+scripts/trainer.sh                         # the typing trainer at http://localhost:8000
+```
+
+Works the same on Apple Silicon and Intel Macs. Numbers will differ slightly from `RESULTS.md`
+(different CPU), but accuracy figures are deterministic.
+
 ## Typing trainer
 
 A practice page that runs the real engine in your browser (WebAssembly, offline):
