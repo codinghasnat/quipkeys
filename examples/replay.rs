@@ -12,6 +12,18 @@ fn main() {
         cfg.channel.timing = false;
         cfg.channel.sub_per_key = 2.0;
     }
+    if let Ok(t) = std::env::var("QK_TAUR") {
+        cfg.tau_realword = t.parse().unwrap();
+        cfg.tau_revise = cfg.tau_realword;
+        cfg.real_word_extra = 0.0;
+    }
+    if let Ok(t) = std::env::var("QK_LOOK") {
+        cfg.nn_lookahead = 1.0;
+        cfg.nn_look_tau = t.parse().unwrap();
+    }
+    if let Ok(w) = std::env::var("QK_NN") {
+        cfg.nn_weight = w.parse().unwrap();
+    }
     match std::env::var("QK_CONFIG").as_deref() {
         Ok("plain") => {
             cfg.channel.geometry = false;

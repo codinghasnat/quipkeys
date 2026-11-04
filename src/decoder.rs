@@ -36,6 +36,13 @@ pub struct Config {
     /// Correctly typed words are never changed either way.
     pub english: u8,
     pub variety_cost: f32,
+    /// Neural look-ahead for real words: two words after a real word is typed,
+    /// try its one-slip alternatives in place and let the neural LM score the
+    /// words that follow (0 = off). `nn_look_tau` is the confidence needed.
+    pub nn_lookahead: f32,
+    pub nn_look_tau: f32,
+    /// Only alternatives within this error cost (one slip) are tried.
+    pub nn_look_max_channel: f32,
     /// Weight of the neural re-ranker on candidate readings (0 = off).
     pub nn_weight: f32,
     /// Learned decision gate (None = fixed confidence thresholds).
@@ -128,6 +135,9 @@ impl Default for Config {
             english: 1,
             variety_cost: 2.5,
             nn_weight: 0.0,
+            nn_lookahead: 0.0,
+            nn_look_tau: 0.95,
+            nn_look_max_channel: 6.5,
             gate: None,
             use_gate: true,
             lattice: true,
@@ -251,7 +261,6 @@ impl Gate {
 }
 
 const GATE: &str = include_str!("../data/gate.txt");
-const NNLM: &[u8] = include_bytes!("../data/en_nnlm.bin");
 
 /// What has been typed so far in this document/session.
 #[derive(Clone, Default, Debug)]
@@ -328,7 +337,14 @@ impl Engine {
         if cfg.use_gate && cfg.gate.is_none() {
             cfg.gate = Gate::parse(GATE);
         }
-        let nn = if cfg.nn_weight > 0.0 { crate::nnlm::NnLm::load(NNLM) } else { None };
+        // The neural LM is experimental and off by default; it is read from
+        // disk (QK_NNLM, or data/en_nnlm.bin) only when switched on.
+        let nn = if cfg.nn_weight > 0.0 || cfg.nn_lookahead > 0.0 {
+            let path = std::env::var("QK_NNLM").unwrap_or_else(|_| "data/en_nnlm.bin".into());
+            std::fs::read(path).ok().and_then(|b| crate::nnlm::NnLm::load(&b))
+        } else {
+            None
+        };
         let mut sp = cfg.channel.clone();
         sp.sub_adjacent = cfg.sloppy_sub_adjacent;
         sp.sub_per_key = cfg.sloppy_sub_per_key;

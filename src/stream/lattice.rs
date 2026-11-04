@@ -375,6 +375,74 @@ impl<'e> Stream<'e> {
         }
     }
 
+    /// Neural look-ahead on chunk `k`, a real word left as typed, using the
+    /// words after it (up to chunk `i`).
+    pub(super) fn nn_lookahead(&mut self, k: usize, i: usize) -> Option<Edit> {
+        let e = self.engine;
+        let nn = e.nn.as_ref()?;
+        if !self.lattice_open(k) || self.words[k].tok.ends_sentence || (k..i).any(|c| self.words[c].tok.ends_sentence) {
+            return None;
+        }
+        let core = self.words[k].tok.core.to_ascii_lowercase();
+        let typed = e.lx.id(&core)?;
+        let vocab_words = nn.vocab - 2;
+        let to_nn = |w: Option<WordId>| match w {
+            Some(id) if (id as usize) < vocab_words => id as u16,
+            _ => nn.unk(),
+        };
+        // One-slip real-word alternatives.
+        let mut cands: Vec<(WordId, f32)> = e
+            .candidates(&core, self.words[k].core_times())
+            .iter()
+            .filter(|c| c.word != typed && c.channel <= e.cfg.nn_look_max_channel && (c.word as usize) < vocab_words)
+            .map(|c| (c.word, c.channel))
+            .collect();
+        cands.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
+        cands.truncate(4);
+        if cands.is_empty() {
+            return None;
+        }
+        let tok_of = |s: &Self, c: usize| -> Vec<u16> {
+            s.words[c].output.split(' ').filter(|p| !p.is_empty()).map(|p| to_nn(e.lx.id(&parse_token(p, true).core.to_ascii_lowercase()))).collect()
+        };
+        let mut prefix = vec![nn.bos()];
+        for c in 0..k {
+            prefix.extend(tok_of(self, c));
+            if self.words[c].tok.ends_sentence {
+                prefix.push(nn.bos());
+            }
+        }
+        let mut after: Vec<u16> = Vec::new();
+        for c in k + 1..=i {
+            after.extend(tok_of(self, c));
+        }
+        let mut st = std::mem::take(&mut self.nn_state);
+        nn.sync(&mut st, &prefix);
+        let score = |w: u16| {
+            let mut seq = vec![w];
+            seq.extend(&after);
+            nn.seq_logprob(&st, &seq)
+        };
+        // cost = channel + real-word extra - LM log-prob of (word + what follows)
+        let mut hyps: Vec<(Option<WordId>, f32)> = vec![(None, -score(to_nn(Some(typed))))];
+        for &(w, ch) in &cands {
+            hyps.push((Some(w), ch + e.cfg.real_word_extra - score(to_nn(Some(w)))));
+        }
+        self.nn_state = st;
+        let min = hyps.iter().map(|h| h.1).fold(f32::INFINITY, f32::min);
+        let z: f32 = hyps.iter().map(|h| (min - h.1).exp()).sum();
+        let (best, bs) = *hyps.iter().min_by(|a, b| a.1.partial_cmp(&b.1).unwrap()).unwrap();
+        let conf = (min - bs).exp() / z;
+        let w = best?;
+        if conf < e.cfg.nn_look_tau {
+            return None;
+        }
+        let wd = &self.words[k];
+        let new = format!("{}{}{}", wd.tok.lead, recase_lx(&e.lx, e.lx.word(w), wd.capital()), wd.tok.trail);
+        let old = self.set_output(k, new.clone());
+        Some(Edit { index: k, old, new, confidence: conf, revision: true })
+    }
+
     /// Sum over all paths (forward algorithm, beam-pruned) whose text at the
     /// chunks in `req` equals the required text. Returns -ln(total probability).
     #[allow(clippy::too_many_arguments)]

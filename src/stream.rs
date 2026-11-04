@@ -516,6 +516,12 @@ impl<'e> Stream<'e> {
                 }
             }
             edits.extend(self.lattice_step(i));
+            // Two words after a real word, let the neural LM judge it with what follows.
+            if self.engine.cfg.nn_lookahead > 0.0 && i >= 2 {
+                if let Some(e) = self.nn_lookahead(i - 2, i) {
+                    edits.push(e);
+                }
+            }
             return edits;
         }
         let reseg = self.try_boundary(i);

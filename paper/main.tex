@@ -294,7 +294,7 @@ Median latency is 0.5--1.2~ms per word, and the 99th percentile is 3--10~ms, the
 \begin{itemize}
 \item \textbf{4-grams.} Adding 6.6M 4-grams from the same 1.4B words gave no gain and more false corrections. They were dropped.
 \item \textbf{A learned decision gate.} A logistic model over 18 decision features, trained with the evaluation's cost weights, improved its training objective. On the benchmark it raised false corrections enough to cancel the gain; restricted to non-word decisions it was roughly neutral, so it was not adopted.
-\item \textbf{A tiny neural language model.} A 4.6M-parameter transformer trained for an hour on CPU (perplexity about 200) more than doubled real-word fixes but cost 4--6 points overall and was 5$\times$ slower. A GPU-trained model remains future work; the training pipeline and an int8 Rust inference engine are in place.
+\item \textbf{A neural language model.} A 23M-parameter word-level transformer trained for 3~hours on an RTX~2060 (400M words, validation perplexity 59) was used in two ways: as a left-context re-ranker of each chunk's readings, and as a look-ahead that rescores a real word's one-slip alternatives with the words that follow. On simulated typing it doubled real-word fixes (8\% to 17\%) but cost about a point overall, added false corrections, and was too slow (18~ms per word median in our unoptimised inference). On the participant's real typing it changed nothing: the words after a real-word slip are often misspelled themselves, and with a prior of about 7~nats against a one-slip real-word error, 2--4~nats of language-model evidence (e.g.\ \ttw{ate fat too much} vs.\ \ttw{far}) is correctly not enough. It is off by default.
 \item \textbf{A document word cache} reinforced uncorrected slips and was replaced by learning only words typed identically twice.
 \item \textbf{Dictionary hygiene matters.} A rule meant to admit UK/US variant pairs (\ttw{enrolment} and \ttw{enrollment}) also admitted 364 web misspellings (\ttw{actualy}, \ttw{realy}, \ttw{allready}), which the engine then treated as words. Real variants are within about 10$\times$ of each other in frequency; misspellings are 300--3000$\times$ rarer than the word they misspell. A frequency-ratio filter separates them cleanly. The participant's own typing (\ttw{actyaly}) exposed this bug, which the simulator never could.
 \end{itemize}
@@ -317,7 +317,7 @@ The next steps are:
 \begin{itemize}
 \item measuring careful-typing and operating-system-autocorrect baselines on the same participant;
 \item recruiting more typists, including people with motor impairments, for whom imprecision is not a choice;
-\item a GPU-trained neural re-ranker for real-word slips;
+\item stronger evidence for real-word slips, from longer look-ahead or a larger model;
 \item learning each user's error profile online;
 \item input-method integration on Windows and macOS.
 \end{itemize}

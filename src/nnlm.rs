@@ -9,6 +9,26 @@ pub struct QMat {
     cols: usize,
     scale: Vec<f32>,
     q: Vec<i8>,
+    /// Dequantised copy for the per-token layer matrices (fast path).
+    f: Vec<f32>,
+}
+
+/// Dot product with 8 independent accumulators so it vectorises.
+#[inline]
+fn dot(a: &[f32], b: &[f32]) -> f32 {
+    let mut acc = [0f32; 8];
+    let (ca, cb) = (a.chunks_exact(8), b.chunks_exact(8));
+    let (ra, rb) = (ca.remainder(), cb.remainder());
+    for (x, y) in ca.zip(cb) {
+        for k in 0..8 {
+            acc[k] += x[k] * y[k];
+        }
+    }
+    let mut s: f32 = acc.iter().sum();
+    for (x, y) in ra.iter().zip(rb) {
+        s += x * y;
+    }
+    s
 }
 
 impl QMat {
@@ -16,13 +36,12 @@ impl QMat {
     fn matvec(&self, x: &[f32], bias: &[f32], y: &mut Vec<f32>) {
         y.clear();
         for r in 0..self.rows {
-            let row = &self.q[r * self.cols..(r + 1) * self.cols];
-            let mut acc = 0f32;
-            for (a, b) in row.iter().zip(x) {
-                acc += *a as f32 * b;
-            }
-            y.push(acc * self.scale[r] + bias[r]);
+            y.push(dot(&self.f[r * self.cols..(r + 1) * self.cols], x) + bias[r]);
         }
+    }
+
+    fn dequantise(&mut self) {
+        self.f = (0..self.rows * self.cols).map(|i| self.q[i] as f32 * self.scale[i / self.cols]).collect();
     }
 
     fn row_dot(&self, r: usize, x: &[f32]) -> f32 {
@@ -90,7 +109,7 @@ impl Reader<'_> {
         let scale = self.f32s(rows);
         let q = self.b[self.pos..self.pos + rows * cols].iter().map(|&x| x as i8).collect();
         self.pos += rows * cols;
-        QMat { rows, cols, scale, q }
+        QMat { rows, cols, scale, q, f: Vec::new() }
     }
 }
 
@@ -118,11 +137,14 @@ impl NnLm {
         let mut blocks = Vec::new();
         for _ in 0..layers {
             let ln1 = (r.f32s(d), r.f32s(d));
-            let qkv = (r.qmat(3 * d, d), r.f32s(3 * d));
-            let proj = (r.qmat(d, d), r.f32s(d));
+            let mut qkv = (r.qmat(3 * d, d), r.f32s(3 * d));
+            let mut proj = (r.qmat(d, d), r.f32s(d));
             let ln2 = (r.f32s(d), r.f32s(d));
-            let fc1 = (r.qmat(4 * d, d), r.f32s(4 * d));
-            let fc2 = (r.qmat(d, 4 * d), r.f32s(d));
+            let mut fc1 = (r.qmat(4 * d, d), r.f32s(4 * d));
+            let mut fc2 = (r.qmat(d, 4 * d), r.f32s(d));
+            for m in [&mut qkv.0, &mut proj.0, &mut fc1.0, &mut fc2.0] {
+                m.dequantise();
+            }
             blocks.push(Block { ln1, qkv, proj, ln2, fc1, fc2 });
         }
         let lnf = (r.f32s(d), r.f32s(d));
@@ -162,10 +184,7 @@ impl NnLm {
             for hh in 0..h {
                 let qh = &q[hh * hd..(hh + 1) * hd];
                 let mut w: Vec<f32> = (0..n)
-                    .map(|j| {
-                        let kj = &st.k[l][j * d + hh * hd..j * d + (hh + 1) * hd];
-                        qh.iter().zip(kj).map(|(a, b)| a * b).sum::<f32>() / (hd as f32).sqrt()
-                    })
+                    .map(|j| dot(qh, &st.k[l][j * d + hh * hd..j * d + (hh + 1) * hd]) / (hd as f32).sqrt())
                     .collect();
                 let m = w.iter().cloned().fold(f32::MIN, f32::max);
                 let mut z = 0.0;
@@ -223,6 +242,23 @@ impl NnLm {
         for &t in &all[from..] {
             self.step(st, t);
         }
+    }
+
+    /// log P(tokens | state), with a full softmax at each position. Expensive
+    /// (a pass over the whole vocabulary per token); used only to rescore a
+    /// few ambiguous candidates with the words that follow them.
+    pub fn seq_logprob(&self, st: &NnState, tokens: &[u16]) -> f32 {
+        let mut s = st.clone();
+        let mut total = 0f32;
+        for &t in tokens {
+            let Some(h) = s.hidden.last() else { return f32::NEG_INFINITY };
+            let logits: Vec<f32> = (0..self.vocab).map(|r| self.tok.row_dot(r, h)).collect();
+            let m = logits.iter().cloned().fold(f32::MIN, f32::max);
+            let lse = m + logits.iter().map(|l| (l - m).exp()).sum::<f32>().ln();
+            total += logits[t as usize] - lse;
+            self.step(&mut s, t);
+        }
+        total
     }
 
     /// Logit of `tok` coming next after the state's last token.
