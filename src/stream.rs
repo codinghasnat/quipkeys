@@ -16,7 +16,7 @@
 use std::collections::HashSet;
 
 use std::collections::HashMap;
-use std::rc::Rc;
+use std::sync::Arc;
 
 use crate::decoder::{Ctx, DocCache, Engine};
 
@@ -218,7 +218,7 @@ pub struct Stream<'e> {
     pub enabled: bool,
     ignore: HashSet<String>,
     /// Document memory: word counts so far and words learned this session.
-    cache: Rc<DocCache>,
+    cache: Arc<DocCache>,
     /// Dictionary ids currently counted in the cache for each chunk.
     counted: Vec<Vec<crate::lexicon::WordId>>,
     /// Unknown words left exactly as typed, by count.
@@ -243,7 +243,7 @@ impl<'e> Stream<'e> {
             words: Vec::new(),
             enabled: true,
             ignore: HashSet::new(),
-            cache: Rc::new(DocCache::default()),
+            cache: Arc::new(DocCache::default()),
             counted: Vec::new(),
             typed_oov: HashMap::new(),
             learned_upto: 0,
@@ -451,7 +451,7 @@ impl<'e> Stream<'e> {
         let n = self.words.len();
         self.counted.resize(n, Vec::new());
         let lx = &self.engine.lx;
-        let cache = Rc::make_mut(&mut self.cache);
+        let cache = Arc::make_mut(&mut self.cache);
         // Only the last few chunks can still change (look-backs, boundary repair).
         for k in n.saturating_sub(4)..n {
             let now: Vec<_> = self.words[k]
@@ -865,7 +865,7 @@ impl<'e> Stream<'e> {
         self.ignore.insert(w.typed.to_ascii_lowercase());
         // An undo is the strongest signal there is: learn the word.
         if self.engine.lx.id(&lower).is_none() && lower.bytes().all(|c| c.is_ascii_lowercase()) {
-            Rc::make_mut(&mut self.cache).learned.push((lower, 2));
+            Arc::make_mut(&mut self.cache).learned.push((lower, 2));
         }
         let new = w.typed.clone();
         self.words[index].out_id = self.id_of(&new);

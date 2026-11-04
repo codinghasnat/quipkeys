@@ -54,6 +54,12 @@ scripts/trainer.sh                         # the typing trainer at http://localh
 Works the same on Apple Silicon and Intel Macs. Numbers will differ slightly from `RESULTS.md`
 (different CPU), but accuracy figures are deterministic.
 
+## Background app (Windows + macOS)
+
+`app/` holds a background app that corrects as you type in any program
+(toggle: Ctrl+Alt+Q / Ctrl+Option+Q; Backspace right after a fix undoes it).
+Build it with `cd app && cargo build --release`; see [app/README.md](app/README.md).
+
 ## Typing trainer
 
 A practice page that runs the real engine in your browser (WebAssembly, offline):

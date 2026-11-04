@@ -1,0 +1,28 @@
+[package]
+name = "quipkeys-app"
+version = "0.1.0"
+edition = "2021"
+description = "QuipKeys background app: system-wide correction on Windows and macOS"
+
+[[bin]]
+name = "quipkeys"
+path = "src/main.rs"
+
+[dependencies]
+quipkeys = { path = ".." }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = [
+  "Win32_Foundation",
+  "Win32_UI_WindowsAndMessaging",
+  "Win32_UI_Input_KeyboardAndMouse",
+  "Win32_UI_TextServices",
+  "Win32_System_Threading",
+  "Win32_System_LibraryLoader",
+] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+libc = "0.2"
+
+[profile.release]
+debug = 0
