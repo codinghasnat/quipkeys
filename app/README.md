@@ -12,30 +12,54 @@ in, at the moment you press space.
 Everything runs offline. The dictionary and language model are built into the
 binary, so it's one file of about 70 MB that starts in about half a second.
 
-## Build
+It lives in the system tray (Windows) or menu bar (macOS). Click the icon to
+pause it, skip the app you're in, turn on start at login, or quit. On first
+run a short welcome window explains what it does and how private it is. On
+macOS it also walks you through the one permission it needs.
 
-You need Rust (https://rustup.rs). From this folder:
+## Private by design
+
+- Everything runs on your computer. It works with no internet connection, and
+  QuipKeys never connects to the internet.
+- What you type is held in memory only, for the last few words. It's
+  forgotten on Enter, a click or an app switch, and never written to disk.
+- The only files it writes are `quipkeys-settings.txt` (whether you've seen
+  the welcome screen) and `quipkeys-exclude.txt` (apps to skip). These live
+  next to `quipkeys.exe` on Windows (or in `%APPDATA%\QuipKeys` if that folder
+  isn't writable), and in `~/Library/Application Support/QuipKeys` on macOS.
+
+## Build and run: Windows
+
+You need Rust (https://rustup.rs). In this folder:
 
 ```
 cargo build --release
+target\release\quipkeys.exe
 ```
 
-The binary is `target/release/quipkeys` (`quipkeys.exe` on Windows).
+The release build has no console window; look for the blue Q in the tray. It
+needs the WebView2 runtime for the welcome window, which is built into
+Windows 10 (recent updates) and 11. It can't correct inside apps running as
+administrator unless QuipKeys itself does.
 
-## Run
+## Build and run: macOS
 
-**Windows:** run `target\release\quipkeys.exe`. No admin rights needed. It
-can't correct inside apps running as administrator (Windows blocks that)
-unless QuipKeys itself runs as administrator.
+```
+sh macos/make-app.sh
+open dist/QuipKeys.app
+```
 
-**macOS:** run `./target/release/quipkeys` from Terminal. The first time, macOS
-blocks it. Open System Settings › Privacy & Security, and under both
-**Accessibility** and **Input Monitoring** add the app you ran it from
-(Terminal, iTerm…). Switch it on, then start QuipKeys again.
+That builds `dist/QuipKeys.app`, a menu-bar app with no Dock icon. Drag it
+into Applications. The welcome window asks for **Accessibility** permission
+(System Settings › Privacy & Security › Accessibility). QuipKeys starts working
+the moment it's switched on.
 
-To start it at login:
-- **Windows:** put a shortcut to the exe in `shell:startup`.
-- **macOS:** add it under System Settings › General › Login Items.
+The app is signed ad hoc, so macOS may forget the permission after a rebuild.
+If corrections stop, switch QuipKeys off and on again in that list.
+
+**Start at login** (tray/menu option, or the checkbox at the end of the welcome
+window) uses the registry `Run` key on Windows and a LaunchAgent in
+`~/Library/LaunchAgents` on macOS.
 
 ## How it works
 
@@ -54,9 +78,9 @@ back at most 6 words, and only for boundary repairs ("mee tyou" → "meet you").
 
 ## Excluded apps
 
-To override the default list, put a `quipkeys-exclude.txt` next to the
-binary. It takes one executable name per line, in lower case; lines starting
-with `#` are comments.
+**Don't correct in …** in the tray/menu skips the app you last typed in.
+**Edit excluded apps…** opens the full list. It takes one program name per
+line, in lower case.
 
 Default list:
 - **Windows:** cmd, powershell, Windows Terminal, VS Code, Visual Studio,
@@ -64,6 +88,9 @@ Default list:
 - **macOS:** Terminal, iTerm2, Alacritty, kitty, WezTerm, Warp, Ghostty, VS
   Code, Cursor, Zed, Xcode, JetBrains IDEs, 1Password, Bitwarden, Keychain
   Access…
+
+Password fields are always skipped: on macOS automatically, on Windows for
+standard password boxes.
 
 ## Known limits
 

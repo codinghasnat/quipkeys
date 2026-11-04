@@ -7,20 +7,24 @@
 //! * when a word needs fixing the space is swallowed and a worker thread types
 //!   the fix; the user's plain keys are held back meanwhile and replayed in
 //!   order afterwards;
-//! * terminals, code editors and password managers are excluded (configurable
-//!   in `quipkeys-exclude.txt` next to the binary). Password fields turn on
+//! * terminals, code editors and password managers are excluded (the list
+//!   lives in `quipkeys-exclude.txt`, see settings.rs). Password fields turn on
 //!   macOS "secure input", which hides keys from every event tap, so they are
 //!   skipped automatically.
 //!
-//! Needs permission: System Settings > Privacy & Security > Accessibility (and
-//! Input Monitoring) for the terminal or app that runs QuipKeys.
+//! Needs permission: System Settings > Privacy & Security > Accessibility.
+//! The tap runs on its own thread; until permission is granted that thread
+//! retries every second, so QuipKeys starts working the moment it's allowed.
 
 use std::collections::VecDeque;
 use std::ffi::c_void;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Condvar, Mutex, OnceLock};
 use std::time::Instant;
 
 use crate::core::{Action, Core, Key};
+use crate::settings;
+use crate::ui::{notify, UiEvent};
 
 type CFTypeRef = *const c_void;
 type CGEventRef = *mut c_void;
@@ -41,6 +45,8 @@ extern "C" {
     fn CGEventCreateKeyboardEvent(source: *const c_void, keycode: u16, down: bool) -> CGEventRef;
     fn CGEventPost(tap: u32, ev: CGEventRef);
     fn AXIsProcessTrusted() -> bool;
+    fn AXIsProcessTrustedWithOptions(options: CFTypeRef) -> bool;
+    static kAXTrustedCheckOptionPrompt: CFTypeRef;
 }
 
 #[link(name = "CoreFoundation", kind = "framework")]
@@ -51,6 +57,17 @@ extern "C" {
     fn CFRunLoopAddSource(rl: *mut c_void, source: *mut c_void, mode: CFTypeRef);
     fn CFRunLoopRun();
     fn CFRelease(cf: CFTypeRef);
+    static kCFBooleanTrue: CFTypeRef;
+    static kCFTypeDictionaryKeyCallBacks: u8;
+    static kCFTypeDictionaryValueCallBacks: u8;
+    fn CFDictionaryCreate(
+        alloc: CFTypeRef,
+        keys: *const CFTypeRef,
+        values: *const CFTypeRef,
+        n: isize,
+        key_cb: *const u8,
+        value_cb: *const u8,
+    ) -> CFTypeRef;
 }
 
 // Event types and fields (CGEventTypes.h).
@@ -96,6 +113,8 @@ struct Shared {
     jobs: VecDeque<Job>,
     last_pid: i64,
     excluded: bool,
+    /// Exclusion-list generation `excluded` was computed for.
+    gen: u32,
 }
 
 struct Tap(CFMachPortRef);
@@ -104,55 +123,89 @@ unsafe impl Sync for Tap {}
 
 static CORE: OnceLock<Mutex<Core>> = OnceLock::new();
 static SHARED: OnceLock<(Mutex<Shared>, Condvar)> = OnceLock::new();
-static EXCLUDE: OnceLock<Vec<String>> = OnceLock::new();
 static TAP: OnceLock<Tap> = OnceLock::new();
 static START: OnceLock<Instant> = OnceLock::new();
+static RUNNING: AtomicBool = AtomicBool::new(false);
 
 /// Executable names (lower case) where QuipKeys stays out of the way.
-const DEFAULT_EXCLUDE: &[&str] = &[
+pub const DEFAULT_EXCLUDE: &[&str] = &[
     "terminal", "iterm2", "alacritty", "kitty", "wezterm-gui", "warp", "stable", "ghostty", "hyper", "tabby",
     "code", "code - insiders", "cursor", "windsurf", "zed", "xcode", "sublime_text", "idea", "pycharm", "webstorm",
     "clion", "rider", "goland", "android studio", "nvim", "neovide", "macvim", "emacs",
     "1password", "1password 7", "bitwarden", "keychain access", "keepassxc", "lastpass", "loginwindow",
 ];
 
-pub fn run(core: Core) {
+pub fn start(core: Core) {
     START.set(Instant::now()).ok();
     CORE.set(Mutex::new(core)).ok();
     SHARED
-        .set((Mutex::new(Shared { busy: false, jobs: VecDeque::new(), last_pid: -1, excluded: false }), Condvar::new()))
+        .set((Mutex::new(Shared { busy: false, jobs: VecDeque::new(), last_pid: -1, excluded: false, gen: u32::MAX }), Condvar::new()))
         .ok();
-    EXCLUDE.set(load_exclusions()).ok();
-    unsafe {
-        if !AXIsProcessTrusted() {
-            eprintln!(
-                "QuipKeys: needs permission. Open System Settings > Privacy & Security > Accessibility\n\
-                 (and Input Monitoring), add the app you ran this from (e.g. Terminal), switch it on,\n\
-                 then start QuipKeys again."
-            );
-        }
+    std::thread::spawn(worker);
+    std::thread::spawn(|| unsafe {
         let mask = (1u64 << KEY_DOWN) | (1 << LEFT_MOUSE_DOWN) | (1 << RIGHT_MOUSE_DOWN) | (1 << OTHER_MOUSE_DOWN);
-        let tap = CGEventTapCreate(ANNOTATED_SESSION_TAP, HEAD_INSERT, 0, mask, callback, std::ptr::null_mut());
-        if tap.is_null() {
-            eprintln!("QuipKeys: could not create the event tap (permission missing?).");
-            return;
-        }
+        // Wait for permission (the welcome window walks the user through it).
+        let tap = loop {
+            let tap = CGEventTapCreate(ANNOTATED_SESSION_TAP, HEAD_INSERT, 0, mask, callback, std::ptr::null_mut());
+            if !tap.is_null() {
+                break tap;
+            }
+            std::thread::sleep(std::time::Duration::from_secs(1));
+        };
         TAP.set(Tap(tap)).ok();
-        std::thread::spawn(worker);
         let source = CFMachPortCreateRunLoopSource(std::ptr::null(), tap, 0);
         CFRunLoopAddSource(CFRunLoopGetCurrent(), source, kCFRunLoopCommonModes);
         CGEventTapEnable(tap, true);
-        eprintln!("QuipKeys: running. Ctrl+C here to quit.");
+        RUNNING.store(true, Ordering::Relaxed);
+        notify(UiEvent::Running);
         CFRunLoopRun();
+    });
+}
+
+/// Is QuipKeys allowed to watch and type (Accessibility), and running?
+pub fn has_permission() -> bool {
+    RUNNING.load(Ordering::Relaxed) || unsafe { AXIsProcessTrusted() }
+}
+
+/// Show the system "allow QuipKeys to control this computer" prompt, which
+/// also adds QuipKeys to the Accessibility list, then open that list.
+pub fn request_permission() {
+    unsafe {
+        let keys = [kAXTrustedCheckOptionPrompt];
+        let values = [kCFBooleanTrue];
+        let opts = CFDictionaryCreate(
+            std::ptr::null(),
+            keys.as_ptr(),
+            values.as_ptr(),
+            1,
+            &kCFTypeDictionaryKeyCallBacks,
+            &kCFTypeDictionaryValueCallBacks,
+        );
+        AXIsProcessTrustedWithOptions(opts);
+        if !opts.is_null() {
+            CFRelease(opts);
+        }
+    }
+    settings::open("x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility");
+}
+
+/// Switch correction on or off (from the menu).
+pub fn set_enabled(on: bool) {
+    let mut core = CORE.get().unwrap().lock().unwrap();
+    if core.enabled != on {
+        core.on_key(Key::Toggle);
     }
 }
 
-fn load_exclusions() -> Vec<String> {
-    let path = std::env::current_exe().ok().and_then(|p| p.parent().map(|d| d.join("quipkeys-exclude.txt")));
-    match path.and_then(|p| std::fs::read_to_string(p).ok()) {
-        Some(text) => text.lines().map(|l| l.trim().to_lowercase()).filter(|l| !l.is_empty() && !l.starts_with('#')).collect(),
-        None => DEFAULT_EXCLUDE.iter().map(|s| s.to_string()).collect(),
+/// Run a key through the core; report toggles to the menu.
+fn feed(key: Key) -> Action {
+    let toggle = key == Key::Toggle;
+    let mut core = CORE.get().unwrap().lock().unwrap();
+    let action = core.on_key(key);
+    if toggle {
+        notify(UiEvent::Enabled(core.enabled));
     }
+    action
 }
 
 /// Lower-case executable name of a process.
@@ -223,20 +276,28 @@ unsafe extern "C" fn callback(_proxy: CGEventTapProxy, ty: u32, ev: CGEventRef, 
         if sh.busy {
             sh.jobs.push_back(Job::Reset);
         } else {
-            CORE.get().unwrap().lock().unwrap().on_key(Key::Reset);
+            feed(Key::Reset);
         }
         return ev;
     }
     // Focus moved to another app?
     let pid = CGEventGetIntegerValueField(ev, FIELD_TARGET_PID);
-    if pid > 0 && pid != sh.last_pid {
+    let gen = settings::EXCLUDE_GEN.load(Ordering::Relaxed);
+    if pid > 0 && (pid != sh.last_pid || gen != sh.gen) {
+        let moved = pid != sh.last_pid;
         sh.last_pid = pid;
+        sh.gen = gen;
         let name = process_name(pid);
-        sh.excluded = EXCLUDE.get().unwrap().contains(&name);
-        if sh.busy {
-            sh.jobs.push_back(Job::Reset);
-        } else {
-            CORE.get().unwrap().lock().unwrap().on_key(Key::Reset);
+        sh.excluded = settings::is_excluded(&name);
+        if moved {
+            if pid != std::process::id() as i64 {
+                notify(UiEvent::App(name));
+            }
+            if sh.busy {
+                sh.jobs.push_back(Job::Reset);
+            } else {
+                feed(Key::Reset);
+            }
         }
     }
     let key = translate(ev);
@@ -255,7 +316,7 @@ unsafe extern "C" fn callback(_proxy: CGEventTapProxy, ty: u32, ev: CGEventRef, 
             }
         };
     }
-    let action = CORE.get().unwrap().lock().unwrap().on_key(key);
+    let action = feed(key);
     match action {
         Action::Pass => ev,
         Action::Swallow => std::ptr::null_mut(),
@@ -284,10 +345,10 @@ fn worker() {
         match job {
             Job::Fix(n, text) => type_fix(n, &text),
             Job::Reset => {
-                CORE.get().unwrap().lock().unwrap().on_key(Key::Reset);
+                feed(Key::Reset);
             }
             Job::Held(key) => {
-                let action = CORE.get().unwrap().lock().unwrap().on_key(key.clone());
+                let action = feed(key.clone());
                 match action {
                     Action::Pass => replay(&key),
                     Action::Replace { backspaces, text } => type_fix(backspaces, &text),

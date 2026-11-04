@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Welcome to QuipKeys</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --card: #ffffff; --text: #16181d; --muted: #5d6470; --line: #e3e6ea;
+    --accent: #3b6cf6; --accent-text: #ffffff; --soft: #eef2fe; --good: #1f9d55; --key: #f1f3f5;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #121418; --card: #1b1e24; --text: #eceef1; --muted: #9aa2ad; --line: #2c3038;
+      --accent: #6b8ffa; --accent-text: #0d1020; --soft: #222a3d; --good: #3ecf7a; --key: #262a31;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: var(--bg); color: var(--text);
+    font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    -webkit-user-select: none; user-select: none; cursor: default;
+    display: flex; flex-direction: column;
+  }
+  main { flex: 1; padding: 34px 40px 0; overflow: auto; }
+  .step { display: none; animation: in .25s ease; }
+  .step.on { display: block; }
+  @keyframes in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+  .logo { width: 56px; height: 56px; border-radius: 14px; background: var(--accent);
+          display: grid; place-items: center; margin-bottom: 18px; }
+  .logo svg { width: 34px; height: 34px; }
+  h1 { font-size: 25px; line-height: 1.2; margin: 0 0 10px; letter-spacing: -0.01em; }
+  p { margin: 0 0 14px; color: var(--muted); }
+  p.lead { font-size: 16px; color: var(--text); }
+  .demo { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; margin: 18px 0; }
+  .demo .row { display: flex; gap: 10px; align-items: baseline; font-size: 15px; }
+  .demo .row + .row { margin-top: 6px; }
+  .demo .tag { width: 76px; flex: none; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+  .typo { text-decoration: underline wavy #e5484d; text-underline-offset: 3px; }
+  .fix { color: var(--good); font-weight: 600; }
+  .list { display: grid; gap: 10px; margin: 18px 0 8px; }
+  .item { display: flex; gap: 14px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; }
+  .item svg { flex: none; width: 22px; height: 22px; margin-top: 2px; color: var(--accent); }
+  .item b { display: block; font-weight: 600; margin-bottom: 2px; }
+  .item span { color: var(--muted); font-size: 14px; }
+  .note { font-size: 13px; color: var(--muted); }
+  a { color: var(--accent); text-decoration: none; cursor: pointer; }
+  a:hover { text-decoration: underline; }
+  .keys { display: grid; gap: 12px; margin: 18px 0; }
+  .k { display: flex; align-items: center; gap: 14px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; }
+  .k .caps { flex: none; min-width: 128px; display: flex; gap: 4px; }
+  kbd { font: 600 12px/1 inherit; font-family: inherit; background: var(--key); border: 1px solid var(--line);
+        border-bottom-width: 2px; border-radius: 6px; padding: 6px 8px; color: var(--text); }
+  .k span { color: var(--muted); font-size: 14px; }
+  .k b { color: var(--text); font-weight: 600; }
+  .perm { display: flex; align-items: center; gap: 12px; margin: 20px 0; }
+  .pill { font-size: 13px; padding: 4px 10px; border-radius: 99px; background: var(--soft); color: var(--muted); }
+  .pill.ok { color: var(--good); }
+  textarea { width: 100%; height: 108px; resize: none; border-radius: 12px; border: 1px solid var(--line);
+             background: var(--card); color: var(--text); padding: 12px 14px; font: 16px/1.5 inherit; font-family: inherit;
+             -webkit-user-select: text; user-select: text; outline: none; }
+  textarea:focus { border-color: var(--accent); }
+  label.check { display: flex; gap: 10px; align-items: center; margin: 16px 0 0; color: var(--text); }
+  label.check input { width: 16px; height: 16px; accent-color: var(--accent); }
+  footer { display: flex; align-items: center; justify-content: space-between; padding: 18px 40px 26px; }
+  .dots { display: flex; gap: 6px; }
+  .dots i { width: 7px; height: 7px; border-radius: 50%; background: var(--line); transition: background .2s, width .2s; }
+  .dots i.on { background: var(--accent); width: 18px; border-radius: 4px; }
+  .btns { display: flex; gap: 8px; }
+  button { font: 600 14px/1 inherit; font-family: inherit; border-radius: 9px; padding: 11px 18px; border: 1px solid var(--line);
+           background: var(--card); color: var(--text); cursor: pointer; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+  button:disabled { opacity: .45; cursor: default; }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+<main>
+  <section class="step" data-step="welcome">
+    <div class="logo"><svg viewBox="0 0 34 34" fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round"><circle cx="15" cy="15" r="9.5"/><path d="M17.5 17.5l9.5 9.5"/></svg></div>
+    <h1>Type fast. Stop fixing typos.</h1>
+    <p class="lead">Each time you press space, QuipKeys checks the word you just typed and quietly fixes the slip.</p>
+    <div class="demo">
+      <div class="row"><div class="tag">You type</div><div>I <span class="typo">wamt</span> to <span class="typo">gp</span> to the <span class="typo">stpre</span></div></div>
+      <div class="row"><div class="tag">You get</div><div>I <span class="fix">want</span> to <span class="fix">go</span> to the <span class="fix">store</span></div></div>
+    </div>
+    <p>It fixes neighbouring keys, swapped letters, doubled or missing letters, and spaces in the wrong place. When it isn't sure what you meant, it leaves your word alone.</p>
+  </section>
+
+  <section class="step" data-step="privacy">
+    <h1>Private by design</h1>
+    <p>A tool that sees your keyboard has to earn your trust. Here's exactly what QuipKeys does and doesn't do.</p>
+    <div class="list">
+      <div class="item">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg>
+        <div><b>Everything runs on this computer</b><span>The dictionary and language model are built into the app. It works the same with no internet connection.</span></div>
+      </div>
+      <div class="item">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M10 11v6M14 11v6M5 7l1 13h12l1-13M9 7V4h6v3"/></svg>
+        <div><b>Nothing you type is kept</b><span>It only looks at the last few words, in memory, and forgets them when you press Enter, click or switch apps. Your typing is never saved to disk.</span></div>
+      </div>
+      <div class="item">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M5.6 5.6l12.8 12.8"/></svg>
+        <div><b>Nothing is sent anywhere</b><span>No account, no analytics, no tracking. QuipKeys never connects to the internet.</span></div>
+      </div>
+      <div class="item">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 7l-5 5 5 5M16 7l5 5-5 5"/></svg>
+        <div><b>Open source</b><span>Every line of code is public, so anyone can check these promises. <a data-open="https://github.com/codinghasnat/quipkeys">See the code</a></span></div>
+      </div>
+    </div>
+    <p class="note">It also stays out of password fields, terminals, code editors and password managers.</p>
+  </section>
+
+  <section class="step" data-step="use">
+    <h1>Three keys to know</h1>
+    <p>There's nothing to learn. Type the way you normally do.</p>
+    <div class="keys">
+      <div class="k"><div class="caps"><kbd>space</kbd></div><span><b>Fixes the word you just typed.</b> The correction appears as the space does.</span></div>
+      <div class="k"><div class="caps"><kbd>⌫ Backspace</kbd></div><span><b>Undoes a fix</b> if you press it straight after one. QuipKeys then leaves that spelling alone.</span></div>
+      <div class="k"><div class="caps" id="hotkey"></div><span><b>Pauses or resumes QuipKeys</b> anywhere, any time.</span></div>
+    </div>
+    <p class="note" id="trayNote"></p>
+  </section>
+
+  <section class="step" data-step="permission" data-mac>
+    <h1>One permission</h1>
+    <p>macOS asks you to approve any app that reads the keyboard. QuipKeys uses this permission only to see the keys you press and type its corrections, nothing else.</p>
+    <div class="perm">
+      <button class="primary" id="permBtn">Open System Settings</button>
+      <span class="pill" id="permState">Not allowed yet</span>
+    </div>
+    <p class="note">In <b>Privacy &amp; Security › Accessibility</b>, switch on <b>QuipKeys</b>. If you started it from Terminal, switch on Terminal instead. This page updates by itself once it's allowed.</p>
+    <p class="note hidden" id="restartNote">Allowed, but macOS hasn't let QuipKeys start yet. <a id="restart">Restart QuipKeys</a></p>
+  </section>
+
+  <section class="step" data-step="try">
+    <h1>Try it</h1>
+    <p>Type something sloppy below, pressing space after each word. For example: <i>i wamt to gp to the stpre</i></p>
+    <textarea id="pad" spellcheck="false" autocomplete="off" placeholder="Start typing…"></textarea>
+    <label class="check"><input type="checkbox" id="login" checked> Start QuipKeys when I log in</label>
+  </section>
+</main>
+<footer>
+  <div class="dots" id="dots"></div>
+  <div class="btns">
+    <button id="back">Back</button>
+    <button class="primary" id="next">Continue</button>
+  </div>
+</footer>
+<script>
+  const mac = window.QK_PLATFORM === 'mac';
+  const send = (m) => window.ipc && window.ipc.postMessage(m);
+  const steps = [...document.querySelectorAll('.step')].filter(s => mac || !s.hasAttribute('data-mac'));
+  let at = 0, perm = !mac, running = !mac, permSince = 0, loginSet = false;
+
+  document.getElementById('hotkey').innerHTML = (mac ? ['⌃ Ctrl', '⌥ Option', 'Q'] : ['Ctrl', 'Alt', 'Q']).map(k => `<kbd>${k}</kbd>`).join('');
+  document.getElementById('trayNote').textContent = mac
+    ? 'QuipKeys lives in the menu bar at the top of the screen. Click its icon to pause it, skip an app, or quit.'
+    : 'QuipKeys lives in the system tray (bottom right, maybe under the ^ arrow). Click its icon to pause it, skip an app, or quit.';
+
+  const dots = document.getElementById('dots');
+  steps.forEach(() => dots.appendChild(document.createElement('i')));
+  const back = document.getElementById('back'), next = document.getElementById('next');
+
+  function show(i) {
+    at = Math.max(0, Math.min(steps.length - 1, i));
+    steps.forEach((s, k) => s.classList.toggle('on', k === at));
+    [...dots.children].forEach((d, k) => d.classList.toggle('on', k === at));
+    back.style.visibility = at === 0 ? 'hidden' : 'visible';
+    const name = steps[at].dataset.step;
+    next.textContent = name === 'try' ? 'Start typing' : 'Continue';
+    next.disabled = name === 'permission' && !perm;
+    if (name === 'try') setTimeout(() => document.getElementById('pad').focus(), 50);
+  }
+  back.onclick = () => show(at - 1);
+  next.onclick = () => {
+    if (steps[at].dataset.step === 'try') {
+      send('login:' + (document.getElementById('login').checked ? 1 : 0));
+      send('done');
+    } else show(at + 1);
+  };
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && e.target.tagName !== 'TEXTAREA' && !next.disabled) next.click();
+  });
+  document.querySelectorAll('[data-open]').forEach(a => a.onclick = () => send('open:' + a.dataset.open));
+  document.getElementById('permBtn').onclick = () => send('perm');
+  document.getElementById('restart').onclick = () => send('restart');
+
+  // Called by the app with its current state.
+  window.QK = {
+    state(s) {
+      perm = s.perm; running = s.running;
+      if (!loginSet) { document.getElementById('login').checked = s.login || !s.onboarded; loginSet = true; }
+      const pill = document.getElementById('permState');
+      pill.textContent = running ? 'Allowed ✓' : perm ? 'Allowed, starting…' : 'Not allowed yet';
+      pill.classList.toggle('ok', perm);
+      if (perm && !running) { permSince = permSince || Date.now(); } else permSince = 0;
+      document.getElementById('restartNote').classList.toggle('hidden', !(permSince && Date.now() - permSince > 4000));
+      if (steps[at].dataset.step === 'permission') next.disabled = !perm;
+    }
+  };
+  show(0);
+  send('ready');
+</script>
+</body>
+</html>

@@ -11,6 +11,11 @@ path = "src/main.rs"
 [dependencies]
 quipkeys = { path = ".." }
 
+[target.'cfg(any(windows, target_os = "macos"))'.dependencies]
+tao = "=0.34.0"
+wry = "=0.53.3"
+tray-icon = "=0.21.0"
+
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.59", features = [
   "Win32_Foundation",
@@ -19,6 +24,9 @@ windows-sys = { version = "0.59", features = [
   "Win32_UI_TextServices",
   "Win32_System_Threading",
   "Win32_System_LibraryLoader",
+  "Win32_System_Registry",
+  "Win32_Security",
+  "Win32_UI_Shell",
 ] }
 
 [target.'cfg(target_os = "macos")'.dependencies]

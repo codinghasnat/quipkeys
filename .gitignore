@@ -16,3 +16,4 @@ paper/v2/*.fls
 paper/v2/*.fdb_latexmk
 paper/v2/*.toc
 paper/*.toc
+app/dist/

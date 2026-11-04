@@ -5,11 +5,14 @@
 //!   types the fix (backspaces + text) with SendInput. While it does, the
 //!   user's plain keys are held back and replayed afterwards in order, so
 //!   nothing lands in the middle of a correction.
-//! * Terminals, code editors and password managers are excluded (configurable
-//!   in `quipkeys-exclude.txt` next to the exe), and Win32 password boxes are
-//!   detected and skipped.
+//! * Terminals, code editors and password managers are excluded (the list
+//!   lives in `quipkeys-exclude.txt`, see settings.rs), and Win32 password
+//!   boxes are detected and skipped.
+//! * The hooks run on their own thread with its own message loop, so nothing
+//!   the tray icon or welcome window does can ever delay a key.
 
 use std::collections::VecDeque;
+use std::sync::atomic::Ordering;
 use std::sync::{Condvar, Mutex, OnceLock};
 
 use windows_sys::Win32::Foundation::{CloseHandle, HWND, LPARAM, LRESULT, WPARAM};
@@ -19,6 +22,8 @@ use windows_sys::Win32::UI::Input::KeyboardAndMouse::*;
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
 
 use crate::core::{Action, Core, Key};
+use crate::settings;
+use crate::ui::{notify, UiEvent};
 
 /// Marks the key events we inject ourselves.
 const MARKER: usize = 0x5155_4B59; // "QUKY"
@@ -37,53 +42,73 @@ struct Shared {
     jobs: VecDeque<Job>,
     last_window: HWND,
     excluded: bool,
+    /// Exclusion-list generation `excluded` was computed for.
+    gen: u32,
 }
 
 unsafe impl Send for Shared {}
 
 static CORE: OnceLock<Mutex<Core>> = OnceLock::new();
 static SHARED: OnceLock<(Mutex<Shared>, Condvar)> = OnceLock::new();
-static EXCLUDE: OnceLock<Vec<String>> = OnceLock::new();
 static mut KB_HOOK: HHOOK = std::ptr::null_mut();
 static mut MOUSE_HOOK: HHOOK = std::ptr::null_mut();
 
-const DEFAULT_EXCLUDE: &[&str] = &[
+pub const DEFAULT_EXCLUDE: &[&str] = &[
     "cmd.exe", "powershell.exe", "pwsh.exe", "windowsterminal.exe", "wt.exe", "conhost.exe", "openconsole.exe",
     "code.exe", "devenv.exe", "idea64.exe", "pycharm64.exe", "rider64.exe", "sublime_text.exe", "notepad++.exe",
     "mintty.exe", "putty.exe", "alacritty.exe", "wezterm-gui.exe", "keepass.exe", "keepassxc.exe",
     "1password.exe", "bitwarden.exe", "lastpass.exe",
 ];
 
-pub fn run(core: Core) {
+pub fn start(core: Core) {
     CORE.set(Mutex::new(core)).ok();
     SHARED
-        .set((Mutex::new(Shared { busy: false, jobs: VecDeque::new(), last_window: std::ptr::null_mut(), excluded: false }), Condvar::new()))
+        .set((
+            Mutex::new(Shared { busy: false, jobs: VecDeque::new(), last_window: std::ptr::null_mut(), excluded: false, gen: u32::MAX }),
+            Condvar::new(),
+        ))
         .ok();
-    EXCLUDE.set(load_exclusions()).ok();
     std::thread::spawn(worker);
-    unsafe {
+    std::thread::spawn(|| unsafe {
         let module = GetModuleHandleW(std::ptr::null());
         KB_HOOK = SetWindowsHookExW(WH_KEYBOARD_LL, Some(keyboard_hook), module, 0);
         MOUSE_HOOK = SetWindowsHookExW(WH_MOUSE_LL, Some(mouse_hook), module, 0);
         if KB_HOOK.is_null() {
-            eprintln!("QuipKeys: could not install the keyboard hook.");
+            notify(UiEvent::Error("QuipKeys couldn't start watching the keyboard.".into()));
             return;
         }
-        eprintln!("QuipKeys: running. Close this window (or Ctrl+C) to quit.");
         let mut msg: MSG = std::mem::zeroed();
         while GetMessageW(&mut msg, std::ptr::null_mut(), 0, 0) > 0 {
             TranslateMessage(&msg);
             DispatchMessageW(&msg);
         }
+    });
+}
+
+/// Windows needs no extra permission for a keyboard hook.
+pub fn has_permission() -> bool {
+    true
+}
+
+pub fn request_permission() {}
+
+/// Switch correction on or off (from the tray menu).
+pub fn set_enabled(on: bool) {
+    let mut core = CORE.get().unwrap().lock().unwrap();
+    if core.enabled != on {
+        core.on_key(Key::Toggle);
     }
 }
 
-fn load_exclusions() -> Vec<String> {
-    let path = std::env::current_exe().ok().and_then(|p| p.parent().map(|d| d.join("quipkeys-exclude.txt")));
-    match path.and_then(|p| std::fs::read_to_string(p).ok()) {
-        Some(text) => text.lines().map(|l| l.trim().to_lowercase()).filter(|l| !l.is_empty() && !l.starts_with('#')).collect(),
-        None => DEFAULT_EXCLUDE.iter().map(|s| s.to_string()).collect(),
+/// Run a key through the core; report toggles to the tray.
+fn feed(key: Key) -> Action {
+    let toggle = key == Key::Toggle;
+    let mut core = CORE.get().unwrap().lock().unwrap();
+    let action = core.on_key(key);
+    if toggle {
+        notify(UiEvent::Enabled(core.enabled));
     }
+    action
 }
 
 /// Lower-case exe name of the process owning a window.
@@ -183,14 +208,22 @@ unsafe extern "system" fn keyboard_hook(code: i32, wparam: WPARAM, lparam: LPARA
     let mut sh = lock.lock().unwrap();
     // Focus change, exclusions, password boxes.
     let hwnd = GetForegroundWindow();
-    if hwnd != sh.last_window {
+    let gen = settings::EXCLUDE_GEN.load(Ordering::Relaxed);
+    if hwnd != sh.last_window || gen != sh.gen {
+        let moved = hwnd != sh.last_window;
         sh.last_window = hwnd;
+        sh.gen = gen;
         let name = process_name(hwnd);
-        sh.excluded = EXCLUDE.get().unwrap().contains(&name);
-        if sh.busy {
-            sh.jobs.push_back(Job::Reset);
-        } else {
-            CORE.get().unwrap().lock().unwrap().on_key(Key::Reset);
+        sh.excluded = settings::is_excluded(&name);
+        if moved {
+            if name != "quipkeys.exe" {
+                notify(UiEvent::App(name));
+            }
+            if sh.busy {
+                sh.jobs.push_back(Job::Reset);
+            } else {
+                feed(Key::Reset);
+            }
         }
     }
     let Some(key) = translate(kb, hwnd) else {
@@ -213,7 +246,7 @@ unsafe extern "system" fn keyboard_hook(code: i32, wparam: WPARAM, lparam: LPARA
             }
         };
     }
-    let action = CORE.get().unwrap().lock().unwrap().on_key(key);
+    let action = feed(key);
     match action {
         Action::Pass => CallNextHookEx(KB_HOOK, code, wparam, lparam),
         Action::Swallow => 1,
@@ -259,10 +292,10 @@ fn worker() {
         match job {
             Job::Fix(n, text) => type_fix(n, &text),
             Job::Reset => {
-                CORE.get().unwrap().lock().unwrap().on_key(Key::Reset);
+                feed(Key::Reset);
             }
             Job::Held(key) => {
-                let action = CORE.get().unwrap().lock().unwrap().on_key(key.clone());
+                let action = feed(key.clone());
                 match action {
                     Action::Pass => replay(&key),
                     Action::Replace { backspaces, text } => type_fix(backspaces, &text),
