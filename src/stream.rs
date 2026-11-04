@@ -229,6 +229,8 @@ pub struct Stream<'e> {
     pub sloppy: bool,
     /// Caps Lock appears to be on by accident (inverted case: "w NEED tHIS").
     pub caps_lock: bool,
+    /// Recent gaps between keys within words (ms), for the typist's rhythm.
+    gaps: std::collections::VecDeque<f32>,
     caps_run: usize,
 }
 
@@ -247,6 +249,7 @@ impl<'e> Stream<'e> {
             learned_upto: 0,
             recent_oov: Default::default(),
             sloppy: false,
+            gaps: Default::default(),
             caps_lock: false,
             caps_run: 0,
         }
@@ -323,6 +326,26 @@ impl<'e> Stream<'e> {
             None => raw,
         };
         self.estimate_sloppiness(raw);
+        // Typical gap between keys, from the last ~200 gaps (median).
+        if let Some(t) = &times {
+            for w in t.windows(2) {
+                let g = w[1] - w[0];
+                if g > 0.0 && g < 1500.0 {
+                    self.gaps.push_back(g);
+                }
+            }
+            while self.gaps.len() > 200 {
+                self.gaps.pop_front();
+            }
+        }
+        let med = if self.gaps.len() >= 20 {
+            let mut v: Vec<f32> = self.gaps.iter().copied().collect();
+            v.sort_by(|a, b| a.partial_cmp(b).unwrap());
+            v[v.len() / 2]
+        } else {
+            0.0
+        };
+        crate::channel::RHYTHM.with(|r| r.set(med));
         let sloppy = self.sloppy;
         crate::decoder::SLOPPY.with(|s| s.set(sloppy));
         let mut edits = self.push_inner(raw, times);

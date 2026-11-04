@@ -12,6 +12,9 @@ fn main() {
         cfg.channel.timing = false;
         cfg.channel.sub_per_key = 2.0;
     }
+    if std::env::var("QK_RHYTHM").is_ok() {
+        cfg.channel.rhythm = true;
+    }
     if let Ok(t) = std::env::var("QK_TAUR") {
         cfg.tau_realword = t.parse().unwrap();
         cfg.tau_revise = cfg.tau_realword;
@@ -50,7 +53,9 @@ fn main() {
     for line in lines.iter().chain(std::iter::once(&String::new())) {
         if line.is_empty() {
             if !s.words.is_empty() {
-                for w in &s.words { println!("{}", w.output); }
+                // A chunk merged into its neighbour has empty output: mark it, so a
+                // blank line still means "end of run".
+                for w in &s.words { println!("{}", if w.output.is_empty() { "\u{1}" } else { w.output.as_str() }); }
                 println!();
             }
             s = quipkeys::Stream::new(e);

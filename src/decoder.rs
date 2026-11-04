@@ -450,8 +450,9 @@ impl Engine {
         // Timing only matters through the transposition costs, so key on those.
         let mut key = core.to_string();
         key.push_str(&format!("|{bound}|{}|", SLOPPY.with(|s| s.get()) as u8));
-        for t in &tc.trans {
-            key.push(char::from(b'0' + (*t as u8).min(9)));
+        // Every per-key cost (timing and rhythm) is part of the key.
+        for v in tc.trans.iter().chain(&tc.ins).chain(&tc.sub_adj).chain(&tc.del_adj) {
+            key.push(char::from(b'A' + ((v * 4.0).round() as i32).clamp(-20, 40).wrapping_add(20) as u8));
         }
         if let Some(c) = CACHE.with(|m| m.borrow().get(&key).cloned()) {
             return c;

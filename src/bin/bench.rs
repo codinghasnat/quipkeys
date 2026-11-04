@@ -55,6 +55,8 @@ fn configs() -> Vec<(&'static str, Config)> {
     personal.channel.transpose = 4.5;
     personal.channel.timing = false;
     personal.channel.sub_per_key = 2.0;
+    let mut rhythm = Config::default();
+    rhythm.channel.rhythm = true;
     let mut lat = Config::default();
     lat.lattice = false;
     let mut no_time = Config::default();
@@ -70,6 +72,7 @@ fn configs() -> Vec<(&'static str, Config)> {
         ("no-lookback2", no_lb2),
         ("no-memory", no_mem),
         ("word-by-word", lat),
+        ("rhythm", rhythm),
         ("personal", personal),
         ("nn", nn),
         ("nn-strong", nn2),

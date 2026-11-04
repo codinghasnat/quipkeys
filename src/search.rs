@@ -45,12 +45,12 @@ pub fn search(lx: &Lexicon, ch: &Channel, tc: &TypedCosts, bound: f32) -> Vec<Ca
         let prev = &prev_rows[(d - 1) * w..d * w];
         let cur = &mut cur_rows[..w];
         let first = if d == 1 { fl } else { 0.0 };
-        cur[0] = prev[0] + ch.del(c, pc) + first;
+        cur[0] = prev[0] + (ch.del(c, pc) + tc.del_adj[0]).max(0.5) + first;
         let mut best = cur[0];
         for j in 1..=n {
             let tj = t[j - 1];
-            let mut v = prev[j - 1] + if c == tj { 0.0 } else { ch.sub(c, tj) + first };
-            v = v.min(prev[j] + ch.del(c, pc) + first);
+            let mut v = prev[j - 1] + if c == tj { 0.0 } else { (ch.sub(c, tj) + tc.sub_adj[j - 1]).max(0.5) + first };
+            v = v.min(prev[j] + (ch.del(c, pc) + tc.del_adj[j]).max(0.5) + first);
             v = v.min(cur[j - 1] + tc.ins[j - 1]);
             if d >= 2 && j >= 2 && c == t[j - 2] && pc == tj && c != pc {
                 let pp = &prev_rows[(d - 2) * w..(d - 1) * w];

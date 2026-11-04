@@ -25,7 +25,7 @@ for r in rs:
         inp.append(tok + "\t" + ",".join(str(x) for x in ts))
     inp.append("")
 out = subprocess.run([sys.argv[2]], input="\n".join(inp) + "\n", capture_output=True, text=True).stdout
-outs = [blk.split("\n") for blk in out.strip("\n").split("\n\n")]
+outs = [[w for w in blk.split("\n") if w != "\x01"] for blk in out.strip("\n").split("\n\n")]
 def score(words, target):
     a = [core(w) for w in " ".join(words).split()]
     b = [core(w) for w in target.split()]

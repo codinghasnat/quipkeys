@@ -33,6 +33,38 @@ pub struct ChannelParams {
     pub slow_ms: f32,
     /// Extra cost for an error in the first letter (people rarely get it wrong).
     pub first_letter: f32,
+    /// Use typing rhythm: errors break rhythm (a pause before a wrong key, a
+    /// pause after an extra key, a doubled gap where a letter went missing,
+    /// a very fast overlapping pair for a swap). Needs key times and the
+    /// typist's typical gap (set by the stream, see RHYTHM).
+    pub rhythm: bool,
+}
+
+thread_local! {
+    /// The typist's typical gap between keys (ms), kept current by the stream.
+    pub static RHYTHM: std::cell::Cell<f32> = const { std::cell::Cell::new(0.0) };
+}
+
+/// Gap bins, as multiples of the typist's typical gap.
+const RHYTHM_BINS: [f32; 4] = [0.5, 0.8, 1.3, 2.0];
+/// Likelihood ratios P(gap bin | error) / P(gap bin | correct key), fitted on
+/// 33 real runs (scripts/real/timing_lr.py). Rows: wrong key, extra key,
+/// swapped pair, letter missing just before this key.
+const LR_BEFORE: [[f32; 5]; 4] = [
+    [1.75, 0.47, 0.53, 1.08, 3.66],
+    [0.78, 0.44, 0.65, 1.27, 2.07],
+    [3.15, 0.78, 0.87, 1.00, 2.05],
+    [0.67, 0.46, 0.30, 1.96, 3.94],
+];
+const LR_AFTER: [[f32; 5]; 4] = [
+    [1.12, 0.33, 0.75, 1.14, 7.21],
+    [0.76, 0.62, 0.58, 1.14, 12.56],
+    [3.08, 0.90, 0.73, 1.32, 1.67],
+    [0.66, 0.65, 0.77, 1.14, 8.91],
+];
+
+fn rhythm_bin(r: f32) -> usize {
+    RHYTHM_BINS.iter().position(|&b| r < b).unwrap_or(4)
 }
 
 impl Default for ChannelParams {
@@ -56,6 +88,7 @@ impl Default for ChannelParams {
             fast_ms: 45.0,
             slow_ms: 120.0,
             first_letter: 1.5,
+            rhythm: false,
         }
     }
 }
@@ -68,6 +101,10 @@ pub struct TypedCosts {
     pub ins: Vec<f32>,
     /// trans[j]: cost of typed keys j-1, j being a swapped pair (j >= 1).
     pub trans: Vec<f32>,
+    /// Rhythm adjustments (nats): wrong key at typed j; a letter missing just
+    /// before typed key j (index n = at the end).
+    pub sub_adj: Vec<f32>,
+    pub del_adj: Vec<f32>,
 }
 
 pub struct Channel {
@@ -146,7 +183,27 @@ impl Channel {
                 }
             }
         }
-        TypedCosts { keys: keys.to_vec(), ins, trans }
+        let mut sub_adj = vec![0.0; n];
+        let mut del_adj = vec![0.0; n + 1];
+        let med = RHYTHM.with(|r| r.get());
+        if let (true, Some(t), true) = (self.p.rhythm, times, med > 0.0) {
+            let adj = |lr: f32| (-lr.ln()).clamp(-2.5, 1.0);
+            for j in 0..n {
+                let bb = (j > 0).then(|| rhythm_bin((t[j] - t[j - 1]) / med));
+                let ba = (j + 1 < n).then(|| rhythm_bin((t[j + 1] - t[j]) / med));
+                let both = |row: usize| {
+                    let a = bb.map_or(0.0, |b| adj(LR_BEFORE[row][b])) + ba.map_or(0.0, |b| adj(LR_AFTER[row][b]));
+                    a.clamp(-3.0, 1.5)
+                };
+                sub_adj[j] = both(0);
+                ins[j] = (ins[j] + both(1)).max(1.0);
+                del_adj[j] = both(3);
+                if let Some(b) = bb {
+                    trans[j] = (self.p.transpose + adj(LR_BEFORE[2][b])).max(1.0);
+                }
+            }
+        }
+        TypedCosts { keys: keys.to_vec(), ins, trans, sub_adj, del_adj }
     }
 }
 
@@ -164,11 +221,11 @@ impl Channel {
             let c = intended[d - 1];
             let pc = if d >= 2 { intended[d - 2] } else { 0 };
             let first = if d == 1 { fl } else { 0.0 };
-            rows[d][0] = rows[d - 1][0] + self.del(c, pc) + first;
+            rows[d][0] = rows[d - 1][0] + self.del(c, pc) + first + tc.del_adj[0];
             for j in 1..=n {
                 let tj = t[j - 1];
-                let mut v = rows[d - 1][j - 1] + if c == tj { 0.0 } else { self.sub(c, tj) + first };
-                v = v.min(rows[d - 1][j] + self.del(c, pc) + first);
+                let mut v = rows[d - 1][j - 1] + if c == tj { 0.0 } else { (self.sub(c, tj) + tc.sub_adj[j - 1]).max(0.5) + first };
+                v = v.min(rows[d - 1][j] + (self.del(c, pc) + tc.del_adj[j]).max(0.5) + first);
                 v = v.min(rows[d][j - 1] + tc.ins[j - 1]);
                 if d >= 2 && j >= 2 && c == t[j - 2] && pc == tj && c != pc {
                     v = v.min(rows[d - 2][j - 2] + tc.trans[j - 1] + if d == 2 { fl } else { 0.0 });
