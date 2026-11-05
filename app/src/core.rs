@@ -6,6 +6,9 @@
 //! The platform layer (Windows hook, macOS event tap) converts OS key events
 //! into [`Key`]s, asks [`Core::on_key`] what to do, and performs the answer.
 
+use std::path::PathBuf;
+use std::time::SystemTime;
+
 use quipkeys::{Config, Engine, Stream};
 
 /// A key event, already translated by the platform layer.
@@ -55,12 +58,33 @@ pub struct Core {
     /// text that was on screen before, text typed instead).
     last: Option<(Vec<usize>, String, String)>,
     pub enabled: bool,
+    /// Personal word list: words the user taught QuipKeys (by undoing a fix),
+    /// kept in a text file so they survive restarts. One word per line.
+    words_path: Option<PathBuf>,
+    words_stamp: Option<SystemTime>,
+    personal: Vec<String>,
+}
+
+const WORDS_HEADER: &str = "# Your words: QuipKeys never changes these, and fixes typos of them.\n\
+# Words are added here when you undo a correction (Backspace right after it).\n\
+# Add or remove words freely, one per line.\n";
+
+/// The letters of a typed chunk that make it a word ("Hasnat," -> "hasnat").
+fn word_core(chunk: &str) -> String {
+    chunk.trim_matches(|c: char| !c.is_alphanumeric()).to_lowercase()
 }
 
 impl Core {
+    /// A core without a word file (tests).
+    #[cfg(test)]
     pub fn new() -> Core {
+        Core::with_words(None)
+    }
+
+    /// A core that loads and saves the personal word list at `words_path`.
+    pub fn with_words(words_path: Option<PathBuf>) -> Core {
         let engine: &'static Engine = Box::leak(Box::new(Engine::new(Config::default())));
-        Core {
+        let mut core = Core {
             engine,
             stream: Stream::new(engine),
             shown: Vec::new(),
@@ -70,11 +94,56 @@ impl Core {
             t0: None,
             last: None,
             enabled: true,
+            words_path,
+            words_stamp: None,
+            personal: Vec::new(),
+        };
+        core.reset();
+        core
+    }
+
+    /// Re-read the word list if the file changed (e.g. the user edited it).
+    fn reload_words(&mut self) {
+        let Some(path) = &self.words_path else { return };
+        let stamp = std::fs::metadata(path).and_then(|m| m.modified()).ok();
+        if stamp.is_some() && stamp == self.words_stamp {
+            return;
+        }
+        self.words_stamp = stamp;
+        self.personal = std::fs::read_to_string(path)
+            .map(|t| {
+                t.lines().map(word_core).filter(|w| !w.is_empty() && !w.starts_with('#')).collect()
+            })
+            .unwrap_or_default();
+    }
+
+    /// Add a word to the personal list (and its file).
+    fn remember(&mut self, word: &str) {
+        let w = word_core(word);
+        if w.len() < 2 || self.personal.contains(&w) || self.engine.lx.id(&w).is_some() {
+            return;
+        }
+        self.personal.push(w.clone());
+        self.stream.teach(&w);
+        if let Some(path) = &self.words_path {
+            use std::io::Write;
+            let new_file = !path.exists();
+            if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
+                if new_file {
+                    let _ = f.write_all(WORDS_HEADER.as_bytes());
+                }
+                let _ = writeln!(f, "{w}");
+            }
+            self.words_stamp = std::fs::metadata(path).and_then(|m| m.modified()).ok();
         }
     }
 
     fn reset(&mut self) {
         self.stream = Stream::new(self.engine);
+        self.reload_words();
+        for w in &self.personal {
+            self.stream.teach(w);
+        }
         self.shown.clear();
         self.anchor = 0;
         self.cur.clear();
@@ -109,6 +178,12 @@ impl Core {
                 if let Some((idxs, before, after)) = self.last.take() {
                     for &i in &idxs {
                         self.stream.reject(i);
+                    }
+                    // Undoing a fix teaches the word for good.
+                    let typed: Vec<String> =
+                        idxs.iter().filter_map(|&i| self.stream.words.get(i).map(|w| w.typed.clone())).collect();
+                    for t in typed {
+                        self.remember(&t);
                     }
                     let first = *idxs.iter().min().unwrap();
                     for (k, w) in self.stream.words.iter().enumerate().skip(first) {
@@ -314,5 +389,35 @@ mod pronoun {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod personal {
+    use super::tests::{keys, simulate};
+    use super::*;
+
+    #[test]
+    fn undone_words_are_remembered_across_restarts() {
+        let path = std::env::temp_dir().join(format!("qk-words-{}.txt", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        let mut c = Core::with_words(Some(path.clone()));
+        let mut k = keys("I wamt ");
+        k.push(Key::Backspace);
+        assert_eq!(simulate(&mut c, &k), "I wamt ");
+        assert!(std::fs::read_to_string(&path).unwrap().lines().any(|l| l == "wamt"));
+        // Same engine, new session: Enter, then the word again.
+        c.on_key(Key::Reset);
+        assert_eq!(simulate(&mut c, &keys("we wamt ")), "we wamt ");
+
+        // A word added to the file by hand: kept as typed, and typos of it fixed.
+        std::fs::write(&path, "# mine\nquipkeys\n").unwrap();
+        // (make sure the new mtime is seen even on coarse file systems)
+        c.words_stamp = None;
+        c.on_key(Key::Reset);
+        assert_eq!(simulate(&mut c, &keys("I use quipkeys ")), "I use quipkeys ");
+        c.on_key(Key::Reset);
+        assert_eq!(simulate(&mut c, &keys("I use quipkeyd ")), "I use quipkeys ");
+        let _ = std::fs::remove_file(&path);
     }
 }

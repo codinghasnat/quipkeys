@@ -1,6 +1,7 @@
 //! The few things QuipKeys remembers between runs: whether the welcome screen
-//! has been seen, and the list of apps it stays out of. Nothing you type is
-//! ever written anywhere.
+//! has been seen, the apps it stays out of, and your personal word list (only
+//! words you taught it by undoing a fix, or added yourself). Nothing else you
+//! type is ever written anywhere.
 //!
 //! Where they live:
 //! * Windows: next to `quipkeys.exe` if that folder is writable (portable),
@@ -45,6 +46,24 @@ fn settings_path() -> PathBuf {
 
 pub fn exclude_path() -> PathBuf {
     config_dir().join("quipkeys-exclude.txt")
+}
+
+/// Your personal word list (see core.rs).
+pub fn words_path() -> PathBuf {
+    config_dir().join("quipkeys-words.txt")
+}
+
+/// Make sure the word list exists (so it can be opened for editing).
+pub fn write_words_if_missing() {
+    let p = words_path();
+    if !p.exists() {
+        let _ = std::fs::write(
+            p,
+            "# Your words: QuipKeys never changes these, and fixes typos of them.\n\
+             # Words are added here when you undo a correction (Backspace right after it).\n\
+             # Add or remove words freely, one per line.\n",
+        );
+    }
 }
 
 pub fn onboarded() -> bool {

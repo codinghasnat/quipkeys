@@ -872,6 +872,23 @@ impl<'e> Stream<'e> {
         Some(Edit { index, old, new, confidence: 1.0, revision: false })
     }
 
+    /// Teach a word for the rest of this stream: it is never "corrected", and
+    /// typos of it are corrected to it. (The app calls this for every word in
+    /// the user's personal word list whenever it starts a new stream.)
+    pub fn teach(&mut self, word: &str) {
+        let lower = word.trim().to_ascii_lowercase();
+        if lower.is_empty() || !lower.bytes().all(|c| c.is_ascii_lowercase() || c == b'\'' || c == b'-') {
+            return;
+        }
+        self.ignore.insert(lower.clone());
+        if self.engine.lx.id(&lower).is_none() {
+            let cache = Arc::make_mut(&mut self.cache);
+            if !cache.learned.iter().any(|e| e.0 == lower) {
+                cache.learned.push((lower, 2));
+            }
+        }
+    }
+
     pub fn text(&self) -> String {
         self.words.iter().map(|w| w.output.as_str()).filter(|s| !s.is_empty()).collect::<Vec<_>>().join(" ")
     }

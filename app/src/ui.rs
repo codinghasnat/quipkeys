@@ -55,6 +55,7 @@ struct Items {
     skip: CheckMenuItem,
     login: CheckMenuItem,
     excluded: MenuItem,
+    words: MenuItem,
     welcome: MenuItem,
     quit: MenuItem,
 }
@@ -92,6 +93,7 @@ pub fn run() {
         skip: CheckMenuItem::new("Don't correct in this app", false, false, None),
         login: CheckMenuItem::new("Start at login", true, settings::start_at_login(), None),
         excluded: MenuItem::new("Edit excluded apps…", true, None),
+        words: MenuItem::new("My words…", true, None),
         welcome: MenuItem::new("Welcome & privacy…", true, None),
         quit: MenuItem::new("Quit QuipKeys", true, None),
     };
@@ -131,6 +133,7 @@ fn build_tray(items: &Items) -> TrayIcon {
         &items.skip,
         &PredefinedMenuItem::separator(),
         &items.login,
+        &items.words,
         &items.excluded,
         &items.welcome,
         &PredefinedMenuItem::separator(),
@@ -173,6 +176,9 @@ impl App {
                 } else if id == *it.excluded.id() {
                     settings::write_exclusions_if_missing();
                     settings::open(&settings::exclude_path().display().to_string());
+                } else if id == *it.words.id() {
+                    settings::write_words_if_missing();
+                    settings::open(&settings::words_path().display().to_string());
                 } else if id == *it.welcome.id() {
                     self.open_welcome(target);
                 } else if id == *it.quit.id() {

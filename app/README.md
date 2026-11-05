@@ -24,7 +24,8 @@ macOS it also walks you through the one permission it needs.
 - What you type is held in memory only, for the last few words. It's
   forgotten on Enter, a click or an app switch, and never written to disk.
 - The only files it writes are `quipkeys-settings.txt` (whether you've seen
-  the welcome screen) and `quipkeys-exclude.txt` (apps to skip). These live
+  the welcome screen), `quipkeys-exclude.txt` (apps to skip) and
+  `quipkeys-words.txt` (your word list: only words you taught it). These live
   next to `quipkeys.exe` on Windows (or in `%APPDATA%\QuipKeys` if that folder
   isn't writable), and in `~/Library/Application Support/QuipKeys` on macOS.
 
@@ -83,6 +84,18 @@ Anything that might move the caret makes QuipKeys forget the tracked text and
 start fresh. That includes Enter, Tab, arrows, Home/End, clicks, shortcuts
 and switching apps. So it never edits text it isn't sure about. It reaches
 back at most 6 words, and only for boundary repairs ("mee tyou" → "meet you").
+
+## Your words
+
+QuipKeys never changes a word in your word list, and it fixes typos of those
+words ("quipkeyd" → "quipkeys"). Words get there in two ways:
+- **Backspace straight after a fix.** The fix is undone and the word you
+  typed is added.
+- **By hand.** **My words…** in the tray/menu opens the list. Add or remove
+  words, one per line; changes apply from the next Enter or click.
+
+Typing the same unknown word twice also teaches it, but only until QuipKeys
+quits. That's deliberate: saving it would mean writing what you type to disk.
 
 ## Excluded apps
 

@@ -39,7 +39,7 @@ fn main() {
         return;
     }
     settings::load_exclusions(platform::DEFAULT_EXCLUDE);
-    platform::start(core::Core::new());
+    platform::start(core::Core::with_words(Some(settings::words_path())));
     ui::run();
 }
 
