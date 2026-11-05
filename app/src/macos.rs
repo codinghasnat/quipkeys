@@ -197,11 +197,23 @@ pub fn set_enabled(on: bool) {
     }
 }
 
+/// QK_DEBUG=1: log every decision to stderr (run the binary from a terminal).
+fn debug() -> bool {
+    static D: OnceLock<bool> = OnceLock::new();
+    *D.get_or_init(|| std::env::var_os("QK_DEBUG").is_some())
+}
+
 /// Run a key through the core; report toggles to the menu.
 fn feed(key: Key) -> Action {
     let toggle = key == Key::Toggle;
     let mut core = CORE.get().unwrap().lock().unwrap();
+    let shown = debug().then(|| format!("{key:?}"));
     let action = core.on_key(key);
+    if let Some(k) = shown {
+        if action != Action::Pass || !k.starts_with("Char") {
+            eprintln!("[quipkeys] {k} -> {action:?}");
+        }
+    }
     if toggle {
         notify(UiEvent::Enabled(core.enabled));
     }
@@ -377,8 +389,18 @@ fn post_key(keycode: u16, text: Option<&[u16]>) {
             CFRelease(ev as CFTypeRef);
         }
     }
-    // A short pause keeps slower apps from dropping or reordering events.
-    std::thread::sleep(std::time::Duration::from_micros(800));
+}
+
+/// Pauses between injected keys. Apps handle Delete and typed text through
+/// different paths, and without a pause some (Notes, browsers) apply a typed
+/// letter before an earlier Delete, leaving "iI" instead of "I". Tunable for
+/// testing: QK_KEY_DELAY_MS (default 2), QK_BS_DELAY_MS (after each Delete,
+/// default 3), QK_SETTLE_MS (after the last Delete, default 15).
+fn pause(var: &str, default_ms: f64) {
+    let ms = std::env::var(var).ok().and_then(|v| v.parse::<f64>().ok()).unwrap_or(default_ms);
+    if ms > 0.0 {
+        std::thread::sleep(std::time::Duration::from_secs_f64(ms / 1000.0));
+    }
 }
 
 fn type_text(text: &str) {
@@ -387,12 +409,17 @@ fn type_text(text: &str) {
         let units = c.encode_utf16(&mut buf);
         let kc = if c == ' ' { KC_SPACE as u16 } else { 0 };
         post_key(kc, Some(units));
+        pause("QK_KEY_DELAY_MS", 2.0);
     }
 }
 
 fn type_fix(backspaces: usize, text: &str) {
     for _ in 0..backspaces {
         post_key(KC_DELETE, None);
+        pause("QK_BS_DELAY_MS", 3.0);
+    }
+    if backspaces > 0 {
+        pause("QK_SETTLE_MS", 15.0);
     }
     type_text(text);
 }
@@ -401,7 +428,10 @@ fn replay(key: &Key) {
     match key {
         Key::Char(c, _) => type_text(&c.to_string()),
         Key::Space(_) => type_text(" "),
-        Key::Backspace => post_key(KC_DELETE, None),
+        Key::Backspace => {
+            post_key(KC_DELETE, None);
+            pause("QK_BS_DELAY_MS", 3.0);
+        }
         _ => {}
     }
 }

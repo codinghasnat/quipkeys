@@ -192,7 +192,13 @@
   window.QK = {
     state(s) {
       perm = s.perm; running = s.running;
-      if (!loginSet) { document.getElementById('login').checked = s.login || !s.onboarded; loginSet = true; }
+      if (!loginSet) {
+        document.getElementById('login').checked = s.login || !s.onboarded;
+        loginSet = true;
+        // Seen it all before and only the permission is missing (e.g. after an update): go straight there.
+        const p = steps.findIndex(x => x.dataset.step === 'permission');
+        if (s.onboarded && !s.perm && p >= 0) show(p);
+      }
       const pill = document.getElementById('permState');
       pill.textContent = running ? 'Allowed ✓' : perm ? 'Allowed, starting…' : 'Not allowed yet';
       pill.classList.toggle('ok', perm);

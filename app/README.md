@@ -54,8 +54,16 @@ into Applications. The welcome window asks for **Accessibility** permission
 (System Settings › Privacy & Security › Accessibility). QuipKeys starts working
 the moment it's switched on.
 
-The app is signed ad hoc, so macOS may forget the permission after a rebuild.
-If corrections stop, switch QuipKeys off and on again in that list.
+**Updating:** `git pull`, then `sh macos/make-app.sh --install`. That quits
+the running copy, replaces `/Applications/QuipKeys.app` and starts the new
+one. Each ad-hoc-signed build looks like a new app to macOS, so it clears the
+old permission entry. Switch QuipKeys on again when the welcome window asks.
+
+**Debugging:** run `QK_DEBUG=1 /Applications/QuipKeys.app/Contents/MacOS/quipkeys`
+from Terminal (quit the menu-bar copy first). It prints every decision. If
+corrections leave stray letters ("iI"), raise the pauses between injected
+keys with `QK_BS_DELAY_MS`, `QK_SETTLE_MS` and `QK_KEY_DELAY_MS` (defaults 3,
+15 and 2 ms).
 
 **Start at login** (tray/menu option, or the checkbox at the end of the welcome
 window) uses the registry `Run` key on Windows and a LaunchAgent in

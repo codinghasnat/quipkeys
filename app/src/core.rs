@@ -191,7 +191,7 @@ mod tests {
     use super::*;
 
     /// Type `text` through the core and return what the screen would show.
-    fn simulate(core: &mut Core, keys: &[Key]) -> String {
+    pub(super) fn simulate(core: &mut Core, keys: &[Key]) -> String {
         let mut screen = String::new();
         for k in keys {
             match core.on_key(k.clone()) {
@@ -215,7 +215,7 @@ mod tests {
         screen
     }
 
-    fn keys(s: &str) -> Vec<Key> {
+    pub(super) fn keys(s: &str) -> Vec<Key> {
         s.chars()
             .enumerate()
             .map(|(i, c)| match c {
@@ -292,5 +292,27 @@ mod timing {
             }
         }
         eprintln!("space: mean {:.2} ms, worst {:.2} ms over {n} words", total / n as f64, worst);
+    }
+}
+
+#[cfg(test)]
+mod pronoun {
+    use super::tests::{keys, simulate};
+    use super::*;
+
+    /// "i"/"I" must always come out as "I", whatever surrounds it (a report
+    /// of "I" turning into "il" was an injection problem, not the engine).
+    #[test]
+    fn i_is_always_i() {
+        let mut c = Core::new();
+        for w in ["the", "so", "when", "and", "what", "because", "maybe", "today"] {
+            for after in ["think", "am", "was", "want", "like", "it", "know", "press"] {
+                for i in ["i", "I"] {
+                    c.on_key(Key::Reset);
+                    let out = simulate(&mut c, &keys(&format!("{w} {i} {after} ok ")));
+                    assert_eq!(out.split(' ').nth(1), Some("I"), "{w} {i} {after}: {out:?}");
+                }
+            }
+        }
     }
 }

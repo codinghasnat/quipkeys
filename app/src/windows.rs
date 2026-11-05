@@ -100,11 +100,23 @@ pub fn set_enabled(on: bool) {
     }
 }
 
+/// QK_DEBUG=1: log every decision to stderr (run the binary from a terminal).
+fn debug() -> bool {
+    static D: OnceLock<bool> = OnceLock::new();
+    *D.get_or_init(|| std::env::var_os("QK_DEBUG").is_some())
+}
+
 /// Run a key through the core; report toggles to the tray.
 fn feed(key: Key) -> Action {
     let toggle = key == Key::Toggle;
     let mut core = CORE.get().unwrap().lock().unwrap();
+    let shown = debug().then(|| format!("{key:?}"));
     let action = core.on_key(key);
+    if let Some(k) = shown {
+        if action != Action::Pass || !k.starts_with("Char") {
+            eprintln!("[quipkeys] {k} -> {action:?}");
+        }
+    }
     if toggle {
         notify(UiEvent::Enabled(core.enabled));
     }

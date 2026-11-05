@@ -22,7 +22,7 @@ pip download wordfreq==3.1.1 --no-deps -d "$tmp" -q
 pip install -q --target "$tmp/pylib" msgpack
 (cd "$tmp" && unzip -q -o wordfreq-*.whl 'wordfreq/data/large_en.msgpack.gz')
 PYTHONPATH="$tmp/pylib" python3 scripts/build_wordfreq_supplement.py \
-  "$tmp/wordfreq/data/large_en.msgpack.gz" data/en_unigrams.txt > data/en_wordfreq.txt
+  "$tmp/wordfreq/data/large_en.msgpack.gz" data/en_unigrams.txt data/en_capitalized.txt > data/en_wordfreq.txt
 
 # 4. Corpus bigram/trigram counts (three-word context): 10 Wiki40B shards (~110M words,
 #    CC BY-SA) + conversational NLTK corpora (Gutenberg, web chat, NPS chat, movie

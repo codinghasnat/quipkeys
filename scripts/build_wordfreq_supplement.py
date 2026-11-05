@@ -2,8 +2,12 @@
 """Add common words that the Google Books list lacks (American spellings,
 interjections, modern words) using the `wordfreq` package's English data.
 
-Usage: python3 -I scripts/build_wordfreq_supplement.py <large_en.msgpack.gz> data/en_unigrams.txt > data/en_wordfreq.txt
+Usage: python3 scripts/build_wordfreq_supplement.py <large_en.msgpack.gz> data/en_unigrams.txt data/en_capitalized.txt > data/en_wordfreq.txt
 (needs the `msgpack` module on PYTHONPATH)
+
+Modern words below the main threshold are added too (MIN_ZIPF_MODERN,
+"autocorrect"), unless they look like names (in en_capitalized.txt), and so
+are inflections of known words ("autocorrects", "autocorrected").
 
 Web text contains plenty of frequent misspellings ("teh", "dont", "becuase"),
 so a new word is only added if it is NOT a single edit away from a much more
@@ -14,11 +18,19 @@ import gzip, re, sys
 import msgpack
 
 MIN_ZIPF = 3.0  # one occurrence per million words
+MIN_ZIPF_MODERN = 2.5  # ...for words that aren't names
+MIN_ZIPF_INFLECTION = 1.0  # inflections of known words
+INFLECTIONS = ("s", "es", "ed", "d", "ing", "er", "ers", "ly")
 GOOGLE_TOTAL = 541808760578
 BLOCK = {"alot", "im", "ive", "ur", "u", "thx", "pls", "plz", "dont", "didnt", "doesnt", "isnt",
          "wasnt", "thats", "whats", "youre", "theyre", "shouldnt", "wouldnt", "couldnt", "hes", "shes"}
 
 wf_path, google_path = sys.argv[1], sys.argv[2]
+names = set()
+if len(sys.argv) > 3:
+    for line in open(sys.argv[3]):
+        if line.strip() and not line.startswith("#"):
+            names.add(line.split()[0])
 bins = msgpack.unpackb(gzip.open(wf_path).read(), raw=False)[1:]
 freq = {}
 for cb, words in enumerate(bins):
@@ -53,8 +65,17 @@ for w, f in freq.items():
         if google[w] == 300000 and "'" in w:
             out.append((w, count))
         continue
-    if 9 + __import__("math").log10(f) < (MIN_ZIPF if len(w) > 2 else 4.0):
+    zipf = 9 + __import__("math").log10(f)
+    if len(w) <= 2 and zipf < 4.0:
         continue
+    if zipf < MIN_ZIPF:
+        # Rarer: keep modern non-name words, and inflections of known words.
+        base_known = lambda b: b in google or (b in freq and 9 + __import__("math").log10(freq[b]) >= MIN_ZIPF_MODERN)
+        inflection = any(w.endswith(x) and len(w) - len(x) >= 4 and (base_known(w[: -len(x)]) or base_known(w[: -len(x)] + "e"))
+                         for x in INFLECTIONS)
+        modern = zipf >= MIN_ZIPF_MODERN and w not in names and len(w) >= 5 and "'" not in w
+        if not ((inflection and zipf >= MIN_ZIPF_INFLECTION) or modern):
+            continue
     if w.endswith("'") or w.startswith("'"):
         continue
     # Probably a common misspelling of a much more frequent word?
