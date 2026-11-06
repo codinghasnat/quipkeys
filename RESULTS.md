@@ -101,6 +101,43 @@ no-trigram      67.8%    3.8%   28.4%     10.6%    0.111%   87.60%    59.5    94
 word-by-word    68.8%    4.3%   26.9%     14.9%    0.125%   87.98%    59.7    854   5216
 ```
 
+## Spelling by sound (held-out results)
+
+Sounds-like matching (`src/phonetic.rs`, see the README). Costs were tuned on `data/eval/phonetic_dev.txt` in
+Brown dev sentences. Everything below is held out. `phonetic.txt` was written before the mode existed, shares
+no target words with the tuning list, and is placed into Brown **test** sentences. `codespell` is about
+27,000 real-world misspellings from the codespell project, used only for evaluation (half of them; never
+tuned on). "Default" is how the app runs for everyone. "Spell by sound" is the opt-in setting.
+
+| | Off | **Default** | **Spell by sound** |
+|---|---|---|---|
+| Sound spellings in sentences: fixed | 47.3% | **68.6%** | **78.8%** |
+| ... wrongly "fixed" | 5.7% | 1.1% | 0.0% |
+| ... other words in those sentences changed | 0.11% | 0.11% | 0.13% |
+| Sound spellings, words alone: fixed | 37.7% | 51.0% | 66.9% |
+| codespell misspellings, words alone: fixed / wrong | 78.5% / 1.8% | 78.4% / 1.8% | 74.7% / 2.9% |
+
+Effect on ordinary keyboard typos (main benchmark, Brown test split, 1,500 sentences per level):
+
+| Typing level | Word accuracy: off / default / by sound | Typos fixed: off / default / by sound | p99 latency (ms) |
+|---|---|---|---|
+| light 1.5% | 98.34 / 98.31 / 98.03 | 78.8 / 78.5 / 74.9 | 2.4 / 6.5 / 6.6 |
+| moderate 3% | 96.70 / 96.61 / 96.14 | 77.3 / 76.7 / 73.4 | 2.6 / 7.8 / 7.7 |
+| messy 6% | 93.58 / 93.42 / 92.31 | 75.6 / 75.0 / 70.8 | 3.7 / 9.8 / 9.5 |
+| blind 10% | 89.06 / 88.82 / 87.30 | 71.6 / 71.0 / 67.0 | 6.1 / 12.4 / 12.3 |
+| rough 4% | 86.59 / 86.25 / 84.21 | 72.9 / 72.3 / 68.1 | 6.8 / 13.7 / 13.8 |
+
+So the default costs keyboard typing 0.03–0.34 points of word accuracy and gains about 21 points on sound
+spellings. Spell-by-sound costs 0.3–2.4 points and gains about 31. That's why it's a setting.
+
+Caveats:
+* **Not tested on dyslexic writers.** The sound spellings are hand-written stand-ins, and both lists are mine.
+  Real data (the Typing Lab could collect it) is the next step, and it may change the costs.
+* Homophone swaps (sun/son, our/hour) only happen when the sentence clearly calls for one. Most are still left
+  alone.
+* Known misses include vowel-heavy short words ("eny", "uv") and sound changes the rules don't model yet
+  (d/j as in "edukashun", "a" read as "ay").
+
 ## Known gaps / next steps
 
 * **Wrong corrections are about 0.11–0.12%** (about 1 in 850 correct words). Most are rare words and names missing from

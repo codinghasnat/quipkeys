@@ -53,6 +53,7 @@ struct Items {
     status: MenuItem,
     enabled: CheckMenuItem,
     skip: CheckMenuItem,
+    sound: CheckMenuItem,
     login: CheckMenuItem,
     excluded: MenuItem,
     words: MenuItem,
@@ -91,6 +92,7 @@ pub fn run() {
         status: MenuItem::new("QuipKeys is correcting", false, None),
         enabled: CheckMenuItem::new(format!("Correct my typing\t{HOTKEY}"), true, true, None),
         skip: CheckMenuItem::new("Don't correct in this app", false, false, None),
+        sound: CheckMenuItem::new("Spell by sound", true, settings::sound_mode(), None),
         login: CheckMenuItem::new("Start at login", true, settings::start_at_login(), None),
         excluded: MenuItem::new("Edit excluded apps…", true, None),
         words: MenuItem::new("My words…", true, None),
@@ -131,6 +133,7 @@ fn build_tray(items: &Items) -> TrayIcon {
         &PredefinedMenuItem::separator(),
         &items.enabled,
         &items.skip,
+        &items.sound,
         &PredefinedMenuItem::separator(),
         &items.login,
         &items.words,
@@ -171,6 +174,8 @@ impl App {
                     platform::set_enabled(self.on);
                 } else if id == *it.skip.id() {
                     settings::set_excluded(&self.app, it.skip.is_checked());
+                } else if id == *it.sound.id() {
+                    settings::set_sound_mode(it.sound.is_checked());
                 } else if id == *it.login.id() {
                     settings::set_start_at_login(it.login.is_checked());
                 } else if id == *it.excluded.id() {
@@ -210,6 +215,7 @@ impl App {
             it.skip.set_checked(settings::is_excluded(&self.app));
         }
         it.login.set_checked(settings::start_at_login());
+        it.sound.set_checked(settings::sound_mode());
         if let Some(t) = &self.tray {
             let _ = t.set_icon(Some(icon(self.on && self.running)));
             #[cfg(target_os = "macos")]
@@ -263,11 +269,12 @@ impl App {
     fn push_state(&mut self) {
         let Some((_, wv)) = &self.welcome else { return };
         let js = format!(
-            "window.QK && QK.state({{perm: {}, running: {}, login: {}, onboarded: {}}})",
+            "window.QK && QK.state({{perm: {}, running: {}, login: {}, onboarded: {}, sound: {}}})",
             platform::has_permission(),
             self.running,
             settings::start_at_login(),
-            settings::onboarded()
+            settings::onboarded(),
+            settings::sound_mode()
         );
         let _ = wv.evaluate_script(&js);
     }
@@ -276,6 +283,8 @@ impl App {
         match msg {
             "ready" => self.push_state(),
             "perm" => platform::request_permission(),
+            "sound:1" => settings::set_sound_mode(true),
+            "sound:0" => settings::set_sound_mode(false),
             "login:1" => settings::set_start_at_login(true),
             "login:0" => settings::set_start_at_login(false),
             "done" => {

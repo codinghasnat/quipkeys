@@ -8,6 +8,18 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
+/// Spell-by-sound mode (a user setting): sounds-like matches use
+/// `phon_base_sound` instead of `phon_base`, i.e. spelling by ear is expected.
+static SOUND_MODE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+pub fn set_sound_mode(on: bool) {
+    SOUND_MODE.store(on, std::sync::atomic::Ordering::Relaxed);
+}
+
+pub fn sound_mode() -> bool {
+    SOUND_MODE.load(std::sync::atomic::Ordering::Relaxed)
+}
+
 thread_local! {
     /// Set by the stream while it judges the typist sloppy (rough aim).
     pub static SLOPPY: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
@@ -115,6 +127,17 @@ pub struct Config {
     pub hand_shift_max_cost: f32,
     /// Shortest typed word we will touch.
     pub min_len: usize,
+    /// Sounds-like candidates for spelling by ear ("fone" -> phone): channel
+    /// cost = `phon_base + phon_scale * sound distance`, for distances up to
+    /// `phon_max`. Off when `phonetic` is false.
+    pub phonetic: bool,
+    pub phon_base: f32,
+    pub phon_scale: f32,
+    pub phon_max: f32,
+    /// Base cost in spell-by-sound mode (see `set_sound_mode`).
+    pub phon_base_sound: f32,
+    /// Channel cost of a real word standing for its homophone (0 = never).
+    pub phon_homophone: f32,
 }
 
 impl Default for Config {
@@ -173,6 +196,12 @@ impl Default for Config {
             shift_margin: 2.0,
             hand_shift_max_cost: 14.0,
             min_len: 1,
+            phonetic: false,
+            phon_base: 7.0,
+            phon_scale: 12.0,
+            phon_max: 1.6,
+            phon_base_sound: 1.0,
+            phon_homophone: 4.0,
         }
     }
 }
@@ -326,6 +355,8 @@ pub struct Engine {
     /// used while the stream judges the typist to be sloppy.
     pub ch_sloppy: Channel,
     pub cfg: Config,
+    /// Sound codes and index, built on first use when `cfg.phonetic` is on.
+    phon: std::sync::OnceLock<crate::phonetic::Phonetic>,
 }
 
 impl Engine {
@@ -349,7 +380,7 @@ impl Engine {
         sp.sub_adjacent = cfg.sloppy_sub_adjacent;
         sp.sub_per_key = cfg.sloppy_sub_per_key;
         sp.first_letter = cfg.sloppy_first_letter;
-        Engine { ch: Channel::new(cfg.channel.clone()), ch_sloppy: Channel::new(sp), lx, cfg, nn }
+        Engine { ch: Channel::new(cfg.channel.clone()), ch_sloppy: Channel::new(sp), lx, cfg, nn, phon: Default::default() }
     }
 
     fn lm_params(&self) -> LmParams {
@@ -449,7 +480,7 @@ impl Engine {
         let tc = ch.typed_costs(core.as_bytes(), times);
         // Timing only matters through the transposition costs, so key on those.
         let mut key = core.to_string();
-        key.push_str(&format!("|{bound}|{}|", SLOPPY.with(|s| s.get()) as u8));
+        key.push_str(&format!("|{bound}|{}|{}|", SLOPPY.with(|s| s.get()) as u8, sound_mode() as u8));
         // Every per-key cost (timing and rhythm) is part of the key.
         for v in tc.trans.iter().chain(&tc.ins).chain(&tc.sub_adj).chain(&tc.del_adj) {
             key.push(char::from(b'A' + ((v * 4.0).round() as i32).clamp(-20, 40).wrapping_add(20) as u8));
@@ -457,7 +488,24 @@ impl Engine {
         if let Some(c) = CACHE.with(|m| m.borrow().get(&key).cloned()) {
             return c;
         }
-        let c = Rc::new(search(&self.lx, ch, &tc, bound));
+        let mut found = search(&self.lx, ch, &tc, bound);
+        // Sounds-like candidates for unknown words, and for very rare ones
+        // ("gide", "sene"): those still face the real-word confidence bar.
+        let rare = |id| self.lx.unigram_p(id) < 3e-7;
+        if self.cfg.phonetic && core.len() >= 3 && self.lx.id(core).is_none_or(rare) {
+            self.add_phonetic(core, &mut found);
+        } else if let (true, Some(id)) = (self.cfg.phonetic && self.cfg.phon_homophone > 0.0, self.lx.id(core)) {
+            // A real word may stand for its homophone (sun/son, rite/write):
+            // only context can tell, and the real-word bar still applies.
+            for h in self.phonetic().homophones(id) {
+                let cost = self.cfg.phon_homophone;
+                match found.iter_mut().find(|c| c.word == h) {
+                    Some(c) => c.channel = c.channel.min(cost),
+                    None => found.push(Candidate { word: h, channel: cost }),
+                }
+            }
+        }
+        let c = Rc::new(found);
         CACHE.with(|m| {
             let mut m = m.borrow_mut();
             if m.len() > 256 {
@@ -466,6 +514,24 @@ impl Engine {
             m.insert(key, c.clone());
         });
         c
+    }
+
+    /// The sounds-like index (built once, on first use).
+    pub fn phonetic(&self) -> &crate::phonetic::Phonetic {
+        self.phon.get_or_init(|| crate::phonetic::Phonetic::build(&self.lx))
+    }
+
+    /// Add words that sound like `core` to the keyboard candidates, keeping
+    /// the cheaper channel cost where a word is in both.
+    fn add_phonetic(&self, core: &str, found: &mut Vec<Candidate>) {
+        for (id, d) in self.phonetic().candidates(core, self.cfg.phon_max) {
+            let base = if sound_mode() { self.cfg.phon_base_sound } else { self.cfg.phon_base };
+            let cost = base + self.cfg.phon_scale * d;
+            match found.iter_mut().find(|c| c.word == id) {
+                Some(c) => c.channel = c.channel.min(cost),
+                None => found.push(Candidate { word: id, channel: cost }),
+            }
+        }
     }
 
     /// Score every hypothesis for `core`. Index 0 is always "keep as typed".

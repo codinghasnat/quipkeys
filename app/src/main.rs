@@ -39,6 +39,7 @@ fn main() {
         return;
     }
     settings::load_exclusions(platform::DEFAULT_EXCLUDE);
+    quipkeys::decoder::set_sound_mode(settings::sound_mode());
     platform::start(core::Core::with_words(Some(settings::words_path())));
     ui::run();
 }

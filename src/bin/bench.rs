@@ -61,8 +61,19 @@ fn configs() -> Vec<(&'static str, Config)> {
     lat.lattice = false;
     let mut no_time = Config::default();
     no_time.channel.timing = false;
+    let mut phonetic = Config::default();
+    phonetic.phonetic = true;
+    let mut sound = Config::default();
+    sound.phonetic = true;
+    sound.phon_base = sound.phon_base_sound; // as with "Spell by sound" switched on
+    let envf = |k: &str| std::env::var(k).ok().and_then(|v| v.parse::<f32>().ok());
+    if let Some(v) = envf("QK_PHON_BASE") { phonetic.phon_base = v; }
+    if let Some(v) = envf("QK_PHON_SCALE") { phonetic.phon_scale = v; }
+    if let Some(v) = envf("QK_PHON_HOMO") { phonetic.phon_homophone = v; }
     vec![
         ("full", full),
+        ("phonetic", phonetic),
+        ("sound-mode", sound),
         ("plain", plain),
         ("no-geometry", no_geo),
         ("no-context", no_ctx),

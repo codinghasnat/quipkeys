@@ -94,7 +94,25 @@ scripts/trainer.sh        # builds trainer/quipkeys.wasm, serves http://localhos
 | 17 | Hand off by one key | Gello → Hello; `jr;;p` → hello | ✅ |
 | 18 | Long messy runs | I wamt tp gp tp thr stpre | ✅ |
 | 14 | Missing apostrophes | Dont / im → Don't / I'm | ✅ (table of unambiguous forms; no comma insertion) |
-| 11–13, 15, 16 | Phonetic, homophones, casing, wrong word, missing word | | later (needs more than bigrams) |
+| 11 | Spelling by sound | fone → phone, nollij → knowledge, edukashun → education | ✅ sounds-like candidates, chosen by sentence context; bolder with **Spell by sound** (see below) |
+| 12 | Homophones | my sun is ill → my son is ill | ✅ partly: only when the sentence clearly says so (real-word bar) |
+| 13, 15, 16 | Casing, wrong word, missing word | | later |
+
+### Spelling by sound (dyslexia-friendly)
+
+Each dictionary word carries its pronunciation, from the CMU Pronouncing Dictionary
+(`data/en_phon.txt`). A typed word that isn't in the dictionary is read with
+plain letter-to-sound rules ("ph" is f, "c" before e/i is s or k, "tion" is
+"shun", a final e is silent, and so on). Words that sound close become
+candidates next to the keyboard-slip ones, and the whole-sentence decoder picks
+between them using context. A real word can also stand for an exact homophone
+(sun/son, our/hour), but only when context clears the real-word confidence bar.
+
+It's always on at a cautious level. **Spell by sound**, in the welcome window
+or the menu, is for people who often spell by ear: sound matches then count as
+much as keyboard slips. Code: `src/phonetic.rs`; evaluation:
+`examples/phon_eval.rs` (words alone) and `examples/phon_ctx.rs` (in sentences).
+Results are in RESULTS.md.
 
 Never touched: code-like tokens (`snake_case`, `fooBar`, `src/main.rs`, `--force`, URLs, e-mails), anything
 with digits (`hunter2`), ALL-CAPS, capitalised words mid-sentence (names), dialect elisions (`countin'`),
@@ -148,6 +166,8 @@ See [RESULTS.md](RESULTS.md) for the current numbers.
 | `data/en_wordfreq.txt` | `wordfreq` 3.1.1 English (American spellings, "oh", "ok", contraction counts), filtered against likely misspellings. Built by `scripts/build_wordfreq_supplement.py` |
 | `data/en_supplement.txt` | manual overrides |
 | `data/eval/{dev,test}.txt` | Brown corpus sentences (NLTK distribution), built by `scripts/prepare_eval.py` |
+| `data/en_phon.txt` | CMU Pronouncing Dictionary (BSD-style licence, `data/CMUDICT-LICENSE.txt`), filtered to known words by `scripts/build_phon.py` |
+| `data/eval/phonetic.txt`, `phonetic_dev.txt` | sound-based spellings written by hand: `phonetic.txt` was written before the mode was built and is used only for testing; `phonetic_dev.txt` (no shared target words) is for tuning |
 
 `scripts/fetch_data.sh` re-creates all of them from the original sources.
 

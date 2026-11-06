@@ -85,6 +85,17 @@ start fresh. That includes Enter, Tab, arrows, Home/End, clicks, shortcuts
 and switching apps. So it never edits text it isn't sure about. It reaches
 back at most 6 words, and only for boundary repairs ("mee tyou" → "meet you").
 
+## Spell by sound
+
+QuipKeys always reads words spelt the way they sound ("fone", "nollij",
+"edukashun") and uses the rest of the sentence to work out which word you
+mean. It does this cautiously by default, so ordinary typing isn't affected.
+Turn on **Spell by sound** (in the welcome window, or the menu) if you often
+spell by ear, for example with dyslexia. Sound-alike spellings then count as
+much as finger slips. In tests on spellings it had never seen, this fixed
+about 4 in 5 in real sentences, with no wrong fixes (details in the main
+RESULTS.md).
+
 ## Your words
 
 QuipKeys never changes a word in your word list, and it fixes typos of those

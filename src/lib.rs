@@ -10,6 +10,7 @@ pub mod keyboard;
 pub mod lexicon;
 pub mod ngrams;
 pub mod nnlm;
+pub mod phonetic;
 pub mod search;
 pub mod sim;
 pub mod stream;

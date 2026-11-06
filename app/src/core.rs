@@ -83,7 +83,13 @@ impl Core {
 
     /// A core that loads and saves the personal word list at `words_path`.
     pub fn with_words(words_path: Option<PathBuf>) -> Core {
-        let engine: &'static Engine = Box::leak(Box::new(Engine::new(Config::default())));
+        // Sounds-like matching is always on; "spell by sound" (a setting)
+        // makes it bolder (quipkeys::decoder::set_sound_mode).
+        Core::build(Config { phonetic: true, ..Config::default() }, words_path)
+    }
+
+    fn build(cfg: Config, words_path: Option<PathBuf>) -> Core {
+        let engine: &'static Engine = Box::leak(Box::new(Engine::new(cfg)));
         let mut core = Core {
             engine,
             stream: Stream::new(engine),
@@ -419,5 +425,21 @@ mod personal {
         c.on_key(Key::Reset);
         assert_eq!(simulate(&mut c, &keys("I use quipkeyd ")), "I use quipkeys ");
         let _ = std::fs::remove_file(&path);
+    }
+}
+
+#[cfg(test)]
+mod sound {
+    use super::tests::{keys, simulate};
+    use super::*;
+
+    #[test]
+    fn spelling_by_sound_in_a_sentence() {
+        // As with "Spell by sound" on (without touching the global switch,
+        // which other tests running in parallel would see).
+        let cfg = Config { phonetic: true, phon_base: Config::default().phon_base_sound, ..Config::default() };
+        let mut c = Core::build(cfg, None);
+        let out = simulate(&mut c, &keys("I took a pikcher of the new mashine "));
+        assert!(out.contains("picture") && out.contains("machine"), "{out:?}");
     }
 }

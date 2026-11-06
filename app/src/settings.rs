@@ -66,12 +66,37 @@ pub fn write_words_if_missing() {
     }
 }
 
+/// A yes/no setting from quipkeys-settings.txt ("name=1").
+fn flag(name: &str) -> bool {
+    std::fs::read_to_string(settings_path())
+        .map(|s| s.lines().any(|l| l.trim() == format!("{name}=1")))
+        .unwrap_or(false)
+}
+
+fn set_flag(name: &str, on: bool) {
+    let old = std::fs::read_to_string(settings_path()).unwrap_or_default();
+    let mut lines: Vec<String> =
+        old.lines().filter(|l| !l.trim().starts_with(&format!("{name}="))).map(String::from).collect();
+    lines.push(format!("{name}={}", on as u8));
+    let _ = std::fs::write(settings_path(), lines.join("\n") + "\n");
+}
+
 pub fn onboarded() -> bool {
-    std::fs::read_to_string(settings_path()).map(|s| s.lines().any(|l| l.trim() == "onboarded=1")).unwrap_or(false)
+    flag("onboarded")
 }
 
 pub fn set_onboarded() {
-    let _ = std::fs::write(settings_path(), "onboarded=1\n");
+    set_flag("onboarded", true);
+}
+
+/// Spell-by-sound mode: expect words spelt the way they sound.
+pub fn sound_mode() -> bool {
+    flag("spell_by_sound")
+}
+
+pub fn set_sound_mode(on: bool) {
+    set_flag("spell_by_sound", on);
+    quipkeys::decoder::set_sound_mode(on);
 }
 
 // ---------------------------------------------------------------- exclusions

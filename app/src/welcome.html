@@ -61,6 +61,13 @@
              background: var(--card); color: var(--text); padding: 12px 14px; font: 16px/1.5 inherit; font-family: inherit;
              -webkit-user-select: text; user-select: text; outline: none; }
   textarea:focus { border-color: var(--accent); }
+  .choices { display: grid; gap: 10px; margin: 18px 0 12px; }
+  .choice { display: flex; gap: 12px; align-items: flex-start; background: var(--card); border: 1px solid var(--line);
+            border-radius: 12px; padding: 12px 14px; cursor: pointer; }
+  .choice:has(input:checked) { border-color: var(--accent); background: var(--soft); }
+  .choice input { margin-top: 4px; accent-color: var(--accent); }
+  .choice b { display: block; font-weight: 600; margin-bottom: 2px; }
+  .choice span { color: var(--muted); font-size: 14px; }
   label.check { display: flex; gap: 10px; align-items: center; margin: 16px 0 0; color: var(--text); }
   label.check input { width: 16px; height: 16px; accent-color: var(--accent); }
   footer { display: flex; align-items: center; justify-content: space-between; padding: 18px 40px 26px; }
@@ -122,6 +129,18 @@
       <div class="k"><div class="caps" id="hotkey"></div><span><b>Pauses or resumes QuipKeys</b> anywhere, any time.</span></div>
     </div>
     <p class="note" id="trayNote"></p>
+  </section>
+
+  <section class="step" data-step="spelling">
+    <h1>How do you spell?</h1>
+    <p>QuipKeys fixes slips of the fingers for everyone. It can also read words spelt the way they sound, and use the rest of the sentence to work out which word you mean.</p>
+    <div class="choices">
+      <label class="choice"><input type="radio" name="spell" value="0" checked>
+        <div><b>I mostly know the spelling</b><span>Fix my typos. Sound-alike spellings are fixed only when the sentence makes them clear.</span></div></label>
+      <label class="choice"><input type="radio" name="spell" value="1">
+        <div><b>I often spell by sound</b><span>Dyslexia-friendly. Write <i>fone</i>, <i>nollij</i> or <i>edukashun</i> and get <i>phone</i>, <i>knowledge</i> and <i>education</i>. Also catches mix-ups like <i>sun</i>/<i>son</i>.</span></div></label>
+    </div>
+    <p class="note">You can change this any time in the menu (<b>Spell by sound</b>).</p>
   </section>
 
   <section class="step" data-step="permission" data-mac>
@@ -187,6 +206,7 @@
   document.querySelectorAll('[data-open]').forEach(a => a.onclick = () => send('open:' + a.dataset.open));
   document.getElementById('permBtn').onclick = () => send('perm');
   document.getElementById('restart').onclick = () => send('restart');
+  document.querySelectorAll('input[name=spell]').forEach(r => r.onchange = () => send('sound:' + r.value));
 
   // Called by the app with its current state.
   window.QK = {
@@ -194,6 +214,7 @@
       perm = s.perm; running = s.running;
       if (!loginSet) {
         document.getElementById('login').checked = s.login || !s.onboarded;
+        document.querySelector(`input[name=spell][value="${s.sound ? 1 : 0}"]`).checked = true;
         loginSet = true;
         // Seen it all before and only the permission is missing (e.g. after an update): go straight there.
         const p = steps.findIndex(x => x.dataset.step === 'permission');
