@@ -6,7 +6,7 @@
 
 <p align="center"><b>Type fast. Stop fixing typos.</b><br>
 Corrects your typing as you press space, in any app, on Windows and macOS.<br>
-Free, open source, and entirely on your computer.</p>
+Free for personal and non-commercial use. The code is public, and it runs entirely on your computer.</p>
 
 <p align="center">
   <a href="https://quipkeys.netlify.app"><img src="https://img.shields.io/badge/website-quipkeys.netlify.app-5b82ff?style=for-the-badge" alt="Website"></a>
@@ -217,3 +217,12 @@ src/sim.rs        simulated sloppy typist
 src/bin/qk.rs     CLI
 src/bin/bench.rs  benchmark + tuner
 ```
+
+## Licence
+
+QuipKeys is **source-available**: you can read, use, change and share it for any **non-commercial**
+purpose under the [PolyForm Noncommercial License 1.0.0](LICENSE). That covers personal use, study,
+research, charities, schools and public bodies. Selling it, or using it in a commercial product or
+service, needs separate permission from the author. Data files from other projects keep their own
+terms; see [THIRD-PARTY.md](THIRD-PARTY.md).
+

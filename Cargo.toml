@@ -3,7 +3,7 @@ name = "quipkeys"
 version = "0.1.0"
 edition = "2021"
 description = "Offline probabilistic typing decoder: types what you meant, not what you hit."
-license = "MIT"
+license-file = "LICENSE"
 
 [lib]
 path = "src/lib.rs"

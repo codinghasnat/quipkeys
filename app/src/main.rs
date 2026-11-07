@@ -46,6 +46,6 @@ fn main() {
 
 #[cfg(not(any(windows, target_os = "macos")))]
 fn main() {
-    let _ = core::Core::new();
+    let _ = core::Core::with_words(None);
     eprintln!("QuipKeys: this platform isn't supported yet (Windows and macOS only).");
 }
