@@ -135,6 +135,15 @@ p { margin: 0; max-width: 62ch; }
 .mono { font-family: var(--mono); }
 /* versus */
 .versus { padding-block: 72px 24px; display: grid; gap: 26px; }
+.steroids { display: grid; gap: 10px; }
+.huge { font-size: var(--step-3); font-weight: 900; line-height: 0.92; letter-spacing: -0.02em; max-width: 13ch; }
+.kill { font: 800 var(--step-2)/1.05 var(--display); font-variation-settings: "wdth" 112; color: var(--fix); }
+.question { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr); gap: 0; border-block: 3px solid var(--ink); margin-top: 8px; }
+.question > div { padding: 20px 22px 22px 0; display: grid; gap: 6px; }
+.question > div.us { padding-left: 22px; border-left: 3px solid var(--ink); }
+.question span { font: 600 0.85rem/1 var(--mono); color: var(--ink-soft); }
+.question b { font: 800 var(--step-1)/1.2 var(--display); font-variation-settings: "wdth" 108; }
+.question > div:first-child b { color: #8f8558; text-decoration: line-through 2px var(--squiggle); }
 .versus .intro { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 40px; align-items: start; }
 .versus .intro p { font-size: var(--step-1); line-height: 1.45; color: var(--ink-soft); }
 .who { display: grid; gap: 18px; }
@@ -193,7 +202,8 @@ table.vs { width: 100%; border-collapse: collapse; min-width: 640px; font-size: 
 footer { padding-block: 28px 40px; font-size: 0.9rem; color: var(--ink-soft); display: flex; flex-wrap: wrap; gap: 8px 24px; justify-content: space-between; }
 
 @media (max-width: 760px) {
-  .claim-row, .private ul, .cmds, .sound, .versus .intro { grid-template-columns: minmax(0, 1fr); }
+  .claim-row, .private ul, .cmds, .sound, .versus .intro, .question { grid-template-columns: minmax(0, 1fr); }
+  .question > div.us { padding-left: 0; border-left: 0; border-top: 2px solid var(--ink); padding-top: 18px; }
   .signal { grid-template-columns: 56px minmax(0, 1fr); }
   .signal .cap { --k: 48px; }
   .signal .ex { grid-column: 2; }
@@ -248,7 +258,14 @@ footer { padding-block: 28px 40px; font-size: 0.9rem; color: var(--ink-soft); di
   </section>
 
   <section class="versus">
-    <h2>We killed sloppy typos.</h2>
+    <div class="steroids">
+      <h2 class="huge">Autocorrect on steroids.</h2>
+      <p class="kill">We killed sloppy typos.</p>
+    </div>
+    <div class="question">
+      <div><span>Autocorrect asks</span><b>Is this a word I know?</b></div>
+      <div class="us"><span>QuipKeys asks</span><b>Which keys were your fingers going for, and what does the sentence need?</b></div>
+    </div>
     <div class="intro">
       <p>Your phone solved this years ago. Its keyboard knows where your thumb landed and guesses the word you were going for, so fat-finger taps come out right. The keyboard on your desk never got that trick. It types exactly what you hit, and a spell checker underlines it afterwards. QuipKeys brings the phone trick to physical keyboards.</p>
       <div class="who">
@@ -265,6 +282,8 @@ footer { padding-block: 28px 40px; font-size: 0.9rem; color: var(--ink-soft); di
           <tr><th>Fixes a space in the wrong place (<span class="mono">mee tyou</span>)</th><td>Often</td><td class="no">Rarely</td><td class="us">Yes</td></tr>
           <tr><th>Uses your typing rhythm</th><td class="no">Not on a touchscreen</td><td class="no">No</td><td class="us">Yes, swaps and hesitations count</td></tr>
           <tr><th>Works in every app</th><td>Yes</td><td class="no">Only in some apps</td><td class="us">Yes, except passwords and terminals</td></tr>
+          <tr><th>Catches typos that are real words (<span class="mono">form</span> for <span class="mono">from</span>)</th><td>Sometimes</td><td class="no">No</td><td class="us">When the sentence makes it clear</td></tr>
+          <tr><th>Leaves correct words alone</th><td>Usually</td><td class="no">Mostly, but it misfires on names and slang</td><td class="us">Changes 0.1% of correct words, and never one you've undone</td></tr>
           <tr><th>Undo a bad fix</th><td>Tap the suggestion</td><td>Click the word</td><td class="us">Press Backspace once</td></tr>
         </tbody>
       </table>
