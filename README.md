@@ -4,8 +4,9 @@
 
 <h1 align="center">QuipKeys</h1>
 
-<p align="center"><b>Type fast. Stop fixing typos.</b><br>
-Corrects your typing as you press space, in any app, on Windows and macOS.<br>
+<p align="center"><b>The brainrot keyboard for sloppy hands.</b><br>
+Mash the keys. QuipKeys fixes your typos as you hit space, in any app, on Windows and macOS.<br>
+About 30% faster effective typing at a typical typo rate, and 21% more words right on real sloppy typing.<br>
 Free for personal and non-commercial use. The code is public, and it runs entirely on your computer.</p>
 
 <p align="center">
