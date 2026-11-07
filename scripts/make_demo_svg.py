@@ -21,9 +21,9 @@ END = CYCLE - 1.2
 
 css = [f"""
 text {{ font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 22px; }}
-.typed {{ fill: #c9d1d9; }} .typo {{ fill: #ff7b72; }} .fixed {{ fill: #c9d1d9; }} .ok {{ fill: #56d364; font-weight: 700; }}
-.prompt {{ fill: #6b8ffa; font-weight: 700; }}
-.label {{ font-family: -apple-system, 'Segoe UI', sans-serif; font-size: 13px; fill: #8b949e; letter-spacing: .08em; }}
+.typed {{ fill: #17140a; }} .typo {{ fill: #d9262c; text-decoration: underline wavy; }} .fixed {{ fill: #17140a; }} .ok {{ fill: #1a56d6; font-weight: 700; }}
+.prompt {{ fill: #17140a; font-weight: 700; }}
+.label {{ font-family: -apple-system, 'Segoe UI', sans-serif; font-size: 13px; fill: #4d4526; letter-spacing: .04em; font-weight: 700; }}
 @media (prefers-reduced-motion: reduce) {{ * {{ animation: none !important; }} .typed-g {{ opacity: 0; }} .fixed-g {{ opacity: 1 !important; }} .clip rect {{ width: {W}px; }} }}
 """]
 body = []
@@ -54,10 +54,10 @@ for i, (typed, fixed) in enumerate(LINES):
 H = Y0 + LH * len(LINES) + 8
 svg = f"""<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{H}" viewBox="0 0 {W} {H}" role="img" aria-label="Sloppy typing corrected as you type by QuipKeys">
 <style>{''.join(css)}</style>
-<defs><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#161b22"/><stop offset="1" stop-color="#0d1117"/></linearGradient></defs>
-<rect x="1" y="1" width="{W - 2}" height="{H - 2}" rx="14" fill="url(#bg)" stroke="#30363d"/>
-<circle cx="26" cy="26" r="6" fill="#ff5f57"/><circle cx="46" cy="26" r="6" fill="#febc2e"/><circle cx="66" cy="26" r="6" fill="#28c840"/>
-<text x="{W - 20}" y="31" text-anchor="end" class="label">QUIPKEYS · FIXED AS YOU PRESS SPACE</text>
+<rect x="2" y="6" width="{W - 4}" height="{H - 8}" rx="16" fill="#17140a"/>
+<rect x="2" y="2" width="{W - 4}" height="{H - 10}" rx="14" fill="#ffe14a"/>
+<text x="24" y="31" class="label">QuipKeys</text>
+<text x="{W - 20}" y="31" text-anchor="end" class="label">fixed as you hit space</text>
 {''.join(body)}
 </svg>
 """

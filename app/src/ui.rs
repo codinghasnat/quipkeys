@@ -319,46 +319,71 @@ fn display_name(program: &str) -> String {
         .join(" ")
 }
 
-/// The QuipKeys mark (a "Q": a ring with a tail), drawn at 64×64 with
-/// anti-aliasing. On macOS it's a template image (the system colours it);
-/// on Windows it's blue when on and grey when paused.
+/// The QuipKeys logo (docs/assets/logo.svg): a keycap with a Q on it, drawn
+/// at 64x64 with anti-aliasing. Windows gets the colour version (greyed out
+/// while paused). macOS gets a template image, a keycap silhouette with the Q
+/// cut out, which the system tints to suit the menu bar (faded while paused).
 fn icon(on: bool) -> Icon {
     const N: usize = 64;
-    let (r, g, b) = if cfg!(target_os = "macos") {
-        (0, 0, 0)
-    } else if on {
-        (0x3b, 0x6c, 0xf6)
-    } else {
-        (0x8a, 0x8f, 0x98)
+    // Shapes in the SVG's 64-unit coordinates.
+    let rrect = |x: f32, y: f32, x0: f32, y0: f32, w: f32, h: f32, r: f32| -> bool {
+        let cx = x.clamp(x0 + r, x0 + w - r);
+        let cy = y.clamp(y0 + r, y0 + h - r);
+        (x - cx).powi(2) + (y - cy).powi(2) <= r * r && x >= x0 && x <= x0 + w && y >= y0 && y <= y0 + h
     };
-    let alpha_scale = if cfg!(target_os = "macos") && !on { 0.4 } else { 1.0 };
+    let base = |x: f32, y: f32| rrect(x, y, 4.0, 8.0, 56.0, 52.0, 13.0);
+    let top = |x: f32, y: f32| rrect(x, y, 8.0, 4.0, 48.0, 46.0, 10.0);
+    let q = |x: f32, y: f32| -> bool {
+        let d = ((x - 30.0).powi(2) + (y - 25.5).powi(2)).sqrt();
+        if (8.0..=14.0).contains(&d) {
+            return true;
+        }
+        // Tail: square start inside the ring, round end outside.
+        let (ax, ay, bx, by) = (32.5f32, 28.0f32, 44.0f32, 39.5f32);
+        let t = ((x - ax) * (bx - ax) + (y - ay) * (by - ay)) / ((bx - ax).powi(2) + (by - ay).powi(2));
+        if t < 0.0 {
+            return false;
+        }
+        let t = t.min(1.0);
+        ((x - ax - t * (bx - ax)).powi(2) + (y - ay - t * (by - ay)).powi(2)).sqrt() <= 3.25
+    };
+    let template = cfg!(target_os = "macos");
+    let ink = [0x17u8, 0x14, 0x0a];
+    let yellow = if on { [0xffu8, 0xe1, 0x4a] } else { [0xc9u8, 0xc3, 0xa8] };
     let mut px = vec![0u8; N * N * 4];
-    let inside = |x: f32, y: f32| -> bool {
-        let (cx, cy) = (28.0, 28.0);
-        let d = ((x - cx).powi(2) + (y - cy).powi(2)).sqrt();
-        let ring = (15.0..=24.0).contains(&d);
-        // Tail: a thick segment crossing the ring, from (35, 35) to (56, 56).
-        let (ax, ay, bx, by) = (35.0f32, 35.0f32, 56.0f32, 56.0f32);
-        let t = (((x - ax) * (bx - ax) + (y - ay) * (by - ay)) / ((bx - ax).powi(2) + (by - ay).powi(2))).clamp(0.0, 1.0);
-        let (qx, qy) = (ax + t * (bx - ax), ay + t * (by - ay));
-        let tail = ((x - qx).powi(2) + (y - qy).powi(2)).sqrt() <= 5.0;
-        ring || tail
-    };
     for y in 0..N {
         for x in 0..N {
-            let mut hits = 0;
+            // 4x4 supersampling: average the colour of 16 sample points.
+            let (mut r, mut g, mut b, mut a) = (0u32, 0u32, 0u32, 0u32);
             for sy in 0..4 {
                 for sx in 0..4 {
-                    if inside(x as f32 + (sx as f32 + 0.5) / 4.0, y as f32 + (sy as f32 + 0.5) / 4.0) {
-                        hits += 1;
+                    let (fx, fy) = (x as f32 + (sx as f32 + 0.5) / 4.0, y as f32 + (sy as f32 + 0.5) / 4.0);
+                    let c: Option<[u8; 3]> = if template {
+                        // Silhouette with the Q cut out.
+                        ((base(fx, fy) || top(fx, fy)) && !(top(fx, fy) && q(fx, fy))).then_some([0, 0, 0])
+                    } else if top(fx, fy) {
+                        Some(if q(fx, fy) { ink } else { yellow })
+                    } else if base(fx, fy) {
+                        Some(ink)
+                    } else {
+                        None
+                    };
+                    if let Some(c) = c {
+                        r += c[0] as u32;
+                        g += c[1] as u32;
+                        b += c[2] as u32;
+                        a += 1;
                     }
                 }
             }
             let i = (y * N + x) * 4;
-            px[i] = r;
-            px[i + 1] = g;
-            px[i + 2] = b;
-            px[i + 3] = (hits as f32 / 16.0 * 255.0 * alpha_scale) as u8;
+            if let (Some(r), Some(g), Some(b)) = (r.checked_div(a), g.checked_div(a), b.checked_div(a)) {
+                px[i] = r as u8;
+                px[i + 1] = g as u8;
+                px[i + 2] = b as u8;
+            }
+            let fade = if template && !on { 0.4 } else { 1.0 };
+            px[i + 3] = (a as f32 / 16.0 * 255.0 * fade) as u8;
         }
     }
     Icon::from_rgba(px, N as u32, N as u32).expect("valid icon")

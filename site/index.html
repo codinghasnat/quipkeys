@@ -8,7 +8,7 @@
 <meta property="og:title" content="QuipKeys: the brainrot keyboard for sloppy hands">
 <meta property="og:description" content="Mash the keys. QuipKeys fixes your typos as you hit space, in every app on Windows and Mac. Free, and it runs on your computer.">
 <meta name="theme-color" content="#ffe14a">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect x='4' y='4' width='56' height='56' rx='12' fill='%2317140a'/%3E%3Crect x='8' y='6' width='48' height='44' rx='9' fill='%23ffe14a'/%3E%3Ctext x='32' y='38' font-family='Arial Black,Arial' font-weight='900' font-size='30' text-anchor='middle' fill='%2317140a'%3EQ%3C/text%3E%3C/svg%3E">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64' width='64' height='64'%3E%3Crect x='4' y='8' width='56' height='52' rx='13' fill='%2317140a'/%3E%3Crect x='8' y='4' width='48' height='46' rx='10' fill='%23ffe14a'/%3E%3Ccircle cx='30' cy='25.5' r='11' fill='none' stroke='%2317140a' stroke-width='6'/%3E%3Cpath d='M32.5 28l11.5 11.5' stroke='%2317140a' stroke-width='6.5'/%3E%3Ccircle cx='44' cy='39.5' r='3.25' fill='%2317140a'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
@@ -54,7 +54,7 @@ p { margin: 0; max-width: 62ch; }
 /* header */
 .top { display: flex; justify-content: space-between; align-items: center; padding-block: 22px; }
 .mark { display: flex; align-items: center; gap: 12px; font: 900 1.35rem/1 var(--display); font-variation-settings: "wdth" 125; text-decoration: none; }
-.mark .cap { width: 40px; height: 40px; font-size: 1.2rem; }
+.mark svg { width: 42px; height: 42px; display: block; }
 .top a.gh { font-weight: 700; }
 
 /* keycaps */
@@ -132,6 +132,25 @@ p { margin: 0; max-width: 62ch; }
 .ticker b { color: #fff; }
 @keyframes slide { to { transform: translateX(-50%); } }
 
+.mono { font-family: var(--mono); }
+/* versus */
+.versus { padding-block: 72px 24px; display: grid; gap: 26px; }
+.versus .intro { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 40px; align-items: start; }
+.versus .intro p { font-size: var(--step-1); line-height: 1.45; color: var(--ink-soft); }
+.who { display: grid; gap: 18px; }
+.who div { border-left: 4px solid var(--ink); padding-left: 16px; }
+.who b { display: block; font: 800 1.15rem/1.25 var(--display); font-variation-settings: "wdth" 112; }
+.table-wrap { overflow-x: auto; }
+table.vs { width: 100%; border-collapse: collapse; min-width: 640px; font-size: 1rem; }
+.vs th, .vs td { text-align: left; padding: 16px 14px 16px 0; border-bottom: 2px solid var(--ink); vertical-align: top; }
+.vs thead th { font: 800 1rem/1.2 var(--display); font-variation-settings: "wdth" 112; border-bottom-width: 3px; }
+.vs tbody th { font-weight: 700; width: 30%; }
+.vs td { color: var(--ink-soft); }
+.vs td.no { color: #8f8558; }
+.vs .us { color: var(--ink); font-weight: 700; }
+.vs thead .us { color: var(--fix); }
+.vs td.us::before { content: "✓ "; color: var(--fix); }
+
 /* how */
 .how { padding-block: 72px 40px; display: grid; gap: 36px; }
 .signals { display: grid; gap: 0; border-top: 2px solid var(--ink); }
@@ -174,7 +193,7 @@ p { margin: 0; max-width: 62ch; }
 footer { padding-block: 28px 40px; font-size: 0.9rem; color: var(--ink-soft); display: flex; flex-wrap: wrap; gap: 8px 24px; justify-content: space-between; }
 
 @media (max-width: 760px) {
-  .claim-row, .private ul, .cmds, .sound { grid-template-columns: minmax(0, 1fr); }
+  .claim-row, .private ul, .cmds, .sound, .versus .intro { grid-template-columns: minmax(0, 1fr); }
   .signal { grid-template-columns: 56px minmax(0, 1fr); }
   .signal .cap { --k: 48px; }
   .signal .ex { grid-column: 2; }
@@ -190,7 +209,7 @@ footer { padding-block: 28px 40px; font-size: 0.9rem; color: var(--ink-soft); di
 
 <div class="col">
   <header class="top">
-    <a class="mark" href="#"><span class="cap">Q</span>QuipKeys</a>
+    <a class="mark" href="#"><svg viewBox="0 0 64 64" aria-hidden="true"><rect x="4" y="8" width="56" height="52" rx="13" fill="#17140a"/><rect x="8" y="4" width="48" height="46" rx="10" fill="#fffbea"/><circle cx="30" cy="25.5" r="11" fill="none" stroke="#17140a" stroke-width="6"/><path d="M32.5 28l11.5 11.5" stroke="#17140a" stroke-width="6.5"/><circle cx="44" cy="39.5" r="3.25" fill="#17140a"/></svg>QuipKeys</a>
     <a class="gh" href="https://github.com/codinghasnat/quipkeys">GitHub</a>
   </header>
 
@@ -226,6 +245,30 @@ footer { padding-block: 28px 40px; font-size: 0.9rem; color: var(--ink-soft); di
       <div class="claim"><div class="n">0.1%</div><p>of correctly typed words ever changed. It doesn't fight you.</p></div>
     </div>
     <p class="small">* Simulated typist with 3% of letters wrong, on held-out text: 55.8 → 72.5 words per minute once fixing time is counted. At 10% wrong it's 37 → 60. † 33 real typing runs: 75.4% → 91.5% of words right. Full results are in the repo.</p>
+  </section>
+
+  <section class="versus">
+    <h2>We killed sloppy typos.</h2>
+    <div class="intro">
+      <p>Your phone solved this years ago. Its keyboard knows where your thumb landed and guesses the word you were going for, so fat-finger taps come out right. The keyboard on your desk never got that trick. It types exactly what you hit, and a spell checker underlines it afterwards. QuipKeys brings the phone trick to physical keyboards.</p>
+      <div class="who">
+        <div><b>Big fingers, tiny laptop keyboard?</b>Type at full speed and let QuipKeys catch the misses.</div>
+        <div><b>Normal fingers?</b>You still miss keys. Fewer misses to go back and fix means more words per minute.</div>
+      </div>
+    </div>
+    <div class="table-wrap">
+      <table class="vs">
+        <thead><tr><th></th><th>Phone keyboard</th><th>Autocorrect on Windows or Mac</th><th class="us">QuipKeys</th></tr></thead>
+        <tbody>
+          <tr><th>Knows which key you were aiming for</th><td>Yes, from where your thumb touched</td><td class="no">No, it guesses from letters</td><td class="us">Yes, from where keys sit on your keyboard</td></tr>
+          <tr><th>Reads the whole sentence</th><td>Yes</td><td class="no">Barely</td><td class="us">Yes, and fixes words you already typed</td></tr>
+          <tr><th>Fixes a space in the wrong place (<span class="mono">mee tyou</span>)</th><td>Often</td><td class="no">Rarely</td><td class="us">Yes</td></tr>
+          <tr><th>Uses your typing rhythm</th><td class="no">Not on a touchscreen</td><td class="no">No</td><td class="us">Yes, swaps and hesitations count</td></tr>
+          <tr><th>Works in every app</th><td>Yes</td><td class="no">Only in some apps</td><td class="us">Yes, except passwords and terminals</td></tr>
+          <tr><th>Undo a bad fix</th><td>Tap the suggestion</td><td>Click the word</td><td class="us">Press Backspace once</td></tr>
+        </tbody>
+      </table>
+    </div>
   </section>
 
   <section class="how">

@@ -27,9 +27,8 @@
   .step { display: none; animation: in .25s ease; }
   .step.on { display: block; }
   @keyframes in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
-  .logo { width: 56px; height: 56px; border-radius: 14px; background: var(--accent);
-          display: grid; place-items: center; margin-bottom: 18px; }
-  .logo svg { width: 34px; height: 34px; }
+  .logo { width: 64px; height: 64px; margin-bottom: 18px; }
+  .logo svg { width: 64px; height: 64px; display: block; }
   h1 { font-size: 25px; line-height: 1.2; margin: 0 0 10px; letter-spacing: -0.01em; }
   p { margin: 0 0 14px; color: var(--muted); }
   p.lead { font-size: 16px; color: var(--text); }
@@ -86,7 +85,7 @@
 <body>
 <main>
   <section class="step" data-step="welcome">
-    <div class="logo"><svg viewBox="0 0 34 34" fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round"><circle cx="15" cy="15" r="9.5"/><path d="M17.5 17.5l9.5 9.5"/></svg></div>
+    <div class="logo"><svg viewBox="0 0 64 64" aria-hidden="true"><rect x="4" y="8" width="56" height="52" rx="13" fill="#17140a"/><rect x="8" y="4" width="48" height="46" rx="10" fill="#ffe14a"/><circle cx="30" cy="25.5" r="11" fill="none" stroke="#17140a" stroke-width="6"/><path d="M32.5 28l11.5 11.5" stroke="#17140a" stroke-width="6.5"/><circle cx="44" cy="39.5" r="3.25" fill="#17140a"/></svg></div>
     <h1>Type fast. Stop fixing typos.</h1>
     <p class="lead">Each time you press space, QuipKeys checks the word you just typed and quietly fixes the slip.</p>
     <div class="demo">

@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <!-- QuipKeys: a keycap (dark base, highlighter-yellow top) with the Q mark -->
+  <rect x="4" y="8" width="56" height="52" rx="13" fill="#17140a"/>
+  <rect x="8" y="4" width="48" height="46" rx="10" fill="#ffe14a"/>
+  <circle cx="30" cy="25.5" r="11" fill="none" stroke="#17140a" stroke-width="6"/>
+  <path d="M32.5 28l11.5 11.5" stroke="#17140a" stroke-width="6.5"/>
+  <circle cx="44" cy="39.5" r="3.25" fill="#17140a"/>
+</svg>
