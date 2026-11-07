@@ -1,14 +1,42 @@
-# QuipKeys
+<p align="center">
+  <img src="docs/assets/icon.png" width="96" alt="QuipKeys logo">
+</p>
 
-**Type approximately, get exactly what you meant.**
+<h1 align="center">QuipKeys</h1>
 
-QuipKeys is an offline, probabilistic typing decoder for physical keyboards.
-It isn't a spellchecker. It asks *which words did your fingers mean to type?*
-To answer, it uses key geometry, keystroke timing, word frequencies and the
-surrounding words. It only changes text when it is confident.
+<p align="center"><b>Type fast. Stop fixing typos.</b><br>
+Corrects your typing as you press space, in any app, on Windows and macOS.<br>
+Free, open source, and entirely on your computer.</p>
 
-This repo is the **decoder-first validation** from the plan: a small Rust
-engine plus a benchmark harness. There is no OS integration yet.
+<p align="center">
+  <a href="https://quipkeys.netlify.app"><img src="https://img.shields.io/badge/website-quipkeys.netlify.app-5b82ff?style=for-the-badge" alt="Website"></a>
+  <img src="https://img.shields.io/badge/platforms-Windows%20%7C%20macOS-8b5cf6?style=for-the-badge" alt="Windows and macOS">
+  <img src="https://img.shields.io/badge/runs-100%25%20offline-3ee08a?style=for-the-badge" alt="Runs offline">
+  <img src="https://img.shields.io/badge/built%20with-Rust-e8eaf0?style=for-the-badge&logo=rust&logoColor=black" alt="Rust">
+</p>
+
+<p align="center">
+  <img src="docs/assets/demo.svg" width="760" alt="Animated demo: sloppy typing corrected as each space is pressed">
+</p>
+
+QuipKeys isn't a spell checker. It asks *which words did your fingers mean to type?* To answer, it weighs:
+
+| | Signal | Example |
+|---|---|---|
+| ⌨️ | **Your keyboard**: neighbouring keys are likely slips, far ones aren't | `wamt` → **want** |
+| 🎵 | **Your rhythm**: near-simultaneous keys are probably swapped | `thsi` → **this** |
+| 🧠 | **The whole sentence**: a language model from 1.4B words of Wikipedia, which can fix earlier words | `Hellon ice` → **Hello nice** |
+| ⭐ | **Your words**: undo a fix once and that spelling is never touched again | `kubectl` stays **kubectl** |
+| 🔊 | **Spell by sound** (optional): words spelt by ear, chosen by context | `nollij` → **knowledge** |
+
+It only changes text when it's confident. On held-out text it changes about **0.1%** of correctly typed
+words. On real sloppy typing runs, words right went from **75.4% → 91.5%**.
+
+**→ Get the app:** see [`app/README.md`](app/README.md) (Windows: `cargo build --release`; macOS: `sh macos/make-app.sh --install`).
+**→ Read the numbers:** [`RESULTS.md`](RESULTS.md).
+
+<details>
+<summary><b>How the engine fits together</b></summary>
 
 ```
 raw keys + timing
@@ -24,6 +52,9 @@ ranked readings ── incl. "keep it as typed" and run-together words ("nicetom
    ▼  stream.rs   per-word decisions at space/punctuation, two look-backs,
 corrected text ─── word-boundary repair ("hellon ice", "mee tyou", "meetin g"), hysteresis
 ```
+
+</details>
+
 
 ## Try it
 

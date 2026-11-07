@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="276" viewBox="0 0 760 276" role="img" aria-label="Sloppy typing corrected as you type by QuipKeys">
+<style>
+text { font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 22px; }
+.typed { fill: #c9d1d9; } .typo { fill: #ff7b72; } .fixed { fill: #c9d1d9; } .ok { fill: #56d364; font-weight: 700; }
+.prompt { fill: #6b8ffa; font-weight: 700; }
+.label { font-family: -apple-system, 'Segoe UI', sans-serif; font-size: 13px; fill: #8b949e; letter-spacing: .08em; }
+@media (prefers-reduced-motion: reduce) { * { animation: none !important; } .typed-g { opacity: 0; } .fixed-g { opacity: 1 !important; } .clip rect { width: 760px; } }
+
+@keyframes type0 { 0% { width: 0 } 2.50% { width: 0 } 15.00% { width: 334.0px } 100% { width: 334.0px } }
+#c0 rect { animation: type0 16.0s steps(1) infinite; animation-timing-function: steps(25, end); }
+@keyframes swapout0 { 0%, 18.44% { opacity: 1 } 20.00%, 100% { opacity: 0 } }
+@keyframes swapin0 { 0%, 18.44% { opacity: 0 } 20.00%, 92.50% { opacity: 1 } 96.25%, 100% { opacity: 0 } }
+@keyframes hide0 { 0%, 92.50% { opacity: 1 } 96.25%, 100% { opacity: 0 } }
+#t0 { animation: swapout0 16.0s infinite; } #f0 { animation: swapin0 16.0s infinite; opacity: 0; }
+#p0 { animation: hide0 16.0s infinite; }
+
+@keyframes type1 { 0% { width: 0 } 24.06% { width: 0 } 36.56% { width: 294.4px } 100% { width: 294.4px } }
+#c1 rect { animation: type1 16.0s steps(1) infinite; animation-timing-function: steps(22, end); }
+@keyframes swapout1 { 0%, 40.00% { opacity: 1 } 41.56%, 100% { opacity: 0 } }
+@keyframes swapin1 { 0%, 40.00% { opacity: 0 } 41.56%, 92.50% { opacity: 1 } 96.25%, 100% { opacity: 0 } }
+@keyframes hide1 { 0%, 92.50% { opacity: 1 } 96.25%, 100% { opacity: 0 } }
+#t1 { animation: swapout1 16.0s infinite; } #f1 { animation: swapin1 16.0s infinite; opacity: 0; }
+#p1 { animation: hide1 16.0s infinite; }
+
+@keyframes type2 { 0% { width: 0 } 45.62% { width: 0 } 58.13% { width: 334.0px } 100% { width: 334.0px } }
+#c2 rect { animation: type2 16.0s steps(1) infinite; animation-timing-function: steps(25, end); }
+@keyframes swapout2 { 0%, 61.56% { opacity: 1 } 63.13%, 100% { opacity: 0 } }
+@keyframes swapin2 { 0%, 61.56% { opacity: 0 } 63.13%, 92.50% { opacity: 1 } 96.25%, 100% { opacity: 0 } }
+@keyframes hide2 { 0%, 92.50% { opacity: 1 } 96.25%, 100% { opacity: 0 } }
+#t2 { animation: swapout2 16.0s infinite; } #f2 { animation: swapin2 16.0s infinite; opacity: 0; }
+#p2 { animation: hide2 16.0s infinite; }
+
+@keyframes type3 { 0% { width: 0 } 67.19% { width: 0 } 79.69% { width: 241.6px } 100% { width: 241.6px } }
+#c3 rect { animation: type3 16.0s steps(1) infinite; animation-timing-function: steps(18, end); }
+@keyframes swapout3 { 0%, 83.12% { opacity: 1 } 84.69%, 100% { opacity: 0 } }
+@keyframes swapin3 { 0%, 83.12% { opacity: 0 } 84.69%, 92.50% { opacity: 1 } 96.25%, 100% { opacity: 0 } }
+@keyframes hide3 { 0%, 92.50% { opacity: 1 } 96.25%, 100% { opacity: 0 } }
+#t3 { animation: swapout3 16.0s infinite; } #f3 { animation: swapin3 16.0s infinite; opacity: 0; }
+#p3 { animation: hide3 16.0s infinite; }
+</style>
+<defs><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#161b22"/><stop offset="1" stop-color="#0d1117"/></linearGradient></defs>
+<rect x="1" y="1" width="758" height="274" rx="14" fill="url(#bg)" stroke="#30363d"/>
+<circle cx="26" cy="26" r="6" fill="#ff5f57"/><circle cx="46" cy="26" r="6" fill="#febc2e"/><circle cx="66" cy="26" r="6" fill="#28c840"/>
+<text x="740" y="31" text-anchor="end" class="label">QUIPKEYS · FIXED AS YOU PRESS SPACE</text>
+
+  <clipPath id="c0" class="clip"><rect x="64" y="66" height="36" width="0"/></clipPath>
+  <g id="p0"><text x="34" y="92" class="prompt">›</text></g>
+  <g id="t0" class="typed-g" clip-path="url(#c0)"><text x="64" y="92" xml:space="preserve"><tspan class="typed">I </tspan><tspan class="typo">wamt</tspan><tspan class="typed"> to </tspan><tspan class="typo">gp</tspan><tspan class="typed"> to the </tspan><tspan class="typo">stpre</tspan></text></g>
+  <g id="f0" class="fixed-g"><text x="64" y="92" xml:space="preserve"><tspan class="fixed">I </tspan><tspan class="ok">want</tspan><tspan class="fixed"> to </tspan><tspan class="ok">go</tspan><tspan class="fixed"> to the </tspan><tspan class="ok">store</tspan></text></g>
+  <clipPath id="c1" class="clip"><rect x="64" y="110" height="36" width="0"/></clipPath>
+  <g id="p1"><text x="34" y="136" class="prompt">›</text></g>
+  <g id="t1" class="typed-g" clip-path="url(#c1)"><text x="64" y="136" xml:space="preserve"><tspan class="typo">Hellon ice</tspan><tspan class="typed"> to </tspan><tspan class="typo">mee tyou</tspan></text></g>
+  <g id="f1" class="fixed-g"><text x="64" y="136" xml:space="preserve"><tspan class="ok">Hello nice</tspan><tspan class="fixed"> to </tspan><tspan class="ok">meet you</tspan></text></g>
+  <clipPath id="c2" class="clip"><rect x="64" y="154" height="36" width="0"/></clipPath>
+  <g id="p2"><text x="34" y="180" class="prompt">›</text></g>
+  <g id="t2" class="typed-g" clip-path="url(#c2)"><text x="64" y="180" xml:space="preserve"><tspan class="typo">thsi</tspan><tspan class="typed"> is </tspan><tspan class="typo">teh</tspan><tspan class="typed"> best </tspan><tspan class="typo">keybaord</tspan></text></g>
+  <g id="f2" class="fixed-g"><text x="64" y="180" xml:space="preserve"><tspan class="ok">this</tspan><tspan class="fixed"> is </tspan><tspan class="ok">the</tspan><tspan class="fixed"> best </tspan><tspan class="ok">keyboard</tspan></text></g>
+  <clipPath id="c3" class="clip"><rect x="64" y="198" height="36" width="0"/></clipPath>
+  <g id="p3"><text x="34" y="224" class="prompt">›</text></g>
+  <g id="t3" class="typed-g" clip-path="url(#c3)"><text x="64" y="224" xml:space="preserve"><tspan class="typed">I need more </tspan><tspan class="typo">nollij</tspan></text></g>
+  <g id="f3" class="fixed-g"><text x="64" y="224" xml:space="preserve"><tspan class="fixed">I need more </tspan><tspan class="ok">knowledge</tspan></text></g>
+</svg>
