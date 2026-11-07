@@ -83,9 +83,10 @@ impl Core {
 
     /// A core that loads and saves the personal word list at `words_path`.
     pub fn with_words(words_path: Option<PathBuf>) -> Core {
-        // Sounds-like matching is always on; "spell by sound" (a setting)
-        // makes it bolder (quipkeys::decoder::set_sound_mode).
-        Core::build(Config { phonetic: true, ..Config::default() }, words_path)
+        // Sounds-like matching is off unless the user switches on "Spell by
+        // sound" (quipkeys::decoder::set_sound_mode), so ordinary typing is
+        // corrected exactly as before.
+        Core::build(Config::default(), words_path)
     }
 
     fn build(cfg: Config, words_path: Option<PathBuf>) -> Core {

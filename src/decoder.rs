@@ -8,8 +8,9 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
-/// Spell-by-sound mode (a user setting): sounds-like matches use
-/// `phon_base_sound` instead of `phon_base`, i.e. spelling by ear is expected.
+/// Spell-by-sound mode (a user setting): switches sounds-like matching on
+/// (even when `Config::phonetic` is off) with `phon_base_sound` as its base
+/// cost, i.e. spelling by ear is expected.
 static SOUND_MODE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 pub fn set_sound_mode(on: bool) {
@@ -134,6 +135,8 @@ pub struct Config {
     pub phon_base: f32,
     pub phon_scale: f32,
     pub phon_max: f32,
+    /// Typed words this short only take exact sound matches.
+    pub phon_exact_len: usize,
     /// Base cost in spell-by-sound mode (see `set_sound_mode`).
     pub phon_base_sound: f32,
     /// Channel cost of a real word standing for its homophone (0 = never).
@@ -197,10 +200,11 @@ impl Default for Config {
             hand_shift_max_cost: 14.0,
             min_len: 1,
             phonetic: false,
-            phon_base: 7.0,
-            phon_scale: 12.0,
-            phon_max: 1.6,
-            phon_base_sound: 1.0,
+            phon_base: 5.0,
+            phon_scale: 1.0,
+            phon_max: 6.0,
+            phon_base_sound: 5.0,
+            phon_exact_len: 3,
             phon_homophone: 4.0,
         }
     }
@@ -492,9 +496,10 @@ impl Engine {
         // Sounds-like candidates for unknown words, and for very rare ones
         // ("gide", "sene"): those still face the real-word confidence bar.
         let rare = |id| self.lx.unigram_p(id) < 3e-7;
-        if self.cfg.phonetic && core.len() >= 3 && self.lx.id(core).is_none_or(rare) {
+        let on = self.cfg.phonetic || sound_mode();
+        if on && core.len() >= 3 && self.lx.id(core).is_none_or(rare) {
             self.add_phonetic(core, &mut found);
-        } else if let (true, Some(id)) = (self.cfg.phonetic && self.cfg.phon_homophone > 0.0, self.lx.id(core)) {
+        } else if let (true, Some(id)) = (on && self.cfg.phon_homophone > 0.0, self.lx.id(core)) {
             // A real word may stand for its homophone (sun/son, rite/write):
             // only context can tell, and the real-word bar still applies.
             for h in self.phonetic().homophones(id) {
@@ -525,6 +530,11 @@ impl Engine {
     /// the cheaper channel cost where a word is in both.
     fn add_phonetic(&self, core: &str, found: &mut Vec<Candidate>) {
         for (id, d) in self.phonetic().candidates(core, self.cfg.phon_max) {
+            // Short words: a keyboard slip easily sounds like another short
+            // word ("tha" -> the), so only exact sound matches count.
+            if core.len() <= self.cfg.phon_exact_len && d > 0.0 {
+                continue;
+            }
             let base = if sound_mode() { self.cfg.phon_base_sound } else { self.cfg.phon_base };
             let cost = base + self.cfg.phon_scale * d;
             match found.iter_mut().find(|c| c.word == id) {

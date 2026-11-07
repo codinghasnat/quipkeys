@@ -70,6 +70,7 @@ fn configs() -> Vec<(&'static str, Config)> {
     if let Some(v) = envf("QK_PHON_BASE") { phonetic.phon_base = v; }
     if let Some(v) = envf("QK_PHON_SCALE") { phonetic.phon_scale = v; }
     if let Some(v) = envf("QK_PHON_HOMO") { phonetic.phon_homophone = v; }
+    if let Some(v) = envf("QK_PHON_MAX") { phonetic.phon_max = v; }
     vec![
         ("full", full),
         ("phonetic", phonetic),

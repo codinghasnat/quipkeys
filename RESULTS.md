@@ -103,40 +103,50 @@ word-by-word    68.8%    4.3%   26.9%     14.9%    0.125%   87.98%    59.7    85
 
 ## Spelling by sound (held-out results)
 
-Sounds-like matching (`src/phonetic.rs`, see the README). Costs were tuned on `data/eval/phonetic_dev.txt` in
-Brown dev sentences. Everything below is held out. `phonetic.txt` was written before the mode existed, shares
-no target words with the tuning list, and is placed into Brown **test** sentences. `codespell` is about
-27,000 real-world misspellings from the codespell project, used only for evaluation (half of them; never
-tuned on). "Default" is how the app runs for everyone. "Spell by sound" is the opt-in setting.
+Sounds-like matching (`src/phonetic.rs`, see the README) is a **toggle, off by default**. Off, QuipKeys runs
+exactly the decoder measured above. On ("Spell by sound"), words spelt by ear join the candidates and
+sentence context picks.
 
-| | Off | **Default** | **Spell by sound** |
-|---|---|---|---|
-| Sound spellings in sentences: fixed | 47.3% | **68.6%** | **78.8%** |
-| ... wrongly "fixed" | 5.7% | 1.1% | 0.0% |
-| ... other words in those sentences changed | 0.11% | 0.11% | 0.13% |
-| Sound spellings, words alone: fixed | 37.7% | 51.0% | 66.9% |
-| codespell misspellings, words alone: fixed / wrong | 78.5% / 1.8% | 78.4% / 1.8% | 74.7% / 2.9% |
+How sound swaps are costed: costs are learned from real misspellings (`examples/phon_learn.rs` on the codespell
+tuning half plus `phonetic_dev.txt`). Each misspelling is aligned in sound space, only pairs that already sound
+close are kept, and four rounds of align, count and re-estimate are run with the hand-set costs as a prior.
+One cost is set by hand: b/d reversal is kept cheap (2.5). It's a well-known dyslexic pattern that the data
+barely contains, and it isn't measured here. Typed words of 3 letters or fewer only take exact sound matches.
+Settings were tuned on tuning data against both goals at once (sound spellings in sentences, and the keyboard
+benchmark).
 
-Effect on ordinary keyboard typos (main benchmark, Brown test split, 1,500 sentences per level):
+Held-out results. `phonetic.txt` was written before the mode existed and shares no target words with the
+tuning list; it's placed into Brown **test** sentences. codespell is the other half (about 27,000
+misspellings), never tuned on.
 
-| Typing level | Word accuracy: off / default / by sound | Typos fixed: off / default / by sound | p99 latency (ms) |
-|---|---|---|---|
-| light 1.5% | 98.34 / 98.31 / 98.03 | 78.8 / 78.5 / 74.9 | 2.4 / 6.5 / 6.6 |
-| moderate 3% | 96.70 / 96.61 / 96.14 | 77.3 / 76.7 / 73.4 | 2.6 / 7.8 / 7.7 |
-| messy 6% | 93.58 / 93.42 / 92.31 | 75.6 / 75.0 / 70.8 | 3.7 / 9.8 / 9.5 |
-| blind 10% | 89.06 / 88.82 / 87.30 | 71.6 / 71.0 / 67.0 | 6.1 / 12.4 / 12.3 |
-| rough 4% | 86.59 / 86.25 / 84.21 | 72.9 / 72.3 / 68.1 | 6.8 / 13.7 / 13.8 |
+| | Toggle off | **Toggle on** |
+|---|---|---|
+| Sound spellings in sentences: fixed | 47.3% | **77.3%** |
+| ... wrongly "fixed" | 5.7% | 1.1% |
+| ... other words in those sentences changed | 0.11% | 0.11% |
+| Sound spellings, words alone: fixed / wrong | 37.7% / 7.9% | 57.0% / 1.3% |
+| codespell misspellings, words alone: fixed / wrong | 78.5% / 1.8% | 75.7% / 2.0% |
 
-So the default costs keyboard typing 0.03–0.34 points of word accuracy and gains about 21 points on sound
-spellings. Spell-by-sound costs 0.3–2.4 points and gains about 31. That's why it's a setting.
+Effect of switching it on for ordinary keyboard typos (main benchmark, Brown test split, 1,500 sentences
+per level):
+
+| Typing level | Word accuracy: off / on | Typos fixed: off / on | Correct words changed: off / on | p99 latency (ms) |
+|---|---|---|---|---|
+| light 1.5% | 98.34 / 98.17 | 78.8 / 76.6 | 0.131 / 0.135 | 3.0 / 5.0 |
+| moderate 3% | 96.70 / 96.38 | 77.3 / 75.0 | 0.122 / 0.117 | 3.6 / 6.1 |
+| messy 6% | 93.58 / 92.93 | 75.6 / 73.1 | 0.098 / 0.098 | 4.5 / 7.6 |
+| blind 10% | 89.06 / 88.15 | 71.6 / 69.2 | 0.104 / 0.083 | 6.8 / 10.7 |
+| rough 4% | 86.59 / 85.40 | 72.9 / 70.5 | 0.135 / 0.101 | 7.8 / 11.7 |
+
+So switching it on costs keyboard typing 0.2 to 1.2 points of word accuracy. An earlier version with
+hand-set costs cost 0.3 to 2.4 points for about the same result on sound spellings (78.8%). Correct
+words are no more likely to be changed.
 
 Caveats:
-* **Not tested on dyslexic writers.** The sound spellings are hand-written stand-ins, and both lists are mine.
-  Real data (the Typing Lab could collect it) is the next step, and it may change the costs.
-* Homophone swaps (sun/son, our/hour) only happen when the sentence clearly calls for one. Most are still left
-  alone.
-* Known misses include vowel-heavy short words ("eny", "uv") and sound changes the rules don't model yet
-  (d/j as in "edukashun", "a" read as "ay").
+* **Not tested on dyslexic writers.** The sound spellings are hand-written stand-ins. Real data (for example,
+  a dictation mode in the Typing Lab) is the next step and may change the costs.
+* Homophone swaps (sun/son, our/hour) only happen when the sentence clearly calls for one. Most are still
+  left alone.
 
 ## Known gaps / next steps
 

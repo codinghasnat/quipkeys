@@ -87,14 +87,13 @@ back at most 6 words, and only for boundary repairs ("mee tyou" → "meet you").
 
 ## Spell by sound
 
-QuipKeys always reads words spelt the way they sound ("fone", "nollij",
-"edukashun") and uses the rest of the sentence to work out which word you
-mean. It does this cautiously by default, so ordinary typing isn't affected.
-Turn on **Spell by sound** (in the welcome window, or the menu) if you often
-spell by ear, for example with dyslexia. Sound-alike spellings then count as
-much as finger slips. In tests on spellings it had never seen, this fixed
-about 4 in 5 in real sentences, with no wrong fixes (details in the main
-RESULTS.md).
+A free, opt-in mode for people who spell by ear, for example with dyslexia. Write
+"fone", "nollij" or "edukashun" and the rest of the sentence settles which word
+you meant: "phone", "knowledge", "education". Switch it on in the welcome window
+or the menu. With it off, QuipKeys corrects exactly as before. In tests on
+spellings it had never seen, it fixed about 3 in 4 in real sentences and wrongly
+changed about 1 in 100. Ordinary typo-fixing gets slightly less sharp while it's
+on: word accuracy drops by 0.2 to 1.2 points. Details are in the main RESULTS.md.
 
 ## Your words
 

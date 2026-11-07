@@ -108,9 +108,11 @@ candidates next to the keyboard-slip ones, and the whole-sentence decoder picks
 between them using context. A real word can also stand for an exact homophone
 (sun/son, our/hour), but only when context clears the real-word confidence bar.
 
-It's always on at a cautious level. **Spell by sound**, in the welcome window
-or the menu, is for people who often spell by ear: sound matches then count as
-much as keyboard slips. Code: `src/phonetic.rs`; evaluation:
+It's a toggle, off by default. With it off, QuipKeys corrects exactly as
+before. **Spell by sound**, in the welcome window or the menu, is for people
+who often spell by ear, for example with dyslexia. The costs of sound swaps
+(which sounds people write in place of which) are learned from real
+misspellings by `examples/phon_learn.rs` (`data/phon_costs.txt`). Code: `src/phonetic.rs`; evaluation:
 `examples/phon_eval.rs` (words alone) and `examples/phon_ctx.rs` (in sentences).
 Results are in RESULTS.md.
 

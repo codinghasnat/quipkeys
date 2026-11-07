@@ -240,21 +240,136 @@ fn indel_cost(c: u8) -> f32 {
     }
 }
 
-/// Weighted edit distance between two sound codes.
-pub fn distance(a: &[u8], b: &[u8]) -> f32 {
+/// Edit costs between sound codes, in the typed -> intended direction:
+/// `sub[t][w]` = intended sound w written as t; `ins[t]` = an extra sound t
+/// in what was typed; `del[w]` = intended sound w left out. The hand-set
+/// defaults below are replaced by a table learned from real misspellings
+/// (data/phon_costs.txt, see examples/phon_learn.rs) when that file has entries.
+#[derive(Clone)]
+pub struct Costs {
+    pub sub: Box<[[f32; 128]; 128]>,
+    pub ins: [f32; 128],
+    pub del: [f32; 128],
+}
+
+impl Costs {
+    pub fn hand() -> Costs {
+        let mut c = Costs { sub: Box::new([[0.0; 128]; 128]), ins: [0.0; 128], del: [0.0; 128] };
+        for a in 0..128u8 {
+            c.ins[a as usize] = indel_cost(a);
+            c.del[a as usize] = indel_cost(a);
+            for b in 0..128u8 {
+                c.sub[a as usize][b as usize] = sub_cost(a, b);
+            }
+        }
+        c
+    }
+
+    /// Hand costs, overridden by lines of the learned table:
+    /// `s <typed> <intended> <cost>`, `i <typed> <cost>`, `d <intended> <cost>`.
+    pub fn parse(text: &str) -> Costs {
+        let mut c = Costs::hand();
+        for line in text.lines() {
+            let f: Vec<&str> = line.split_whitespace().collect();
+            let sym = |s: &str| s.bytes().next().unwrap_or(0) as usize & 127;
+            match f.as_slice() {
+                ["s", a, b, v] => c.sub[sym(a)][sym(b)] = v.parse().unwrap_or(c.sub[sym(a)][sym(b)]),
+                ["i", a, v] => c.ins[sym(a)] = v.parse().unwrap_or(c.ins[sym(a)]),
+                ["d", b, v] => c.del[sym(b)] = v.parse().unwrap_or(c.del[sym(b)]),
+                _ => {}
+            }
+        }
+        c
+    }
+}
+
+const LEARNED: &str = include_str!("../data/phon_costs.txt");
+
+pub fn costs() -> &'static Costs {
+    static C: std::sync::OnceLock<Costs> = std::sync::OnceLock::new();
+    C.get_or_init(|| Costs::parse(LEARNED))
+}
+
+/// The cheapest single insertion or deletion (for pruning by length).
+fn min_indel() -> f32 {
+    static M: std::sync::OnceLock<f32> = std::sync::OnceLock::new();
+    *M.get_or_init(|| {
+        let c = costs();
+        c.ins.iter().chain(c.del.iter()).copied().fold(f32::INFINITY, f32::min).max(0.01)
+    })
+}
+
+/// One step of an alignment (typed sound, intended sound); 0 = none.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Op {
+    Same(u8),
+    Sub(u8, u8),
+    Ins(u8),
+    Del(u8),
+}
+
+/// Weighted edit distance from a typed sound code to a word's sound code.
+pub fn distance(typed: &[u8], word: &[u8]) -> f32 {
+    distance_with(costs(), typed, word)
+}
+
+pub fn distance_with(c: &Costs, a: &[u8], b: &[u8]) -> f32 {
     let m = b.len();
-    let mut prev: Vec<f32> = (0..=m).map(|j| b[..j].iter().map(|&c| indel_cost(c)).sum()).collect();
+    let ix = |x: u8| x as usize & 127;
+    let mut prev: Vec<f32> = vec![0.0; m + 1];
+    for j in 1..=m {
+        prev[j] = prev[j - 1] + c.del[ix(b[j - 1])];
+    }
     let mut cur = vec![0f32; m + 1];
     for i in 1..=a.len() {
-        cur[0] = prev[0] + indel_cost(a[i - 1]);
+        cur[0] = prev[0] + c.ins[ix(a[i - 1])];
         for j in 1..=m {
-            cur[j] = (prev[j - 1] + sub_cost(a[i - 1], b[j - 1]))
-                .min(prev[j] + indel_cost(a[i - 1]))
-                .min(cur[j - 1] + indel_cost(b[j - 1]));
+            let s = if a[i - 1] == b[j - 1] { 0.0 } else { c.sub[ix(a[i - 1])][ix(b[j - 1])] };
+            cur[j] = (prev[j - 1] + s).min(prev[j] + c.ins[ix(a[i - 1])]).min(cur[j - 1] + c.del[ix(b[j - 1])]);
         }
         std::mem::swap(&mut prev, &mut cur);
     }
     prev[m]
+}
+
+/// The cheapest alignment, step by step (for learning the costs).
+pub fn align(c: &Costs, a: &[u8], b: &[u8]) -> (f32, Vec<Op>) {
+    let (n, m) = (a.len(), b.len());
+    let ix = |x: u8| x as usize & 127;
+    let mut d = vec![vec![0f32; m + 1]; n + 1];
+    for j in 1..=m {
+        d[0][j] = d[0][j - 1] + c.del[ix(b[j - 1])];
+    }
+    for i in 1..=n {
+        d[i][0] = d[i - 1][0] + c.ins[ix(a[i - 1])];
+        for j in 1..=m {
+            let s = if a[i - 1] == b[j - 1] { 0.0 } else { c.sub[ix(a[i - 1])][ix(b[j - 1])] };
+            d[i][j] = (d[i - 1][j - 1] + s).min(d[i - 1][j] + c.ins[ix(a[i - 1])]).min(d[i][j - 1] + c.del[ix(b[j - 1])]);
+        }
+    }
+    let (mut i, mut j, mut ops) = (n, m, Vec::new());
+    while i > 0 || j > 0 {
+        let here = d[i][j];
+        if i > 0 && j > 0 {
+            let same = a[i - 1] == b[j - 1];
+            let s = if same { 0.0 } else { c.sub[ix(a[i - 1])][ix(b[j - 1])] };
+            if (d[i - 1][j - 1] + s - here).abs() < 1e-4 {
+                ops.push(if same { Op::Same(b[j - 1]) } else { Op::Sub(a[i - 1], b[j - 1]) });
+                i -= 1;
+                j -= 1;
+                continue;
+            }
+        }
+        if i > 0 && (d[i - 1][j] + c.ins[ix(a[i - 1])] - here).abs() < 1e-4 {
+            ops.push(Op::Ins(a[i - 1]));
+            i -= 1;
+        } else {
+            ops.push(Op::Del(b[j - 1]));
+            j -= 1;
+        }
+    }
+    ops.reverse();
+    (d[n][m], ops)
 }
 
 fn hash(s: &[u8]) -> u64 {
@@ -363,7 +478,7 @@ impl Phonetic {
                     // Codes much longer or shorter can't be within `max`.
                     let d = self.codes[id as usize]
                         .iter()
-                        .filter(|c| (c.len() as f32 - tc.len() as f32).abs() * 0.3 <= max)
+                        .filter(|c| (c.len() as f32 - tc.len() as f32).abs() * min_indel() <= max)
                         .map(|c| distance(&tc, c))
                         .fold(f32::INFINITY, f32::min);
                     if d <= max {
