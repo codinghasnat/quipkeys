@@ -1,0 +1,78 @@
+<!doctype html><html><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&family=Atkinson+Hyperlegible:wght@400;700&family=IBM+Plex+Mono:wght@400;600&display=block" rel="stylesheet">
+<link rel="stylesheet" href="../style.css"><script src="../lib.js"></script></head><body><div id="stage"></div>
+<script>
+// 03 — Phone vs desk: phones fixed sloppy taps years ago; laptop keyboards
+// type exactly what you hit, until QuipKeys drops in.
+const LOGO = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="150" height="150"><rect x="4" y="8" width="56" height="52" rx="13" fill="#17140a"/><rect x="8" y="4" width="48" height="46" rx="10" fill="#fffbea"/><circle cx="30" cy="25.5" r="11" fill="none" stroke="#17140a" stroke-width="6"/><path d="M32.5 28l11.5 11.5" stroke="#17140a" stroke-width="6.5"/><circle cx="44" cy="39.5" r="3.25" fill="#17140a"/></svg>`;
+const typedStr = "on my wya hoem ";
+const goodStr = "on my way home ";
+const cps = 9, T0 = 0.5;
+// ---- phone (left half) ----
+const phone = el("div", "abs"); phone.style.cssText = "left:300px;top:150px;width:400px;height:800px;border-radius:64px;background:var(--ink);";
+const screen = el("div", "abs", phone); screen.style.cssText = "left:16px;top:16px;width:368px;height:768px;border-radius:50px;background:var(--sheet);overflow:hidden";
+const bubble = el("div", "abs", screen); bubble.style.cssText = "left:28px;top:150px;width:312px;font:700 46px/1.25 var(--body);";
+const pk = {}; const prow = ["qwertyuiop", "asdfghjkl", "zxcvbnm"];
+prow.forEach((r, ri) => [...r].forEach((c, i) => { const k = el("div", "abs", screen, c); const x = 10 + ri * 16 + i * 35, y = 540 + ri * 62;
+  k.style.cssText = `left:${x}px;top:${y}px;width:31px;height:50px;border-radius:7px;background:#fff;box-shadow:0 2px 0 #c9c0a0;display:grid;place-items:center;font:600 20px var(--body)`; pk[c] = [x + 15, y + 25, k]; }));
+const pspace = el("div", "abs", screen); pspace.style.cssText = "left:90px;top:726px;width:190px;height:36px;border-radius:7px;background:#fff;box-shadow:0 2px 0 #c9c0a0"; pk[" "] = [185, 744, pspace];
+const thumb = el("div", "abs", screen); thumb.style.cssText = "width:70px;height:70px;border-radius:50%;background:radial-gradient(closest-side, rgba(23,20,10,.35), rgba(23,20,10,0))";
+// ---- laptop (right half) ----
+const lscreen = el("div", "sheet abs"); lscreen.style.cssText += "left:1050px;top:170px;width:780px;height:300px;";
+const ltext = el("div", "mono abs", lscreen); ltext.style.cssText = "left:44px;top:96px;font-size:66px;white-space:pre";
+const kb = keyboard(null, 1080, 560, 62, 9);
+const finger = el("div", "abs"); finger.style.cssText = "width:84px;height:70px;border-radius:50%;background:radial-gradient(closest-side, rgba(23,20,10,.32), rgba(23,20,10,0))";
+const logo = el("div", "abs", null, LOGO);
+// ---- labels ----
+function label(txt, x, y, size = 40) { const l = el("div", "abs", null, txt); l.style.cssText = `left:${x}px;top:${y}px;font:800 ${size}px/1.1 var(--display);font-variation-settings:'wdth' 112;white-space:nowrap`; return l; }
+const pl = label("Phone keyboard", 300, 80), ll = label("Laptop keyboard", 1050, 80);
+const pv = label("", 300, 975, 30), lv = label("", 1050, 975, 30);
+const divider = el("div", "abs"); divider.style.cssText = "left:930px;top:60px;width:4px;height:960px;background:var(--ink);opacity:.15";
+const cap = el("div", "abs"); cap.style.cssText = "left:0;top:455px;width:1920px;text-align:center";
+const capPill = el("span", "", cap); capPill.style.cssText = "display:inline-block;background:var(--ink);color:var(--paper);padding:30px 46px;border-radius:18px;font:800 60px/1.1 var(--display);font-variation-settings:'wdth' 112;box-shadow:0 20px 50px -10px rgba(23,20,10,.5)";
+
+function wordsHTML(s, fixedAll, isPhone) {
+  // s is the typed text so far; words finished with a space are judged
+  const parts = s.split(" ");
+  return parts.map((w, i) => {
+    const finished = i < parts.length - 1;
+    const good = goodStr.split(" ")[i];
+    if (!finished || w === good) return esc(w);
+    if (isPhone || fixedAll) return `<span class="fix">${good}</span>`;
+    return `<span class="typo">${esc(w)}</span>`;
+  }).join(" ");
+}
+window.scene = { duration: 7.5, render(t) {
+  const n = Math.max(0, Math.min(typedStr.length, Math.floor((t - T0) * cps)));
+  const s = typedStr.slice(0, n), cur = typedStr[Math.max(0, n - 1)];
+  const quip = t >= 4.75;
+  bubble.innerHTML = wordsHTML(s, true, true);
+  ltext.innerHTML = wordsHTML(s, quip, false);
+  // thumbs / fingers follow the key being typed, landing a little off
+  const tt = (t - T0) * cps, frac = tt - Math.floor(tt);
+  const typing = n > 0 && n <= typedStr.length && t < T0 + typedStr.length / cps + 0.15;
+  const pp = pk[cur] || pk[" "];
+  place(thumb, pp[0] - 35 + 9, pp[1] - 35 + 6, `scale(${1.1 - 0.15 * Math.sin(Math.PI * frac)})`); show(thumb, typing ? 1 : 0);
+  Object.values(pk).forEach(([, , k]) => (k.style.background = "#fff"));
+  if (typing && frac < 0.5) pp[2].style.background = "#e8e1c4";
+  for (const c of Object.keys(kb.keys)) press(kb.keys[c], 0);
+  if (typing) press(kb.keys[cur], frac < 0.5 ? 1 - frac * 2 : 0);
+  const kp = kb.pos[cur] || kb.pos[" "];
+  place(finger, 1080 + kp[0] - 42 + 14, 560 + kp[1] - 35 + 8); show(finger, typing ? 1 : 0);
+
+  pv.innerHTML = t > 1.6 ? `<span class="fix">Fixes your fat-finger taps</span>` : "";
+  lv.innerHTML = t > 1.6 ? (quip ? `<span class="fix">Fixed by QuipKeys</span>` : `<span style="color:var(--squiggle)">Types exactly what you hit</span>`) : "";
+  ll.textContent = quip ? "Laptop keyboard + QuipKeys" : "Laptop keyboard";
+
+  // caption over the middle
+  const c1 = lerp(t, [2.6, 2.9], [0, 1]) * lerp(t, [4.0, 4.2], [1, 0]);
+  const c2 = lerp(t, [5.2, 5.5], [0, 1]);
+  capPill.innerHTML = t < 4.6 ? "Your phone fixed this years ago.<br>Your keyboard never did." : "Until now.";
+  show(cap, t < 4.6 ? c1 : c2 * lerp(t, [6.6, 6.9], [1, 0]));
+  place(cap, 0, 20 * (1 - (t < 4.6 ? c1 : c2)));
+
+  // the QuipKeys keycap drops onto the laptop
+  const drop = lerp(t, [4.3, 4.9], [0, 1], ease.spring);
+  place(logo, 1700, -200 + drop * 290, `rotate(${(1 - drop) * -25}deg)`); show(logo, t > 4.25 ? 1 : 0);
+}};
+</script></body></html>

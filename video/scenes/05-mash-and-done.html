@@ -1,0 +1,46 @@
+<!doctype html><html><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&family=Atkinson+Hyperlegible:wght@400;700&family=IBM+Plex+Mono:wght@400;600&display=block" rel="stylesheet">
+<link rel="stylesheet" href="../style.css"><script src="../lib.js"></script></head><body><div id="stage"></div>
+<script>
+const LOGO = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="120" height="120"><rect x="4" y="8" width="56" height="52" rx="13" fill="#17140a"/><rect x="8" y="4" width="48" height="46" rx="10" fill="#fffbea"/><circle cx="30" cy="25.5" r="11" fill="none" stroke="#17140a" stroke-width="6"/><path d="M32.5 28l11.5 11.5" stroke="#17140a" stroke-width="6.5"/><circle cx="44" cy="39.5" r="3.25" fill="#17140a"/></svg>`;
+// 05 — Mash and done: chaotic keyboard mashing, every typo snaps blue at the
+// space, then a hard cut to silence and the tagline.
+const typedW = ["i", "cnat", "beleive", "tihs", "acutally", "wroks", "lmaooo"];
+const fixedW = ["I", "can't", "believe", "this", "actually", "works", "lmaooo"];
+const typedS = typedW.join(" ") + " ";
+const CPS = 26, T0 = 0.25, CUT = 2.75;
+const mash = el("div", "abs");
+const sheet = el("div", "sheet abs", mash); sheet.style.cssText += "left:236px;top:90px;width:1448px;height:220px;";
+const tx = el("div", "mono abs", sheet); tx.style.cssText = "left:50px;top:62px;font-size:84px;white-space:pre";
+const kb = keyboard(mash, 356, 420, 110, 12);
+const r = rng(7), taps = [];
+for (let t = 0.1; t < CUT; t += 0.035 + r() * 0.03) taps.push([ROWS.join("")[Math.floor(r() * 26)], t, r() < 0.3]);
+// end card
+const end = el("div", "abs"); end.style.cssText = "left:0;top:0;width:1920px;height:1080px;";
+const l1 = el("div", "abs", end, "I can't believe this actually works."); l1.style.cssText = "left:0;width:1920px;text-align:center;top:170px;font:700 62px/1.2 var(--body)";
+const l2 = el("div", "display abs", end, "Autocorrect on steroids."); l2.style.cssText += "left:0;width:1920px;text-align:center;top:300px;font-size:150px";
+const l3 = el("div", "abs", end, LOGO + '<span>QuipKeys</span>'); l3.style.cssText = "left:0;width:1920px;top:700px;display:flex;justify-content:center;align-items:center;gap:26px;font:900 84px/1 var(--display);font-variation-settings:'wdth' 125";
+const l4 = el("div", "abs mono", end, "quipkeys.netlify.app"); l4.style.cssText = "left:0;width:1920px;text-align:center;top:870px;font-size:44px;color:var(--ink-soft)";
+window.scene = { duration: 7, render(t) {
+  const mashing = t < CUT;
+  show(mash, mashing ? 1 : 0); show(end, mashing ? 0 : 1);
+  if (mashing) {
+    const f = Math.floor(t * 30), j = rng(f + 1);
+    const amp = 10 * lerp(t, [0, 0.4], [0, 1]);
+    place(mash, (j() - 0.5) * amp * 2, (j() - 0.5) * amp * 2, `rotate(${(j() - 0.5) * amp * 0.08}deg)`);
+    for (const c of Object.keys(kb.keys)) press(kb.keys[c], 0);
+    for (const [c, at, red] of taps) { const a = tap(t, at, 0.12); if (a) press(kb.keys[c], a, red ? "#ffd6d0" : ""); }
+    press(kb.keys[" "], 0);
+    // text: words fix the moment their space is typed
+    const n = Math.max(0, Math.min(typedS.length, Math.floor((t - T0) * CPS)));
+    const s = typedS.slice(0, n), parts = s.split(" ");
+    tx.innerHTML = parts.map((w, i) => i < parts.length - 1 ? (fixedW[i] !== w ? `<span class="fix">${fixedW[i]}</span>` : w) : esc(w)).join(" ");
+    for (let i = 0; i < parts.length - 1; i++) if (Math.abs(t - (T0 + (typedW.slice(0, i + 1).join(" ").length + 1) / CPS)) < 0.06) press(kb.keys[" "], 1);
+  } else {
+    const a1 = lerp(t, [CUT + 0.05, CUT + 0.35], [0, 1]), a2 = lerp(t, [CUT + 0.9, CUT + 1.3], [0, 1], ease.spring), a3 = lerp(t, [CUT + 1.9, CUT + 2.3], [0, 1]);
+    show(l1, a1); place(l1, 0, 0);
+    show(l2, a2 > 0 ? 1 : 0); place(l2, 0, 0, `scale(${0.85 + 0.15 * a2})`);
+    show(l3, a3); show(l4, a3); place(l3, 0, 20 * (1 - a3));
+  }
+}};
+</script></body></html>

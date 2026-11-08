@@ -1,0 +1,54 @@
+<!doctype html><html><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&family=Atkinson+Hyperlegible:wght@400;700&family=IBM+Plex+Mono:wght@400;600&display=block" rel="stylesheet">
+<link rel="stylesheet" href="../style.css"><script src="../lib.js"></script></head><body><div id="stage"></div>
+<script>
+// 04 — The race: same sloppy typist, two outcomes. With laptop autocorrect you
+// stop, backspace and retype; with QuipKeys you keep going.
+const words = [["the"], ["quick"], ["brwon", "brown"], ["fox"], ["jumsp", "jumps"], ["over"], ["teh", "the"], ["lazy"], ["dgo", "dog"], ["and"], ["keeps"], ["runnign", "running"]];
+const CPS = 15, BS = 22, NOTICE = 0.35, T0 = 0.6;
+// Build event timelines: arrays of [time, html]
+function build(quip) {
+  const ev = []; let t = T0, done = [], back = 0;
+  const html = (cur, extra = "") => done.join(" ") + (done.length ? " " : "") + cur + extra;
+  for (const [typedW, good] of words) {
+    for (let i = 1; i <= typedW.length; i++) { t += 1 / CPS; ev.push([t, html(esc(typedW.slice(0, i))), back]); }
+    if (good && !quip) {
+      t += NOTICE; ev.push([t, html(`<span class="typo">${typedW}</span>`), back]);
+      for (let i = typedW.length - 1; i >= 0; i--) { t += 1 / BS; back++; ev.push([t, html(esc(typedW.slice(0, i))), back]); }
+      for (let i = 1; i <= good.length; i++) { t += 1 / CPS; ev.push([t, html(esc(good.slice(0, i))), back]); }
+      done.push(esc(good));
+    } else if (good && quip) {
+      done.push(`<span class="fix">${good}</span>`);
+    } else done.push(esc(typedW));
+    t += 1 / CPS; ev.push([t, html(""), back]);
+  }
+  return { ev, end: t };
+}
+const A = build(false), B = build(true);
+function lane(y, title, color) {
+  const l = el("div", "abs", null, title); l.style.cssText = `left:120px;top:${y}px;font:800 44px/1 var(--display);font-variation-settings:'wdth' 112;color:${color}`;
+  const sh = el("div", "sheet abs"); sh.style.cssText += `left:120px;top:${y + 64}px;width:1280px;height:260px;`;
+  const tx = el("div", "mono abs", sh); tx.style.cssText = "left:40px;top:34px;width:1200px;font-size:54px;line-height:1.55;";
+  const n = el("div", "abs"); n.style.cssText = `left:1470px;top:${y + 70}px;font:900 170px/1 var(--display);font-variation-settings:'wdth' 125;font-variant-numeric:tabular-nums;color:${color}`;
+  const u = el("div", "abs", null, "words per minute"); u.style.cssText = `left:1478px;top:${y + 250}px;font:700 30px/1 var(--body);color:var(--ink-soft)`;
+  const extra = el("div", "abs"); extra.style.cssText = `left:${120 + 1280 - 360}px;top:${y + 8}px;width:360px;text-align:right;font:600 34px/1 var(--mono);color:var(--squiggle)`;
+  return { tx, n, extra };
+}
+const LA = lane(70, "Laptop autocorrect", "var(--ink)"), LB = lane(510, "QuipKeys", "var(--fix)");
+const stamp = el("div", "abs", null, "+30%"); stamp.style.cssText = "left:1400px;top:800px;font:900 100px/1 var(--display);font-variation-settings:'wdth' 125;color:#fff;background:var(--fix);padding:14px 26px 18px;border-radius:16px";
+const foot = el("div", "foot abs", null, "Simulated typist, 3% of letters mistyped. Effective words per minute, counting the time spent fixing typos."); foot.style.left = "120px"; foot.style.top = "1012px";
+const at = (ev, t) => { let r = ["", 0]; for (const e of ev) { if (e[0] > t) break; r = [e[1], e[2]]; } return r; };
+const caret = '<span style="display:inline-block;width:5px;height:54px;background:var(--ink);vertical-align:-10px;margin-left:2px"></span>';
+window.scene = { duration: Math.ceil((A.end + 2.4) * 10) / 10, render(t) {
+  const [ha, ba] = at(A.ev, t), [hb] = at(B.ev, t);
+  LA.tx.innerHTML = ha + (t < A.end ? caret : "");
+  LB.tx.innerHTML = hb + (t < B.end ? caret : "");
+  LA.extra.textContent = ba ? `⌫ × ${ba}` : "";
+  LB.extra.textContent = t > B.end ? "✓ done" : ""; LB.extra.style.color = "var(--fix)";
+  LA.n.textContent = Math.round(lerp(t, [T0, A.end], [0, 56], ease.inOut));
+  LB.n.textContent = Math.round(lerp(t, [T0, B.end], [0, 72], ease.inOut));
+  const s = lerp(t, [A.end + 0.3, A.end + 0.8], [0, 1], ease.spring);
+  place(stamp, 0, 0, `scale(${0.6 + 0.4 * s}) rotate(${-4 * s}deg)`); show(stamp, s > 0 ? 1 : 0);
+  show(foot, lerp(t, [A.end + 0.5, A.end + 1], [0, 1]));
+}};
+</script></body></html>

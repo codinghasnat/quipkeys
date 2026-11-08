@@ -1,0 +1,62 @@
+<!doctype html><html><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&family=Atkinson+Hyperlegible:wght@400;700&family=IBM+Plex+Mono:wght@400;600&display=block" rel="stylesheet">
+<link rel="stylesheet" href="../style.css"><script src="../lib.js"></script></head><body><div id="stage"></div>
+<script>
+// 08 — The whole sentence: context picks "from" over "form" past a 90%
+// confidence bar; when it isn't sure ("Hasnat"), it leaves the word alone.
+const CW = 49.2, FS = 82;                          // Plex Mono advance ≈ 0.6em
+const beats = [
+  { start: 0, words: ["I'll", "meet", "you", "form", "the", "station"], at: 3, cands: [["from", 0.96], ["form", 0.03], ["farm", 0.01]],
+    win: "from", ac: "Laptop autocorrect: \"form\" is a real word. Nothing to fix.", acColor: "var(--ink)", verdict: "Sure enough: fixed.", vColor: "var(--fix)" },
+  { start: 4.9, words: ["Lunch", "with", "Hasnat", "at", "noon"], at: 2, cands: [["Hasn't", 0.41], ["Hasnat", 0.59]],
+    win: null, ac: "Laptop autocorrect: Hasnat → Hasn't", acColor: "var(--squiggle)", verdict: "Not sure? It leaves your word alone.", vColor: "var(--ink)" },
+];
+const line = el("div", "mono abs"); line.style.cssText = `top:230px;font-size:${FS}px;white-space:pre;line-height:1`;
+const ac = el("div", "tag abs"); ac.style.fontSize = "32px";
+const chips = [0, 1, 2].map(() => { const c = el("div", "abs mono"); c.style.cssText = "font-size:54px;padding:10px 20px;border-radius:12px;background:var(--sheet);box-shadow:0 10px 24px -8px rgba(77,62,0,.4)"; return c; });
+const barsT = el("div", "abs", null, "How sure QuipKeys is"); barsT.style.cssText = "left:240px;top:700px;font:800 38px/1 var(--display);font-variation-settings:'wdth' 112";
+const track = el("div", "abs"); track.style.cssText = "left:240px;top:770px;width:1440px;height:56px;border-radius:28px;background:rgba(23,20,10,.12);overflow:hidden";
+const fill = el("div", "abs", track); fill.style.cssText = "left:0;top:0;height:56px;border-radius:28px";
+const thr = el("div", "abs"); thr.style.cssText = `left:${240 + 1440 * 0.9 - 2}px;top:745px;width:5px;height:106px;background:var(--ink)`;
+const thrL = el("div", "abs", null, "acts only above 90%"); thrL.style.cssText = `left:${240 + 1440 * 0.9 - 340}px;top:870px;width:340px;text-align:right;font:700 28px/1 var(--body)`;
+const pct = el("div", "abs"); pct.style.cssText = "left:240px;top:880px;font:900 64px/1 var(--display);font-variation-settings:'wdth' 125;font-variant-numeric:tabular-nums";
+const verdict = el("div", "abs"); verdict.style.cssText = "left:240px;top:975px;font:900 52px/1 var(--display);font-variation-settings:'wdth' 118;white-space:nowrap";
+
+window.scene = { duration: 9.6, render(t) {
+  const b = t < 4.9 ? beats[0] : beats[1], lt = t - b.start;
+  const fade = b === beats[0] ? lerp(t, [4.6, 4.9], [1, 0]) : lerp(lt, [0, 0.3], [0, 1]);
+  const text = b.words.join(" "), x0 = (1920 - text.length * CW) / 2;
+  const before = b.words.slice(0, b.at).join(" ") + " ";
+  const target = b.words[b.at];
+  const conf = b.cands[0][1];
+  const fillAmt = conf * lerp(lt, [2.0, 3.0], [0, 1], ease.inOut);
+  const decided = lt > 3.2;
+  let w = esc(target);
+  if (decided && b.win) w = `<span class="fix" style="background:rgba(26,86,214,${0.22 * lerp(lt, [3.2, 3.8], [1, 0])})">${b.win}</span>`;
+  else if (lt > 0.9) w = `<span style="text-decoration:underline 6px ${b.win ? "var(--fix)" : "var(--ink-soft)"};text-underline-offset:14px">${esc(target)}</span>`;
+  line.innerHTML = esc(before) + w + " " + esc(b.words.slice(b.at + 1).join(" "));
+  place(line, x0, 0); show(line, fade);
+  ac.textContent = b.ac; ac.style.background = b.acColor; ac.style.color = b.acColor === "var(--ink)" ? "var(--paper)" : "#fff";
+  place(ac, x0, 120); show(ac, lerp(lt, [0.5, 0.8], [0, 1]) * fade);
+  // candidate chips under the word
+  const wx = x0 + before.length * CW;
+  chips.forEach((c, i) => {
+    const cand = b.cands[i];
+    if (!cand) { show(c, 0); return; }
+    c.textContent = cand[0];
+    const a = lerp(lt, [1.1 + i * 0.12, 1.5 + i * 0.12], [0, 1], ease.spring);
+    const keep = b.win || target;
+    const dim = decided ? (keep === cand[0] ? 1 : 0.35) : 1;
+    place(c, wx - 20, 360 + i * 96 * a); show(c, Math.min(1, a) * dim * fade);
+    c.style.color = decided && b.win === cand[0] ? "var(--fix)" : "var(--ink)";
+  });
+  // the confidence meter
+  fill.style.width = (1440 * fillAmt) + "px";
+  fill.style.background = b.win ? "var(--fix)" : "var(--ink-soft)";
+  pct.textContent = `${Math.round(fillAmt * 100)}% "${b.cands[0][0]}"`;
+  pct.style.color = b.win ? "var(--fix)" : "var(--ink)";
+  [barsT, track, thr, thrL, pct].forEach((e) => show(e, lerp(lt, [1.7, 2.0], [0, 1]) * fade));
+  verdict.textContent = b.verdict; verdict.style.color = b.vColor;
+  show(verdict, lerp(lt, [3.3, 3.6], [0, 1]) * fade);
+}};
+</script></body></html>

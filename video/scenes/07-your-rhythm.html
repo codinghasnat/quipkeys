@@ -1,0 +1,66 @@
+<!doctype html><html><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&family=Atkinson+Hyperlegible:wght@400;700&family=IBM+Plex+Mono:wght@400;600&display=block" rel="stylesheet">
+<link rel="stylesheet" href="../style.css"><script src="../lib.js"></script></head><body><div id="stage"></div>
+<script>
+// 07 — Your rhythm: keystroke timing as evidence. Near-simultaneous keys are
+// probably swapped; a pause before a key suggests it went wrong.
+const AX = 240, AW = 1440, AY = 640, MS = 800;          // axis: 0..800 ms
+const xOf = (ms) => AX + (ms / MS) * AW;
+const parts = [
+  { start: 0, keys: [["t", 0], ["h", 150], ["s", 300], ["i", 322]], typed: "thsi", fixed: "this",
+    note: "22 ms apart: pressed together, so probably swapped", span: [300, 322] },
+  { start: 4.3, keys: [["w", 0], ["a", 140], ["m", 560], ["t", 700]], typed: "wamt", fixed: "want",
+    note: "a long pause before a key: it may have gone wrong", span: [140, 560], bad: "m" },
+];
+const sheet = el("div", "sheet abs"); sheet.style.cssText += "left:240px;top:80px;width:700px;height:200px;";
+const tx = el("div", "mono abs", sheet); tx.style.cssText = "left:60px;top:40px;font-size:110px;white-space:pre";
+const axis = el("div", "abs"); axis.style.cssText = `left:${AX}px;top:${AY}px;width:${AW}px;height:6px;border-radius:3px;background:var(--ink)`;
+const ticks = [0, 200, 400, 600, 800].map((ms) => { const d = el("div", "abs mono", null, ms + " ms"); d.style.cssText = `left:${xOf(ms) - 70}px;top:${AY + 22}px;width:140px;text-align:center;font-size:24px;color:var(--ink-soft);white-space:nowrap`; return d; });
+const head = el("div", "abs"); head.style.cssText = `top:${AY - 230}px;width:4px;height:250px;background:var(--fix)`;
+const caps = [0, 1, 2, 3].map(() => { const c = el("div", "cap abs", null, ""); c.style.cssText += "width:92px;height:92px;font-size:38px"; return c; });
+const band = el("div", "abs"); band.style.cssText = `top:${AY - 200}px;height:190px;border-radius:12px`;
+const note = el("div", "tag abs"); note.style.fontSize = "30px";
+const cap = el("div", "abs"); cap.style.cssText = "left:240px;top:800px;width:1440px;font:900 64px/1.05 var(--display);font-variation-settings:'wdth' 118";
+const cap2 = el("div", "abs", null, "Laptop autocorrect never sees it."); cap2.style.cssText = "left:240px;top:930px;font:700 38px/1 var(--body);color:var(--ink-soft)";
+const label = el("div", "abs", null, "When each key went down"); label.style.cssText = `left:${AX}px;top:${AY + 72}px;font:700 28px var(--body);color:var(--ink-soft)`;
+
+window.scene = { duration: 8.8, render(t) {
+  const p = t < 4.3 ? parts[0] : parts[1], lt = t - p.start;
+  const sweepMs = lerp(lt, [0.4, 1.6], [0, MS], ease.linear);
+  place(head, xOf(sweepMs), 0); show(head, lt > 0.35 && lt < 1.7 ? 1 : 0);
+  const fade = p === parts[0] ? lerp(t, [4.0, 4.3], [1, 0]) : lerp(lt, [0, 0.3], [0, 1]);
+  // key blips appear as the playhead passes; overlapping caps stagger vertically
+  p.keys.forEach(([c, ms], i) => {
+    const e = caps[i]; e.textContent = c;
+    const on = sweepMs >= ms;
+    const lift = (p === parts[0] && i === 3) ? -100 : 0;
+    place(e, xOf(ms) - 46, AY - 130 + lift, `scale(${on ? lerp(lt, [0.4 + (ms / MS) * 1.2, 0.55 + (ms / MS) * 1.2], [0.5, 1], ease.spring) : 0.5})`);
+    show(e, on ? fade : 0);
+    const bad = p.bad === c && lt > 2.3;
+    e.style.background = bad ? "#ffd6d0" : "";
+  });
+  // the highlighted span (overlap, or the long gap)
+  const [a, b] = p.span;
+  // overlap: box both keys; long gap: shade only the gap up to the late key
+  const gap = p !== parts[0];
+  const bx = gap ? xOf(a) + 52 : xOf(a) - 60, bw = gap ? xOf(b) + 60 - (xOf(a) + 52) : Math.max(xOf(b) - xOf(a), 0) + 120;
+  band.style.left = bx + "px"; band.style.width = bw + "px";
+  band.style.top = (p === parts[0] ? AY - 260 : AY - 200) + "px"; band.style.height = (p === parts[0] ? 250 : 190) + "px";
+  band.style.background = p === parts[0] ? "rgba(26,86,214,.18)" : "rgba(217,38,44,.14)";
+  band.style.border = p === parts[0] ? "3px dashed var(--fix)" : "3px dashed var(--squiggle)";
+  const ba = lerp(lt, [1.8, 2.1], [0, 1]) * fade;
+  show(band, ba);
+  note.textContent = p.note; note.style.background = p === parts[0] ? "var(--fix)" : "var(--squiggle)"; note.style.color = "#fff";
+  place(note, Math.min(bx, 1680 - 900), (p === parts[0] ? AY - 330 : AY - 270)); show(note, ba);
+  // the text above
+  const n = p.keys.filter(([, ms]) => sweepMs >= ms).length;
+  const fixedNow = lt > 2.7;
+  if (fixedNow) tx.innerHTML = `<span class="fix">${p.fixed}</span>`;
+  else tx.innerHTML = lt > 1.7 ? `<span class="typo">${p.typed}</span>` : esc(p.typed.slice(0, n));
+  show(sheet, fade);
+  cap.innerHTML = "Your typing rhythm is evidence.";
+  const ca = lerp(t, [7.0, 7.4], [0, 1]);
+  show(cap, ca); show(cap2, lerp(t, [7.5, 7.9], [0, 1]));
+  ticks.forEach((d) => show(d, 1)); show(label, 1);
+}};
+</script></body></html>

@@ -1,0 +1,54 @@
+<!doctype html><html><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&family=Atkinson+Hyperlegible:wght@400;700&family=IBM+Plex+Mono:wght@400;600&display=block" rel="stylesheet">
+<link rel="stylesheet" href="../style.css"><script src="../lib.js"></script></head><body><div id="stage"></div>
+<script>
+// 02 — The sliding space: autocorrect checks one word at a time and gets it
+// wrong; QuipKeys moves the space itself.
+const CW = 66, FS = 110;               // IBM Plex Mono advance ≈ 0.6em
+const before = "Hellon ice to mee tyou", after = "Hello nice to meet you";
+const X0 = (1920 - before.length * CW) / 2;
+function rowLabel(txt, y, color) { const l = el("div", "abs", null, txt); l.style.cssText = `left:${X0}px;top:${y}px;font:800 42px/1 var(--display);font-variation-settings:'wdth' 112;color:${color}`; return l; }
+const l1 = rowLabel("You typed", 120, "var(--ink-soft)");
+const l2 = rowLabel("Laptop autocorrect, one word at a time", 420, "var(--ink-soft)");
+const l3 = rowLabel("QuipKeys reads across the spaces", 720, "var(--fix)");
+function line(y) { const d = el("div", "mono abs"); d.style.cssText = `left:${X0}px;top:${y}px;font-size:${FS}px;line-height:1;white-space:pre`; return d; }
+const typedLine = line(180), acLine = line(480);
+// QuipKeys row: one element per character so letters and spaces can slide.
+const chars = [], qy = 780;
+const idx = (s, ch) => [...s].map((c, i) => [c, i]).filter(([c]) => (ch === " ") === (c === " ")).map(([, i]) => i);
+const bL = idx(before, "x"), aL = idx(after, "x"), bS = idx(before, " "), aS = idx(after, " ");
+const letters = [...before].filter((c) => c !== " ");
+letters.forEach((c, k) => { const e = el("div", "mono abs", null, c); e.style.cssText += `font-size:${FS}px;line-height:1`; chars.push({ e, from: bL[k], to: aL[k] }); });
+const tiles = bS.map((from, k) => { const e = el("div", "abs"); e.style.cssText = `width:${CW - 14}px;height:16px;border-radius:5px;background:var(--ink-soft)`; return { e, from, to: aS[k] }; });
+const under = [el("div", "abs"), el("div", "abs")];
+under.forEach((u) => (u.style.cssText = "height:8px;border-radius:4px;background:var(--fix)"));
+
+window.scene = { duration: 7, render(t) {
+  // row 1: typed, words that aren't words get the red squiggle
+  const n = Math.floor(lerp(t, [0.2, 1.4], [0, before.length], ease.linear));
+  const shown = before.slice(0, n);
+  typedLine.innerHTML = shown.split(" ").map((w, i, arr) => (["Hellon", "mee", "tyou"].includes(w) && (i < arr.length - 1 || n === before.length)) ? `<span class="typo">${w}</span>` : esc(w)).join(" ");
+  show(l1, lerp(t, [0, 0.3], [0, 1]));
+
+  // row 2: autocorrect's word-by-word guess
+  const a = lerp(t, [1.8, 2.2], [0, 1]);
+  show(l2, a); show(acLine, a);
+  acLine.innerHTML = `Hello <span style="color:var(--squiggle);text-decoration:line-through 6px">ice</span> to <span style="color:var(--squiggle);text-decoration:line-through 6px">me you</span>`;
+  acLine.style.opacity = a * (t > 2.6 ? 1 : 0.999);
+  place(acLine, 0, 18 * (1 - a));
+
+  // row 3: the spaces slide
+  const b = lerp(t, [3.1, 3.4], [0, 1]);
+  show(l3, b);
+  const slide = lerp(t, [3.7, 4.6], [0, 1], ease.spring);
+  const done = t > 4.4;
+  chars.forEach(({ e, from, to }) => { place(e, X0 + CW * (from + (to - from) * slide), qy); show(e, b); e.style.color = done && (to <= 9 || to >= 14) ? "var(--fix)" : "var(--ink)"; });
+  tiles.forEach(({ e, from, to }) => {
+    const moving = from !== to;
+    place(e, X0 + CW * (from + (to - from) * slide) + 7, qy + FS * 0.92);
+    show(e, b);
+    e.style.background = moving ? "var(--fix)" : "rgba(77,69,38,.35)";
+    e.style.boxShadow = moving ? `0 0 ${30 * lerp(t, [3.6, 4.0], [0, 1]) * lerp(t, [4.6, 5.2], [1, 0])}px rgba(26,86,214,.8)` : "none";
+  });
+}};
+</script></body></html>

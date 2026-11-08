@@ -1,0 +1,71 @@
+<!doctype html><html><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&family=Atkinson+Hyperlegible:wght@400;700&family=IBM+Plex+Mono:wght@400;600&display=block" rel="stylesheet">
+<link rel="stylesheet" href="../style.css"><script src="../lib.js"></script></head><body><div id="stage"></div>
+<script>
+// 10 — Nothing leaves: corrections keep working offline and nothing goes to
+// the cloud. Then Spell by sound flips on: "fone" ripples into "phone".
+const A = el("div", "abs"), B = el("div", "abs");
+// --- part A: laptop, cloud, wifi ---
+const scr = el("div", "abs", A); scr.style.cssText = "left:560px;top:150px;width:800px;height:470px;border-radius:22px;background:var(--ink);padding:22px";
+const scrIn = el("div", "abs", scr); scrIn.style.cssText = "left:22px;top:22px;width:756px;height:426px;border-radius:10px;background:var(--sheet)";
+const lines = [["teh", "the"], ["recieve", "receive"], ["wamt", "want"], ["mee tyou", "meet you"]].map(([a, b], i) => {
+  const d = el("div", "abs mono", scrIn); d.style.cssText = `left:48px;top:${40 + i * 92}px;font-size:52px;white-space:pre`; return { d, a, b }; });
+const base = el("div", "abs", A); base.style.cssText = "left:470px;top:620px;width:980px;height:46px;border-radius:0 0 30px 30px;background:var(--ink)";
+const cloud = el("div", "abs", A, `<svg width="230" height="150" viewBox="0 0 230 150"><path d="M60 130h120a42 42 0 0 0 0-84 58 58 0 0 0-110-12A45 45 0 0 0 60 130z" fill="#fffbea" stroke="#17140a" stroke-width="8"/></svg>`);
+place(cloud, 1560, 90);
+const wire = el("div", "abs", A); wire.style.cssText = "left:1330px;top:220px;width:270px;height:0;border-top:8px dashed var(--ink-soft);transform-origin:left center;transform:rotate(-14deg)";
+const block = el("div", "abs", A, "✕"); block.style.cssText = "left:1420px;top:150px;width:96px;height:96px;border-radius:50%;background:var(--squiggle);color:#fff;display:grid;place-items:center;font:900 60px/1 var(--display)";
+const blockL = el("div", "tag abs", A, "nothing uploaded"); blockL.style.cssText += "font-size:28px;background:var(--squiggle);color:#fff"; place(blockL, 1380, 268);
+const wifi = el("div", "abs", A, `<svg width="150" height="120" viewBox="0 0 150 120"><g fill="none" stroke="#17140a" stroke-width="12" stroke-linecap="round"><path d="M15 45a85 85 0 0 1 120 0"/><path d="M38 70a52 52 0 0 1 74 0"/><path d="M60 93a20 20 0 0 1 30 0"/></g><circle cx="75" cy="108" r="8" fill="#17140a"/></svg>`);
+place(wifi, 210, 160);
+const slash = el("div", "abs", A); slash.style.cssText = "left:195px;top:212px;width:180px;height:14px;border-radius:7px;background:var(--squiggle);transform-origin:center";
+const wifiL = el("div", "tag abs", A, "offline, still fixing"); wifiL.style.fontSize = "28px"; place(wifiL, 130, 310);
+const capA = el("div", "abs", A); capA.style.cssText = "left:0;top:760px;width:1920px;text-align:center;font:900 70px/1.1 var(--display);font-variation-settings:'wdth' 118";
+capA.innerHTML = "Runs on your computer.<br>Nothing you type leaves it.";
+// --- part B: spell by sound ---
+const sw = el("div", "abs", B); sw.style.cssText = "left:200px;top:300px;width:210px;height:116px;border-radius:58px;background:var(--paper-deep);box-shadow:inset 0 4px 10px rgba(23,20,10,.35)";
+const knob = el("div", "abs", sw); knob.style.cssText = "left:10px;top:10px;width:96px;height:96px;border-radius:50%;background:var(--cap);box-shadow:0 6px 0 var(--cap-shadow)";
+const swL = el("div", "abs", B, "Spell by sound"); swL.style.cssText = "left:200px;top:450px;white-space:nowrap;font:900 64px/1 var(--display);font-variation-settings:'wdth' 118";
+const pairs = [["fone", "phone"], ["nollij", "knowledge"], ["edukashun", "education"]].map(([a, b], i) => {
+  const row = el("div", "abs", B); row.style.cssText = `left:820px;top:${200 + i * 170}px;width:950px;height:140px`;
+  const d = el("div", "abs mono", row); d.style.cssText = "left:0;top:20px;font-size:92px;white-space:pre";
+  const rings = [0, 1, 2].map(() => { const r = el("div", "abs", row); r.style.cssText = "width:120px;height:120px;border-radius:50%;border:6px solid var(--fix)"; return r; });
+  return { row, d, rings, a, b, at: 5.4 + i * 0.75 };
+});
+const capB = el("div", "abs", B); capB.style.cssText = "left:200px;top:780px;width:1560px;font:900 64px/1.1 var(--display);font-variation-settings:'wdth' 118";
+capB.innerHTML = "Spell it how it sounds.<br><span style='color:var(--fix)'>Free, for dyslexic typists too.</span>";
+
+window.scene = { duration: 9.6, render(t) {
+  const inA = t < 4.6;
+  show(A, inA ? lerp(t, [4.3, 4.6], [1, 0]) : 0); show(B, inA ? 0 : lerp(t, [4.6, 4.9], [0, 1]));
+  if (inA) {
+    lines.forEach(({ d, a, b }, i) => {
+      const at = 0.4 + i * 0.75;
+      const fixed = t > at + 0.4;
+      d.innerHTML = t < at ? "" : fixed ? `<span style="color:var(--ink-soft);text-decoration:line-through 4px">${esc(a)}</span> → <span class="fix">${esc(b)}</span>` : `<span class="typo">${esc(a)}</span>`;
+    });
+    const w = lerp(t, [0.9, 1.4], [0, 1]);
+    wire.style.width = (270 * w) + "px";
+    const blk = lerp(t, [1.5, 1.8], [0, 1], ease.spring);
+    place(block, 0, 0, `scale(${blk})`); show(block, blk > 0 ? 1 : 0); show(blockL, lerp(t, [1.7, 2.0], [0, 1]));
+    const sl = lerp(t, [2.2, 2.5], [0, 1], ease.out);
+    slash.style.transform = `rotate(-35deg) scaleX(${sl})`; show(slash, sl > 0 ? 1 : 0); show(wifiL, lerp(t, [2.4, 2.7], [0, 1]));
+    show(capA, lerp(t, [3.0, 3.3], [0, 1]));
+  } else {
+    const on = lerp(t, [5.0, 5.3], [0, 1], ease.spring);
+    place(knob, 94 * on, 0); sw.style.background = on > 0.5 ? "var(--fix)" : "var(--paper-deep)";
+    pairs.forEach(({ d, rings, a, b, at }) => {
+      const fixed = t > at + 0.35;
+      d.innerHTML = fixed ? `<span class="fix">${b}</span>` : `<span class="typo">${a}</span>`;
+      const flash = lerp(t, [at + 0.35, at + 0.9], [1, 0]);
+      d.style.textShadow = fixed ? `0 0 ${28 * flash}px rgba(26,86,214,${flash})` : "none";
+      rings.forEach((r, k) => {
+        const p = lerp(t, [at + k * 0.1, at + 0.6 + k * 0.1], [0, 1], ease.out);
+        const x = -40 + a.length * 55 * 0.5;
+        place(r, x, 10, `scale(${0.4 + 1.6 * p})`); show(r, p > 0 && p < 1 ? 1 - p : 0);
+      });
+    });
+    show(capB, lerp(t, [7.6, 8.0], [0, 1]));
+  }
+}};
+</script></body></html>

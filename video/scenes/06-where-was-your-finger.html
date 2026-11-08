@@ -1,0 +1,60 @@
+<!doctype html><html><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&family=Atkinson+Hyperlegible:wght@400;700&family=IBM+Plex+Mono:wght@400;600&display=block" rel="stylesheet">
+<link rel="stylesheet" href="../style.css"><script src="../lib.js"></script></head><body><div id="stage"></div>
+<script>
+// 06 — Where was your finger? The typed M lights up, halos show where the
+// finger probably was, candidate words compete, "want" wins.
+const KX = 120, KY = 390, K = 96;
+const sheet = el("div", "sheet abs"); sheet.style.cssText += "left:120px;top:90px;width:1060px;height:210px;";
+const tx = el("div", "mono abs", sheet); tx.style.cssText = "left:54px;top:46px;font-size:104px;white-space:pre";
+const halos = {};
+for (const [c, r] of [["n", 150], ["m", 105], ["j", 78], ["k", 58], ["b", 46]]) {
+  const h = el("div", "abs"); h.style.cssText = `width:${r * 2}px;height:${r * 2}px;border-radius:50%;background:radial-gradient(closest-side, rgba(26,86,214,${(0.75 * r / 150).toFixed(2)}), rgba(26,86,214,${(0.25 * r / 150).toFixed(2)}) 65%, rgba(26,86,214,0));`;
+  halos[c] = [h, r];
+}
+const kb = keyboard(null, KX, KY, K, 10);
+Object.values(halos).forEach(([h]) => document.getElementById("stage").appendChild(h)); // above keys
+const hint = el("div", "tag abs", null, "your finger was probably here"); hint.style.fontSize = "28px";
+const panelT = el("div", "abs", null, "Which word did you mean?"); panelT.style.cssText = "left:1290px;top:110px;font:800 46px/1.1 var(--display);font-variation-settings:'wdth' 112";
+const cands = [["want", 1.0, true], ["wait", 0.34], ["warm", 0.22], ["wart", 0.12]];
+const rows = cands.map(([w, v, win], i) => {
+  const r = el("div", "abs"); r.style.cssText = `left:1290px;top:${220 + i * 110}px;width:520px;height:90px;`;
+  const lab = el("div", "mono abs", r, w); lab.style.cssText = "left:0;top:14px;font-size:58px";
+  const tr = el("div", "abs", r); tr.style.cssText = "left:200px;top:30px;width:320px;height:30px;border-radius:15px;background:rgba(23,20,10,.1)";
+  const bar = el("div", "abs", tr); bar.style.cssText = `left:0;top:0;height:30px;border-radius:15px;background:${win ? "var(--fix)" : "var(--ink-soft)"}`;
+  return { r, lab, bar, v, win, i };
+});
+const cap1 = el("div", "abs", null, "QuipKeys knows where the keys are."); cap1.style.cssText = "left:1290px;top:690px;width:580px;font:900 56px/1.02 var(--display);font-variation-settings:'wdth' 118";
+const cap2 = el("div", "abs", null, "Laptop autocorrect only compares letters."); cap2.style.cssText = "left:1290px;top:900px;width:580px;font:700 34px/1.2 var(--body);color:var(--ink-soft)";
+
+window.scene = { duration: 7.5, render(t) {
+  const s = t < 0.3 ? "I wa" : t < 0.9 ? "I wam" : "I wamt";
+  const fixed = t > 4.1;
+  tx.innerHTML = fixed ? `I <span class="fix" style="background:rgba(26,86,214,${0.22 * lerp(t, [4.1, 4.7], [1, 0])})">want</span>` : (t > 1.2 ? `I <span class="typo">${s.slice(2)}</span>` : esc(s));
+  for (const c of Object.keys(kb.keys)) press(kb.keys[c], 0);
+  const mGlow = lerp(t, [0.6, 0.8], [0, 1]) * lerp(t, [4.1, 4.5], [1, 0.0]);
+  press(kb.keys["m"], Math.max(tap(t, 0.6, 0.25), 0.25 * mGlow), mGlow ? `rgba(255, 214, 208, ${0.4 + 0.6 * mGlow})` : "");
+  press(kb.keys["t"], tap(t, 0.9));
+  if (fixed) press(kb.keys["n"], 0, `rgba(200, 216, 255, ${lerp(t, [4.1, 4.4], [0, 1])})`);
+  // halos bloom one after another, biggest on N
+  Object.entries(halos).forEach(([c, [h, r]], i) => {
+    const a = lerp(t, [1.3 + i * 0.12, 1.9 + i * 0.12], [0, 1], ease.spring);
+    const [px, py] = kb.pos[c];
+    place(h, KX + px - r, KY + py - r, `scale(${0.4 + 0.6 * a})`); show(h, Math.min(1, a) * lerp(t, [4.6, 5.2], [1, 0.25]));
+  });
+  const [nx, ny] = kb.pos["n"];
+  place(hint, KX + nx - 120, KY + ny + 130); show(hint, lerp(t, [2.0, 2.3], [0, 1]) * lerp(t, [4.2, 4.5], [1, 0]));
+  show(panelT, lerp(t, [2.2, 2.5], [0, 1]));
+  rows.forEach(({ r, lab, bar, v, win, i }) => {
+    const a = lerp(t, [2.4 + i * 0.12, 2.7 + i * 0.12], [0, 1]);
+    show(r, a);
+    bar.style.width = (320 * v * lerp(t, [2.7, 3.7], [0, 1], ease.inOut)) + "px";
+    const pick = lerp(t, [3.8, 4.1], [0, 1]);
+    lab.style.color = win && pick > 0 ? "var(--fix)" : "var(--ink)";
+    lab.style.fontWeight = win && pick > 0 ? "600" : "400";
+    show(r, a * (win ? 1 : 1 - 0.55 * pick));
+  });
+  show(cap1, lerp(t, [4.6, 5.0], [0, 1])); place(cap1, 0, 24 * (1 - lerp(t, [4.6, 5.0], [0, 1])));
+  show(cap2, lerp(t, [5.3, 5.7], [0, 1]));
+}};
+</script></body></html>

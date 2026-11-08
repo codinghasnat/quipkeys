@@ -1,0 +1,54 @@
+<!doctype html><html><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&family=Atkinson+Hyperlegible:wght@400;700&family=IBM+Plex+Mono:wght@400;600&display=block" rel="stylesheet">
+<link rel="stylesheet" href="../style.css"><script src="../lib.js"></script></head><body><div id="stage"></div>
+<script>
+// 01 — The slip and the snap: a finger lands between N and M, the laptop's
+// autocorrect only underlines it, QuipKeys fixes it as space goes down.
+const sheet = el("div", "sheet abs"); sheet.style.cssText += "left:290px;top:96px;width:1340px;height:250px;";
+const text = el("div", "mono abs", sheet); text.style.cssText = "left:60px;top:58px;font-size:110px;line-height:1.2;white-space:pre";
+const tag = el("div", "tag abs"); tag.style.left = "290px"; tag.style.top = "380px"; tag.style.fontSize = "30px";
+const kb = keyboard(null, 290, 470, 120, 14);
+const finger = el("div", "abs"); finger.style.cssText = "width:150px;height:118px;border-radius:50%;background:radial-gradient(closest-side, rgba(23,20,10,.32), rgba(23,20,10,.12) 70%, rgba(23,20,10,0));";
+const cap = el("div", "caption abs"); cap.style.left = "290px"; cap.style.top = "40px";
+
+const keysAt = [["i", 0.5], [" ", 0.68], ["w", 0.86], ["a", 1.04], ["m", 1.72], ["t", 2.0]];
+window.scene = { duration: 6.5, render(t) {
+  // typing
+  let s = "";
+  for (const [c, at] of keysAt) if (t >= at) s += c;
+  s = s.replace(/^i/, "I");
+  const fixed = t >= 3.32;
+  const word = fixed ? "want" : s.slice(2);
+  let html = esc(s.slice(0, 2));
+  if (word) {
+    const flash = lerp(t, [3.32, 3.9], [1, 0]);
+    const cls = fixed ? "fix" : (t >= 2.25 ? "typo" : "");
+    html += `<span class="${cls}" style="background:rgba(26,86,214,${0.22 * flash * (fixed ? 1 : 0)})">${word}</span>`;
+  }
+  if (t >= 3.15) html += " ";
+  const caret = (Math.floor(t * 2) % 2 === 0 || t < 3) ? `<span style="display:inline-block;width:6px;height:100px;background:var(--ink);vertical-align:-14px;margin-left:4px"></span>` : "";
+  text.innerHTML = html + caret;
+
+  // keys
+  for (const c of Object.keys(kb.keys)) press(kb.keys[c], 0);
+  for (const [c, at] of keysAt) {
+    const a = tap(t, at, c === "m" ? 0.3 : 0.16);
+    if (a) press(kb.keys[c], a, c === "m" ? "#ffd6d0" : "");
+  }
+  press(kb.keys[" "], tap(t, 3.0, 0.5));
+
+  // fingertip lands between N and M, mostly on M
+  const [nx, ny] = kb.pos["n"], [mx, my] = kb.pos["m"];
+  const fx = 290 + (nx * 0.42 + mx * 0.58) - 75, fy = 470 + ny - 59;
+  const fo = lerp(t, [1.35, 1.6], [0, 1]) * lerp(t, [2.0, 2.3], [1, 0]);
+  const fs = 1.25 - 0.25 * lerp(t, [1.4, 1.72], [0, 1], ease.inOut) + 0.15 * lerp(t, [1.8, 2.1], [0, 1]);
+  place(finger, fx, fy - 30 * (1 - lerp(t, [1.35, 1.72], [0, 1])), `scale(${fs})`); show(finger, fo);
+
+  // the two verdicts
+  if (t < 2.25) { show(tag, 0); }
+  else if (t < 3.3) { tag.textContent = "Laptop autocorrect: underlines it. That's it."; tag.style.background = "var(--ink)"; show(tag, lerp(t, [2.25, 2.45], [0, 1])); }
+  else { tag.textContent = "QuipKeys: fixed the moment you hit space."; tag.style.background = "var(--fix)"; tag.style.color = "#fff"; show(tag, 1); }
+  place(tag, 0, t < 3.3 ? 0 : -6 * lerp(t, [3.3, 3.5], [1, 0], ease.spring));
+  show(cap, 0);
+}};
+</script></body></html>

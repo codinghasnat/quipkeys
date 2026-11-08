@@ -1,0 +1,54 @@
+<!doctype html><html><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&family=Atkinson+Hyperlegible:wght@400;700&family=IBM+Plex+Mono:wght@400;600&display=block" rel="stylesheet">
+<link rel="stylesheet" href="../style.css"><script src="../lib.js"></script></head><body><div id="stage"></div>
+<script>
+// 09 — Undo, and it remembers: one Backspace undoes a fix and adds the word
+// to "My words"; next time it's left alone.
+const sheet = el("div", "sheet abs"); sheet.style.cssText += "left:160px;top:110px;width:1100px;height:470px;";
+const l1 = el("div", "mono abs", sheet), l2 = el("div", "mono abs", sheet);
+[l1, l2].forEach((l, i) => (l.style.cssText = `left:56px;top:${70 + i * 160}px;font-size:78px;white-space:pre`));
+const badge = el("div", "abs", sheet, "✓ in your words"); badge.style.cssText = "font:600 30px/1 var(--mono);color:var(--fix);background:rgba(26,86,214,.12);padding:10px 14px;border-radius:8px";
+const book = el("div", "abs"); book.style.cssText = "left:1360px;top:110px;width:400px;height:470px;background:var(--ink);border-radius:18px;color:var(--paper);padding:34px";
+const bt = el("div", "", book, "My words"); bt.style.cssText = "font:900 48px/1 var(--display);font-variation-settings:'wdth' 118;margin-bottom:26px";
+const items = ["kubectl", "Hasnat", "bussin"].map((w, i) => { const d = el("div", "abs mono", book, w); d.style.cssText = `left:34px;top:${130 + i * 78}px;font-size:46px;color:#fff7d1`; return d; });
+const flyer = el("div", "abs mono", null, "bussin"); flyer.style.cssText = "font-size:46px;color:var(--fix);background:#fff;padding:6px 14px;border-radius:10px;box-shadow:0 12px 30px -8px rgba(23,20,10,.5)";
+const bk = el("div", "cap abs", null, "⌫ Backspace"); bk.style.cssText += "width:420px;height:150px;font:700 50px/1 var(--body);border-radius:22px";
+const tag = el("div", "tag abs"); tag.style.fontSize = "32px";
+const cap = el("div", "abs", null, "One Backspace undoes it. QuipKeys remembers."); cap.style.cssText = "left:660px;top:700px;width:1100px;font:900 62px/1.05 var(--display);font-variation-settings:'wdth' 118";
+const cap2 = el("div", "abs", null, "Laptop autocorrect keeps “fixing” it."); cap2.style.cssText = "left:660px;top:880px;font:700 38px/1 var(--body);color:var(--ink-soft)";
+const s1 = "that fit is bussin ", s2 = "this pizza is bussin ";
+const CPS = 16, T1 = 0.3, T2 = 3.9;
+const CW = 78 * 0.6;
+window.scene = { duration: 8.5, render(t) {
+  // line 1
+  const n1 = Math.max(0, Math.min(s1.length, Math.floor((t - T1) * CPS)));
+  const fixedAt = T1 + s1.length / CPS, undoAt = 2.5;
+  let w1 = s1.slice(12, Math.max(12, n1)).trimEnd();
+  let line1 = esc(s1.slice(0, Math.min(n1, 12)));
+  if (n1 >= s1.length && t < undoAt) line1 += `<span class="fix">busting</span> `;
+  else if (t >= undoAt) line1 += `<span style="background:rgba(26,86,214,${0.2 * lerp(t, [undoAt, undoAt + 0.6], [1, 0])})">bussin</span> `;
+  else line1 += esc(w1);
+  l1.innerHTML = line1;
+  // line 2
+  const n2 = Math.max(0, Math.min(s2.length, Math.floor((t - T2) * CPS)));
+  l2.innerHTML = esc(s2.slice(0, n2));
+  const kept = n2 >= s2.length;
+  place(badge, 56 + 14 * CW, 70 + 160 + 110); show(badge, kept ? lerp(t, [T2 + s2.length / CPS, T2 + s2.length / CPS + 0.3], [0, 1]) : 0);
+  // backspace key
+  press(bk, tap(t, undoAt - 0.15, 0.45));
+  place(bk, 160, 720);
+  // tags
+  if (t > fixedAt && t < undoAt) { tag.textContent = "QuipKeys guessed: busting"; tag.style.background = "var(--fix)"; tag.style.color = "#fff"; show(tag, 1); }
+  else if (t >= undoAt && t < T2) { tag.textContent = "Undone. Added to your words."; tag.style.background = "var(--ink)"; tag.style.color = "var(--paper)"; show(tag, 1); }
+  else show(tag, 0);
+  place(tag, 160, 40);
+  // word flies into the notebook
+  const f = lerp(t, [undoAt + 0.15, undoAt + 1.0], [0, 1], ease.inOut);
+  const sx = 160 + 56 + 12 * CW, sy = 110 + 70 + 10, ex = 1360 + 34, ey = 110 + 130 + 2 * 78;
+  place(flyer, sx + (ex - sx) * f, sy + (ey - sy) * f - 120 * Math.sin(Math.PI * f), `scale(${1 - 0.1 * f})`);
+  show(flyer, f > 0 && f < 1 ? 1 : 0);
+  show(items[2], f >= 1 ? 1 : 0);
+  items[2].style.color = f >= 1 ? "var(--paper)" : "";
+  show(cap, lerp(t, [5.6, 6.0], [0, 1])); show(cap2, lerp(t, [6.2, 6.6], [0, 1]));
+}};
+</script></body></html>
