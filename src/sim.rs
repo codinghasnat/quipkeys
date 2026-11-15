@@ -87,6 +87,16 @@ impl SimParams {
                 hand_shift_rate: 0.004,
                 aim_sigma: if name == "rough" { 0.30 } else { 0.38 },
             },
+            // The extreme: every press lands so loosely that about half of all
+            // letters hit a neighbouring key ("jrkko" for "hello").
+            "smash" => SimParams {
+                char_error_rate: 0.02,
+                missing_space_rate: 0.01,
+                premature_space_rate: 0.006,
+                shifted_space_rate: 0.01,
+                hand_shift_rate: 0.004,
+                aim_sigma: 0.5,
+            },
             _ => SimParams {
                 char_error_rate: 0.03,
                 missing_space_rate: 0.006,

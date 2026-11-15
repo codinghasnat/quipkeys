@@ -61,6 +61,13 @@ fn configs() -> Vec<(&'static str, Config)> {
     lat.lattice = false;
     let mut no_time = Config::default();
     no_time.channel.timing = false;
+    let envn = |k: &str| std::env::var(k).ok().and_then(|v| v.parse::<f32>().ok());
+    let mut neighbour = Config::default();
+    neighbour.neighbour = false; // ablation: without the neighbour-key reading
+    if let Some(v) = envn("QK_NB_BASE") { neighbour.nb_base = v; }
+    if let Some(v) = envn("QK_NB_SLIP") { neighbour.nb_slip = v; }
+    if let Some(v) = envn("QK_NB_MIN") { neighbour.nb_min_slips = v as usize; }
+    if let Some(v) = envn("QK_NB_PRECISE") { neighbour.nb_base_precise = v; }
     let mut phonetic = Config::default();
     phonetic.phonetic = true;
     let mut sound = Config::default();
@@ -74,6 +81,7 @@ fn configs() -> Vec<(&'static str, Config)> {
     vec![
         ("full", full),
         ("phonetic", phonetic),
+        ("no-neighbour", neighbour),
         ("sound-mode", sound),
         ("plain", plain),
         ("no-geometry", no_geo),
@@ -144,6 +152,10 @@ impl Stats {
     }
 }
 
+fn carry() -> bool {
+    std::env::args().any(|a| a == "--carry")
+}
+
 fn percentile(v: &mut [f64], p: f64) -> f64 {
     if v.is_empty() {
         return 0.0;
@@ -162,16 +174,23 @@ struct Show {
 fn evaluate(engine: Option<&Engine>, lx: &Lexicon, sim: &[Vec<SimToken>], show: &Show) -> Stats {
     let mut st = Stats::default();
     let mut shown = 0;
+    let mut typist: Option<quipkeys::stream::TypistState> = None;
     for toks in sim {
         let outputs: Vec<String> = match engine {
             None => toks.iter().map(|t| t.typed.clone()).collect(),
             Some(e) => {
-                let mut s = Stream::new(e);
+                // --carry: one typist types every sentence, so what the stream
+                // learned about their sloppiness carries over (as in the app).
+                let mut s = match (&typist, carry()) {
+                    (Some(st), true) => Stream::with_typist(e, st.clone()),
+                    _ => Stream::new(e),
+                };
                 for t in toks {
                     let start = Instant::now();
                     s.push(&t.typed, Some(t.times.clone()));
                     st.lat_us.push(start.elapsed().as_secs_f64() * 1e6);
                 }
+                typist = Some(s.typist());
                 s.words.into_iter().map(|w| w.output).collect()
             }
         };

@@ -125,6 +125,7 @@ scripts/trainer.sh        # builds trainer/quipkeys.wasm, serves http://localhos
 | 10 | Repeated keys | I amm → I am | ✅ |
 | 17 | Hand off by one key | Gello → Hello; `jr;;p` → hello | ✅ |
 | 18 | Long messy runs | I wamt tp gp tp thr stpre | ✅ |
+| 19 | Most letters one key off | jrkko how are you → hello how are you | ✅ from sentence context (neighbour-key reading); a lone "jrkko" is left alone |
 | 14 | Missing apostrophes | Dont / im → Don't / I'm | ✅ (table of unambiguous forms; no comma insertion) |
 | 11 | Spelling by sound | fone → phone, nollij → knowledge, edukashun → education | ✅ sounds-like candidates, chosen by sentence context; bolder with **Spell by sound** (see below) |
 | 12 | Homophones | my sun is ill → my son is ill | ✅ partly: only when the sentence clearly says so (real-word bar) |

@@ -3,6 +3,7 @@
 
 use crate::channel::{Channel, ChannelParams};
 use crate::lexicon::{Lexicon, LmParams, WordId};
+use crate::lexicon::NO_WORD;
 use crate::search::{search, Candidate};
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -128,6 +129,22 @@ pub struct Config {
     pub hand_shift_max_cost: f32,
     /// Shortest typed word we will touch.
     pub min_len: usize,
+    /// Neighbour-key reading for words typed almost blind ("jrkko" -> hello):
+    /// same length, every letter the key typed or one beside it. Channel cost
+    /// = `nb_base + nb_slip * slipped letters`, used when at least `nb_min_slips`
+    /// letters slipped (fewer is the ordinary search's job). Off when false.
+    /// Tuned on dev with --carry: +1.7 points at "smash", level elsewhere.
+    pub neighbour: bool,
+    /// Base cost while the stream judges the typist sloppy (see `sloppy_on`).
+    pub nb_base: f32,
+    /// Base cost otherwise: an accurate typist rarely mashes a whole word.
+    pub nb_base_precise: f32,
+    pub nb_slip: f32,
+    pub nb_min_slips: usize,
+    /// A typed word this un-wordlike (mean letter-pattern cost, nats per
+    /// letter; see `wordlikeness`) counts as mashed even from a typist not
+    /// yet judged sloppy: "jrkko" scores 5.3; "hasnat" 3.0, "nginx" 4.1, "wamt" 3.6.
+    pub nb_unwordlike: f32,
     /// Sounds-like candidates for spelling by ear ("fone" -> phone): channel
     /// cost = `phon_base + phon_scale * sound distance`, for distances up to
     /// `phon_max`. Off when `phonetic` is false.
@@ -199,6 +216,12 @@ impl Default for Config {
             shift_margin: 2.0,
             hand_shift_max_cost: 14.0,
             min_len: 1,
+            neighbour: true,
+            nb_base: 4.0,
+            nb_base_precise: 8.0,
+            nb_slip: 2.0,
+            nb_min_slips: 2,
+            nb_unwordlike: 5.0,
             phonetic: false,
             phon_base: 5.0,
             phon_scale: 1.0,
@@ -361,6 +384,8 @@ pub struct Engine {
     pub cfg: Config,
     /// Sound codes and index, built on first use when `cfg.phonetic` is on.
     phon: std::sync::OnceLock<crate::phonetic::Phonetic>,
+    /// Letter-trigram counts over the dictionary, for `wordlikeness`.
+    tri: std::sync::OnceLock<(Vec<f32>, Vec<f32>)>,
 }
 
 impl Engine {
@@ -384,7 +409,7 @@ impl Engine {
         sp.sub_adjacent = cfg.sloppy_sub_adjacent;
         sp.sub_per_key = cfg.sloppy_sub_per_key;
         sp.first_letter = cfg.sloppy_first_letter;
-        Engine { ch: Channel::new(cfg.channel.clone()), ch_sloppy: Channel::new(sp), lx, cfg, nn, phon: Default::default() }
+        Engine { ch: Channel::new(cfg.channel.clone()), ch_sloppy: Channel::new(sp), lx, cfg, nn, phon: Default::default(), tri: Default::default() }
     }
 
     fn lm_params(&self) -> LmParams {
@@ -493,6 +518,9 @@ impl Engine {
             return c;
         }
         let mut found = search(&self.lx, ch, &tc, bound);
+        if self.cfg.neighbour && core.len() >= 2 && self.lx.id(core).is_none() {
+            self.add_neighbour_readings(core, &mut found);
+        }
         // Sounds-like candidates for unknown words, and for very rare ones
         // ("gide", "sene"): those still face the real-word confidence bar.
         let rare = |id| self.lx.unigram_p(id) < 3e-7;
@@ -519,6 +547,80 @@ impl Engine {
             m.insert(key, c.clone());
         });
         c
+    }
+
+    /// How un-wordlike a lowercase string is: the mean cost (nats per letter)
+    /// of its letters under a letter-trigram model of the dictionary. Real
+    /// words, names and ordinary typos score about 2-4; keyboard mash mostly above 5.
+    pub fn wordlikeness(&self, word: &str) -> f32 {
+        const A: usize = 28; // a-z, start, end
+        let ix = |c: u8| if c.is_ascii_lowercase() { (c - b'a') as usize } else { 26 };
+        let (c3, c2) = self.tri.get_or_init(|| {
+            let (mut c3, mut c2) = (vec![0f32; A * A * A], vec![0f32; A * A]);
+            for id in 0..self.lx.len() {
+                let w = self.lx.word(id as u32).as_bytes();
+                if !w.iter().all(|c| c.is_ascii_lowercase()) {
+                    continue;
+                }
+                // Square-root weighting: common words count more, but don't swamp.
+                let n = (self.lx.unigram_p(id as u32) * 1e9).sqrt() as f32;
+                let (mut a, mut b) = (26, 26);
+                for c in w.iter().map(|&c| ix(c)).chain(std::iter::once(27)) {
+                    c3[(a * A + b) * A + c] += n;
+                    c2[a * A + b] += n;
+                    a = b;
+                    b = c;
+                }
+            }
+            (c3, c2)
+        });
+        let (mut a, mut b, mut total, mut n) = (26, 26, 0f32, 0);
+        for c in word.bytes().map(ix).chain(std::iter::once(27)) {
+            total -= ((c3[(a * A + b) * A + c] + 0.01) / (c2[a * A + b] + 0.01 * A as f32)).ln();
+            n += 1;
+            a = b;
+            b = c;
+        }
+        total / n as f32
+    }
+
+    /// Add every dictionary word of the same length whose letters are each the
+    /// key typed or a neighbour of it. A walk down the trie: at most ~7
+    /// branches per letter, and most die within a few letters.
+    fn add_neighbour_readings(&self, core: &str, found: &mut Vec<Candidate>) {
+        let t = core.as_bytes();
+        if t.len() > 24 || !t.iter().all(|c| c.is_ascii_lowercase()) {
+            return;
+        }
+        let kb = &self.ch.kb;
+        // Mashed = the typist is being sloppy, or this isn't word-shaped at all.
+        let mashed = SLOPPY.with(|s| s.get()) || self.wordlikeness(core) > self.cfg.nb_unwordlike;
+        let mut stack: Vec<(u32, usize, usize)> = vec![(0, 0, 0)]; // (trie node, letters matched, slips)
+        while let Some((node, d, slips)) = stack.pop() {
+            if d == t.len() {
+                let id = self.lx.trie.node_word[node as usize];
+                let sloppy = mashed;
+                // Two slipped letters are the ordinary search's job unless the
+                // typist is being sloppy; three or more are ours either way.
+                let min = if sloppy { self.cfg.nb_min_slips } else { self.cfg.nb_min_slips + 1 };
+                if id != NO_WORD && slips >= min {
+                    let base = if sloppy { self.cfg.nb_base } else { self.cfg.nb_base_precise };
+                    let cost = base + self.cfg.nb_slip * slips as f32;
+                    match found.iter_mut().find(|c| c.word == id) {
+                        Some(c) => c.channel = c.channel.min(cost),
+                        None => found.push(Candidate { word: id, channel: cost }),
+                    }
+                }
+                continue;
+            }
+            for (c, next) in self.lx.trie.children(node) {
+                if c == t[d] {
+                    stack.push((next, d + 1, slips));
+                } else if kb.adjacent(c, t[d]) {
+                    stack.push((next, d + 1, slips + 1));
+                }
+            }
+        }
     }
 
     /// The sounds-like index (built once, on first use).

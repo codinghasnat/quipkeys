@@ -146,7 +146,8 @@ impl Core {
     }
 
     fn reset(&mut self) {
-        self.stream = Stream::new(self.engine);
+        // The text is forgotten; what we know about the typist's sloppiness isn't.
+        self.stream = Stream::with_typist(self.engine, self.stream.typist());
         self.reload_words();
         for w in &self.personal {
             self.stream.teach(w);
@@ -442,5 +443,24 @@ mod sound {
         let mut c = Core::build(cfg, None);
         let out = simulate(&mut c, &keys("I took a pikcher of the new mashine "));
         assert!(out.contains("picture") && out.contains("machine"), "{out:?}");
+    }
+}
+
+#[cfg(test)]
+mod mashed {
+    use super::tests::{keys, simulate};
+    use super::*;
+
+    /// Nearly every letter one key off: fixed from context, even as the first
+    /// thing typed. Names and slang that only look odd are left alone.
+    #[test]
+    fn neighbour_keys_all_over() {
+        let mut c = Core::new();
+        assert_eq!(simulate(&mut c, &keys("jrkko how are you ")), "hello how are you ");
+        c.on_key(Key::Reset);
+        assert_eq!(simulate(&mut c, &keys("I qamt feiends ")), "I want friends ");
+        c.on_key(Key::Reset);
+        let kept = simulate(&mut c, &keys("Hasnat likes kubectl and nginx and chatgpt "));
+        assert_eq!(kept, "Hasnat likes kubectl and nginx and chatgpt ");
     }
 }

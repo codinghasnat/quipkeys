@@ -12,6 +12,16 @@ fn main() {
         cfg.channel.timing = false;
         cfg.channel.sub_per_key = 2.0;
     }
+    if std::env::var("QK_NB").is_ok() {
+        cfg.neighbour = true;
+        let f = |k: &str| std::env::var(k).ok().and_then(|v| v.parse::<f32>().ok());
+        if let Some(v) = f("QK_NB_BASE") { cfg.nb_base = v; }
+        if let Some(v) = f("QK_NB_SLIP") { cfg.nb_slip = v; }
+        if let Some(v) = f("QK_NB_PRECISE") { cfg.nb_base_precise = v; }
+    }
+    if std::env::var("QK_PHON").is_ok() {
+        cfg.phonetic = true;
+    }
     if std::env::var("QK_RHYTHM").is_ok() {
         cfg.channel.rhythm = true;
     }

@@ -234,7 +234,28 @@ pub struct Stream<'e> {
     caps_run: usize,
 }
 
+/// What a stream has learned about the typist (not about the text): how
+/// sloppy their recent typing was. It outlives the text, so the app hands it
+/// from one stream to the next when the caret moves (Enter, a click).
+#[derive(Clone, Default, Debug)]
+pub struct TypistState {
+    recent_oov: std::collections::VecDeque<bool>,
+    sloppy: bool,
+}
+
 impl<'e> Stream<'e> {
+    /// A new stream for the same typist: starts with their sloppiness history.
+    pub fn with_typist(engine: &'e Engine, state: TypistState) -> Self {
+        let mut s = Stream::new(engine);
+        s.recent_oov = state.recent_oov;
+        s.sloppy = state.sloppy;
+        s
+    }
+
+    pub fn typist(&self) -> TypistState {
+        TypistState { recent_oov: self.recent_oov.clone(), sloppy: self.sloppy }
+    }
+
     pub fn new(engine: &'e Engine) -> Self {
         Stream {
             engine,

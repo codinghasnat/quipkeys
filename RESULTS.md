@@ -148,6 +148,43 @@ Caveats:
 * Homophone swaps (sun/son, our/hour) only happen when the sentence clearly calls for one. Most are still
   left alone.
 
+## Typing almost blind: neighbour-key reading and typist memory (held-out results)
+
+Two changes aimed at the extreme case, where most letters in a word are one key off
+("jrkko how are you" → "hello how are you"):
+
+* **Neighbour-key reading** (`Engine::add_neighbour_readings`): every dictionary word of the same length whose
+  letters are each the key typed or one beside it becomes a candidate, and sentence context picks. Few words
+  ever fit ("jrkko" fits six, and "hello" is far the most common). It's cheap while the typist is being
+  sloppy, or when the typed word isn't word-shaped at all (a letter-trigram score, `Engine::wordlikeness`:
+  "jrkko" 5.3; "hasnat" 3.0, "nginx" 4.1, "wamt" 3.6; threshold 5.0). Otherwise it's expensive and needs
+  three or more slipped letters, so ordinary typos are still handled by the ordinary search.
+* **Typist memory** (`Stream::with_typist`): how sloppy the typist has been now carries over when the text
+  resets (Enter, a click, a new sentence). Before, every sentence started by assuming an accurate typist and
+  needed eight words to notice otherwise.
+
+A new simulator level, **smash**, has every press land so loosely that about half of all letters hit a
+neighbouring key: 17% of words come out right as typed. Costs were tuned on dev. Results on the Brown test
+split, 1,500 sentences per level, word accuracy:
+
+| Level | As typed | Before | With typist memory | **+ neighbour reading (now)** |
+|---|---|---|---|---|
+| smash | 17.2% | 65.8% | 73.1% | **74.7%** |
+| rough | 50.7% | 86.6% | 87.7% | **87.8%** |
+| blind 10% | 61.7% | 89.06% | 88.93% | 88.93% |
+| messy 6% | 74.0% | 93.58% | 93.55% | 93.53% |
+| moderate 3% | 85.9% | 96.70% | 96.71% | 96.67% |
+| light 1.5% | 92.7% | 98.34% | 98.34% | 98.31% |
+
+So typing with most letters off gains about 9 points and rough typing about 1, while accurate-typist levels
+move by 0.03 to 0.13 points down. Typist memory also raises wrongly-changed correct words at the two
+sloppiest levels (smash 0.10% → 0.17%, rough 0.14% → 0.18%), since the engine stays in its sloppy mode
+longer. Run with `qk-bench --level smash --carry`; `--configs no-neighbour` is the ablation. The scorecard
+at the top of this file predates both changes (no `--carry`).
+
+Still out of reach: a mashed word with no context ("jrkko" alone stays as typed), sentences where every
+word is mashed, and mashed words that happen to be real words ("us" for "is").
+
 ## Known gaps / next steps
 
 * **Wrong corrections are about 0.11–0.12%** (about 1 in 850 correct words). Most are rare words and names missing from
