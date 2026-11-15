@@ -55,15 +55,62 @@ pub fn words_path() -> PathBuf {
 
 /// Make sure the word list exists (so it can be opened for editing).
 pub fn write_words_if_missing() {
-    let p = words_path();
-    if !p.exists() {
-        let _ = std::fs::write(
-            p,
-            "# Your words: QuipKeys never changes these, and fixes typos of them.\n\
-             # Words are added here when you undo a correction (Backspace right after it).\n\
-             # Add or remove words freely, one per line.\n",
-        );
+    if !words_path().exists() {
+        save_words(&[]);
     }
+}
+
+const WORDS_HEADER: &str = "# Your words: QuipKeys never changes these, and fixes typos of them.\n\
+# Words are added here when you undo a correction (Backspace right after it),\n\
+# or from the My words window. One word per line.\n";
+
+/// A word as it is stored: lower case; letters, apostrophes and hyphens; 2-40 long.
+pub fn clean_word(raw: &str) -> Option<String> {
+    let w = raw.trim().to_lowercase();
+    let ok = (2..=40).contains(&w.chars().count())
+        && w.chars().all(|c| c.is_ascii_lowercase() || c == '\'' || c == '-')
+        && w.chars().any(|c| c.is_ascii_lowercase());
+    ok.then_some(w)
+}
+
+/// The saved words, oldest first.
+pub fn words() -> Vec<String> {
+    let text = std::fs::read_to_string(words_path()).unwrap_or_default();
+    let mut out: Vec<String> = Vec::new();
+    for w in text.lines().filter(|l| !l.trim_start().starts_with('#')).filter_map(clean_word) {
+        if !out.contains(&w) {
+            out.push(w);
+        }
+    }
+    out
+}
+
+fn save_words(list: &[String]) {
+    let mut text = String::from(WORDS_HEADER);
+    for w in list {
+        text.push_str(w);
+        text.push('\n');
+    }
+    let _ = std::fs::write(words_path(), text);
+}
+
+/// Add a word. Ok(word as saved), or Err(why not).
+pub fn add_word(raw: &str) -> Result<String, &'static str> {
+    let w = clean_word(raw).ok_or("Use one word: letters only, at least 2 of them.")?;
+    let mut list = words();
+    if list.contains(&w) {
+        return Err("That word is already in your list.");
+    }
+    list.push(w.clone());
+    save_words(&list);
+    Ok(w)
+}
+
+pub fn remove_word(raw: &str) {
+    let w = raw.trim().to_lowercase();
+    let mut list = words();
+    list.retain(|x| *x != w);
+    save_words(&list);
 }
 
 /// A yes/no setting from quipkeys-settings.txt ("name=1").

@@ -98,11 +98,17 @@ on: word accuracy drops by 0.2 to 1.2 points. Details are in the main RESULTS.md
 ## Your words
 
 QuipKeys never changes a word in your word list, and it fixes typos of those
-words ("quipkeyd" → "quipkeys"). Words get there in two ways:
-- **Backspace straight after a fix.** The fix is undone and the word you
-  typed is added.
-- **By hand.** **My words…** in the tray/menu opens the list. Add or remove
-  words, one per line; changes apply from the next Enter or click.
+words ("quipkeyd" → "quipkeys"). **My words…** in the tray/menu opens a window
+where you can:
+- **Add a word** by typing it in. Use it for names, slang and jargon.
+- **Remove a word** with one click, for example one saved by an accidental
+  Backspace.
+- **Search** the list. The newest words are at the top.
+
+Pressing Backspace straight after a fix still undoes the fix and adds the word
+you typed. Changes apply from your next Enter, click or app switch. The list
+is a plain text file (`quipkeys-words.txt`), and the window has a link to open
+it directly.
 
 Typing the same unknown word twice also teaches it, but only until QuipKeys
 quits. That's deliberate: saving it would mean writing what you type to disk.

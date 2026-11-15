@@ -20,6 +20,7 @@ use crate::settings;
 use crate::windows as platform;
 
 const WELCOME: &str = include_str!("welcome.html");
+const WORDS: &str = include_str!("words.html");
 #[cfg(target_os = "macos")]
 const HOTKEY: &str = "Ctrl+Option+Q";
 #[cfg(windows)]
@@ -36,7 +37,7 @@ pub enum UiEvent {
     Running,
     Error(String),
     Menu(MenuId),
-    /// A message from the welcome window.
+    /// A message from the welcome or "My words" window.
     Ipc(String),
 }
 
@@ -69,6 +70,8 @@ struct App {
     /// Program name of the app last typed in, for "Don't correct in …".
     app: String,
     welcome: Option<(Window, WebView)>,
+    /// The "My words" window.
+    words: Option<(Window, WebView)>,
 }
 
 pub fn run() {
@@ -99,11 +102,11 @@ pub fn run() {
         welcome: MenuItem::new("Welcome & privacy…", true, None),
         quit: MenuItem::new("Quit QuipKeys", true, None),
     };
-    let mut app = App { tray: None, items, on: true, running: platform::has_permission(), app: String::new(), welcome: None };
+    let mut app = App { tray: None, items, on: true, running: platform::has_permission(), app: String::new(), welcome: None, words: None };
 
     event_loop.run(move |event, target, flow| {
-        *flow = if app.welcome.is_some() {
-            // Keep the welcome window's permission status fresh.
+        *flow = if app.welcome.is_some() || app.words.is_some() {
+            // Keep the open window fresh (permission status; words added by undo).
             ControlFlow::WaitUntil(std::time::Instant::now() + std::time::Duration::from_millis(700))
         } else {
             ControlFlow::Wait
@@ -116,10 +119,18 @@ pub fn run() {
                     app.open_welcome(target);
                 }
             }
-            Event::NewEvents(StartCause::ResumeTimeReached { .. }) => app.push_state(),
+            Event::NewEvents(StartCause::ResumeTimeReached { .. }) => {
+                app.push_state();
+                app.push_words();
+            }
             Event::UserEvent(e) => app.handle(e, target, flow),
-            Event::WindowEvent { event: WindowEvent::CloseRequested, .. } => {
-                app.welcome = None;
+            Event::WindowEvent { window_id, event: WindowEvent::CloseRequested, .. } => {
+                if app.welcome.as_ref().is_some_and(|(w, _)| w.id() == window_id) {
+                    app.welcome = None;
+                }
+                if app.words.as_ref().is_some_and(|(w, _)| w.id() == window_id) {
+                    app.words = None;
+                }
             }
             _ => {}
         }
@@ -182,8 +193,7 @@ impl App {
                     settings::write_exclusions_if_missing();
                     settings::open(&settings::exclude_path().display().to_string());
                 } else if id == *it.words.id() {
-                    settings::write_words_if_missing();
-                    settings::open(&settings::words_path().display().to_string());
+                    self.open_words(target);
                 } else if id == *it.welcome.id() {
                     self.open_welcome(target);
                 } else if id == *it.quit.id() {
@@ -229,41 +239,43 @@ impl App {
             w.set_focus();
             return;
         }
-        let size = tao::dpi::LogicalSize::new(600.0, 660.0);
-        let window = match WindowBuilder::new()
-            .with_title("Welcome to QuipKeys")
-            .with_inner_size(size)
-            .with_resizable(false)
-            .with_maximizable(false)
-            .build(target)
-        {
-            Ok(w) => w,
-            Err(_) => return,
-        };
-        if let Some(m) = window.current_monitor() {
-            let scale = m.scale_factor();
-            let (mw, mh) = (m.size().width as f64, m.size().height as f64);
-            let (ww, wh) = (size.width * scale, size.height * scale);
-            let p = m.position();
-            window.set_outer_position(tao::dpi::PhysicalPosition::new(p.x as f64 + (mw - ww) / 2.0, p.y as f64 + (mh - wh) / 2.5));
+        self.welcome = open_window(target, "Welcome to QuipKeys", (600.0, 660.0), false, WELCOME);
+    }
+
+    fn open_words(&mut self, target: &EventLoopWindowTarget<UiEvent>) {
+        if let Some((w, _)) = &self.words {
+            w.set_focus();
+            return;
         }
-        let platform_js = format!(
-            "window.QK_PLATFORM = '{}';",
-            if cfg!(target_os = "macos") { "mac" } else { "win" }
-        );
-        let proxy = Mutex::new(PROXY.get().unwrap().lock().unwrap().clone());
-        let webview = WebViewBuilder::new()
-            .with_html(WELCOME)
-            .with_initialization_script(&platform_js)
-            .with_ipc_handler(move |req: wry::http::Request<String>| {
-                let _ = proxy.lock().unwrap().send_event(UiEvent::Ipc(req.body().clone()));
-            })
-            // Links open in the real browser, never inside the window.
-            .with_navigation_handler(|url| url.starts_with("about:") || url.starts_with("data:"))
-            .build(&window);
-        let Ok(webview) = webview else { return };
-        window.set_focus();
-        self.welcome = Some((window, webview));
+        settings::write_words_if_missing();
+        self.words = open_window(target, "My words", (520.0, 640.0), true, WORDS);
+    }
+
+    /// Send the saved words to the "My words" window (it redraws only on change).
+    fn push_words(&self) {
+        let Some((_, wv)) = &self.words else { return };
+        let list: Vec<String> = settings::words().iter().map(|w| js_string(w)).collect();
+        let _ = wv.evaluate_script(&format!("window.QKW && QKW.list([{}])", list.join(",")));
+    }
+
+    /// A message from the "My words" window.
+    fn words_ipc(&mut self, msg: &str) {
+        let Some((_, wv)) = &self.words else { return };
+        let call = |js: String| {
+            let _ = wv.evaluate_script(&js);
+        };
+        if let Some(raw) = msg.strip_prefix("add:") {
+            match settings::add_word(raw) {
+                Ok(w) => call(format!("QKW.added({})", js_string(&w))),
+                Err(why) => call(format!("QKW.error({})", js_string(why))),
+            }
+        } else if let Some(raw) = msg.strip_prefix("remove:") {
+            settings::remove_word(raw);
+            call(format!("QKW.removed({})", js_string(raw.trim())));
+        } else if msg == "file" {
+            settings::open(&settings::words_path().display().to_string());
+        }
+        self.push_words();
     }
 
     fn push_state(&mut self) {
@@ -280,6 +292,9 @@ impl App {
     }
 
     fn ipc(&mut self, msg: &str) {
+        if let Some(rest) = msg.strip_prefix("words:") {
+            return self.words_ipc(rest);
+        }
         match msg {
             "ready" => self.push_state(),
             "perm" => platform::request_permission(),
@@ -302,6 +317,61 @@ impl App {
         }
         self.refresh();
     }
+}
+
+/// A JavaScript string literal for `s`.
+fn js_string(s: &str) -> String {
+    let mut out = String::from("\"");
+    for c in s.chars() {
+        match c {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '<' => out.push_str("\\u003c"),
+            c if (c as u32) < 0x20 || c == '\u{2028}' || c == '\u{2029}' => out.push_str(&format!("\\u{:04x}", c as u32)),
+            c => out.push(c),
+        }
+    }
+    out.push('"');
+    out
+}
+
+/// Open a small window showing one of the built-in pages.
+fn open_window(
+    target: &EventLoopWindowTarget<UiEvent>,
+    title: &str,
+    size: (f64, f64),
+    resizable: bool,
+    html: &str,
+) -> Option<(Window, WebView)> {
+    let size = tao::dpi::LogicalSize::new(size.0, size.1);
+    let window = WindowBuilder::new()
+        .with_title(title)
+        .with_inner_size(size)
+        .with_resizable(resizable)
+        .with_maximizable(false)
+        .build(target)
+        .ok()?;
+    if let Some(m) = window.current_monitor() {
+        let scale = m.scale_factor();
+        let (mw, mh) = (m.size().width as f64, m.size().height as f64);
+        let (ww, wh) = (size.width * scale, size.height * scale);
+        let p = m.position();
+        window.set_outer_position(tao::dpi::PhysicalPosition::new(p.x as f64 + (mw - ww) / 2.0, p.y as f64 + (mh - wh) / 2.5));
+    }
+    let platform_js = format!("window.QK_PLATFORM = '{}';", if cfg!(target_os = "macos") { "mac" } else { "win" });
+    let proxy = Mutex::new(PROXY.get().unwrap().lock().unwrap().clone());
+    let webview = WebViewBuilder::new()
+        .with_html(html)
+        .with_initialization_script(&platform_js)
+        .with_ipc_handler(move |req: wry::http::Request<String>| {
+            let _ = proxy.lock().unwrap().send_event(UiEvent::Ipc(req.body().clone()));
+        })
+        // Links open in the real browser, never inside the window.
+        .with_navigation_handler(|url| url.starts_with("about:") || url.starts_with("data:"))
+        .build(&window)
+        .ok()?;
+    window.set_focus();
+    Some((window, webview))
 }
 
 /// "notepad.exe" -> "Notepad", "google chrome" -> "Google Chrome".

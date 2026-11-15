@@ -119,7 +119,7 @@ impl Core {
         self.words_stamp = stamp;
         self.personal = std::fs::read_to_string(path)
             .map(|t| {
-                t.lines().map(word_core).filter(|w| !w.is_empty() && !w.starts_with('#')).collect()
+                t.lines().filter(|l| !l.trim_start().starts_with('#')).map(word_core).filter(|w| !w.is_empty()).collect()
             })
             .unwrap_or_default();
     }
