@@ -18,7 +18,9 @@ fn main() {
     }
     // Tallies learned by the app or examples/profile_sim.rs (applied even when small).
     if let Ok(path) = std::env::var("QK_TALLIES") {
-        quipkeys::profile::Tallies::from_text(&std::fs::read_to_string(path).expect("tallies file")).apply_with_min(&mut cfg.channel, 0);
+        let t = quipkeys::profile::Tallies::from_text(&std::fs::read_to_string(path).expect("tallies file"));
+        // QK_TALLIES_KEYS: also apply the per-key confusions, however little data.
+        if std::env::var("QK_TALLIES_KEYS").is_ok() { t.apply_full(&mut cfg.channel, 0, 0) } else { t.apply_with_min(&mut cfg.channel, 0) }
     }
     if std::env::var("QK_NB").is_ok() {
         cfg.neighbour = true;

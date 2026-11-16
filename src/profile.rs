@@ -12,11 +12,15 @@
 //!
 //!   cost = -ln( (count + K * exp(-default cost)) / (opportunities + K) )
 //!
-//! Measured on 50 real runs of one typist, learning from the engine's own
-//! fixes on one set and testing on the other: the six slip rates gave +1.4
-//! and +0.6 points of word accuracy; the per-key confusions gave about
-//! nothing at that amount of data. So the slip rates are applied, and the
-//! key tallies are kept but not used yet (see `KEYS_MIN_LETTERS`).
+//! Measured two ways (RESULTS.md):
+//! * 50 real runs of one typist, learning from the engine's own fixes on one
+//!   set and testing on the other: the six slip rates gave +1.4 and +0.4
+//!   points of word accuracy; key confusions changed nothing (too little data).
+//! * Seven simulated typists over five "days" (examples/learn_sim.rs): slip
+//!   rates helped every one (+0.0 to +1.2 points) and hurt none; key
+//!   confusions gave +1.2 to a typist with habitual wrong keys and nothing to
+//!   the rest, once they were only ever allowed to lower a cost, and only for
+//!   a confusion seen several times.
 
 use crate::channel::ChannelParams;
 use crate::keyboard::Keyboard;
@@ -25,9 +29,10 @@ use crate::keyboard::Keyboard;
 const K: f64 = 150.0;
 /// Letters of evidence needed before the slip rates are applied (~400 words).
 pub const MIN_LETTERS: u64 = 2000;
-/// Letters needed before per-key confusions are applied: far more than any
-/// data they have been tested on, so in practice not yet.
-pub const KEYS_MIN_LETTERS: u64 = 500_000;
+/// Letters of evidence needed before per-key confusions are applied (~2,000 words).
+pub const KEYS_MIN_LETTERS: u64 = 10_000;
+/// Times one key confusion must be seen before it is applied.
+const KEY_MIN_SEEN: u64 = 5;
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Tallies {
@@ -211,6 +216,11 @@ impl Tallies {
     }
 
     pub fn apply_with_min(&self, p: &mut ChannelParams, min_letters: u64) {
+        self.apply_full(p, min_letters, KEYS_MIN_LETTERS)
+    }
+
+    /// As `apply`, with both thresholds given (experiments).
+    pub fn apply_full(&self, p: &mut ChannelParams, min_letters: u64, keys_min_letters: u64) {
         if self.letters < min_letters {
             return;
         }
@@ -225,7 +235,7 @@ impl Tallies {
         p.del_double = cost(self.del_double, self.doubles, p.del_double);
         p.del_other = cost(self.del_other, l, p.del_other);
         p.transpose = cost(self.transpose, l, p.transpose);
-        if self.letters >= KEYS_MIN_LETTERS {
+        if self.letters >= keys_min_letters {
             let kb = Keyboard::qwerty();
             for a in 0..26u8 {
                 for b in 0..26u8 {
@@ -235,8 +245,12 @@ impl Tallies {
                     let (ca, cb) = (b'a' + a, b'a' + b);
                     let d = kb.distance(ca, cb);
                     let c0 = (p.sub_adjacent + p.sub_per_key * (d - 1.0).max(0.0)).min(p.sub_max);
-                    let c = cost(self.sub[a as usize][b as usize] as u64, self.aimed[a as usize], c0);
-                    if (c - c0).abs() > 0.15 {
+                    // Only a confusion seen several times, and only ever cheaper
+                    // than the built-in cost: raising costs for pairs not seen
+                    // yet made every simulated typist slightly worse.
+                    let seen = self.sub[a as usize][b as usize] as u64;
+                    let c = cost(seen, self.aimed[a as usize], c0);
+                    if seen >= KEY_MIN_SEEN && c < c0 - 0.3 {
                         p.sub_overrides.push((ca, cb, c));
                     }
                 }
@@ -354,5 +368,25 @@ mod tests {
         assert!(p.transpose < d.transpose - 1.0, "{}", p.transpose);
         assert!(p.ins_other > d.ins_other - 0.01);
         assert!(p.sub_overrides.is_empty());
+    }
+
+    #[test]
+    fn a_habitual_wrong_key_gets_cheaper_and_nothing_gets_dearer() {
+        let kb = Keyboard::qwerty();
+        let mut t = Tallies::default();
+        for _ in 0..3000 {
+            t.observe(&kb, "want", "want", true);
+        }
+        for _ in 0..40 {
+            t.observe(&kb, "wamt", "want", true); // always m for n
+        }
+        t.observe(&kb, "wabt", "want", true); // b for n, once: not a habit
+        let mut p = ChannelParams::default();
+        t.apply(&mut p);
+        let d = ChannelParams::default();
+        assert_eq!(p.sub_overrides.len(), 1, "{:?}", p.sub_overrides);
+        let (a, b, c) = p.sub_overrides[0];
+        assert_eq!((a, b), (b'n', b'm'));
+        assert!(c < d.sub_adjacent - 0.3, "{c}");
     }
 }

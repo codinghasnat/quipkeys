@@ -112,10 +112,15 @@ its corrections that way.
 - **Your control:** **Learn my typing habits** in the menu switches it off;
   **Forget what it learned** wipes it.
 
-In a test on one person's recorded typing, learning on one set of runs and
-scoring on another raised words right by 0.4 to 1.4 points. It also collects
-which keys you hit for which, but doesn't use that yet: on the same data it
-made no measurable difference.
+It also learns your habitual wrong keys: if you keep hitting M when you mean
+N, that slip gets cheaper to fix. A key confusion only counts once it has been
+seen at least five times and there are about 2,000 words to go on, and it can
+only ever make a fix more likely, never less.
+
+Tested two ways. On one person's recorded typing, learning on one set of runs
+and scoring on another raised words right by 0.4 to 1.4 points. In a
+simulation of seven kinds of typist over five days, it helped every one (by
+up to 1.2 points) and made none worse. Most of the gain came on the first day.
 
 ## Your words
 

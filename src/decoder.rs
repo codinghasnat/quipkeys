@@ -393,7 +393,12 @@ pub struct Engine {
     phon: std::sync::OnceLock<crate::phonetic::Phonetic>,
     /// Letter-trigram counts over the dictionary, for `wordlikeness`.
     tri: std::sync::OnceLock<(Vec<f32>, Vec<f32>)>,
+    /// Distinguishes engines in the per-thread candidate cache: two engines
+    /// with different settings must never share cached candidates.
+    id: u64,
 }
+
+static NEXT_ENGINE_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 
 impl Engine {
     pub fn new(cfg: Config) -> Self {
@@ -416,7 +421,7 @@ impl Engine {
         sp.sub_adjacent = cfg.sloppy_sub_adjacent;
         sp.sub_per_key = cfg.sloppy_sub_per_key;
         sp.first_letter = cfg.sloppy_first_letter;
-        Engine { ch: Channel::new(cfg.channel.clone()), ch_sloppy: Channel::new(sp), lx, cfg, nn, phon: Default::default(), tri: Default::default() }
+        Engine { ch: Channel::new(cfg.channel.clone()), ch_sloppy: Channel::new(sp), lx, cfg, nn, phon: Default::default(), tri: Default::default(), id: NEXT_ENGINE_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed) }
     }
 
     fn lm_params(&self) -> LmParams {
@@ -516,7 +521,7 @@ impl Engine {
         let tc = ch.typed_costs(core.as_bytes(), times);
         // Timing only matters through the transposition costs, so key on those.
         let mut key = core.to_string();
-        key.push_str(&format!("|{bound}|{}|{}|", SLOPPY.with(|s| s.get()) as u8, sound_mode() as u8));
+        key.push_str(&format!("|{}|{bound}|{}|{}|", self.id, SLOPPY.with(|s| s.get()) as u8, sound_mode() as u8));
         // Every per-key cost (timing and rhythm) is part of the key.
         for v in tc.trans.iter().chain(&tc.ins).chain(&tc.sub_adj).chain(&tc.del_adj) {
             key.push(char::from(b'A' + ((v * 4.0).round() as i32).clamp(-20, 40).wrapping_add(20) as u8));

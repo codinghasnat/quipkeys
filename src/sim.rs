@@ -48,7 +48,17 @@ pub struct SimParams {
     /// point around the intended key, Gaussian with this spread in key
     /// widths, and the nearest key fires. 0 = off (discrete slips only).
     pub aim_sigma: f32,
+    /// Shares of each kind of letter slip, in order: neighbouring key, swap
+    /// with the next letter, dropped letter, extra neighbouring key, doubled
+    /// key, far key. They sum to 1. `DEFAULT_MIX` is the average typist.
+    pub mix: [f32; 6],
+    /// Chance that a neighbouring-key slip lands on this typist's habitual
+    /// wrong key for that letter (always the same one) rather than a random
+    /// neighbour. 0 = no habits.
+    pub key_habit: f32,
 }
+
+pub const DEFAULT_MIX: [f32; 6] = [0.36, 0.22, 0.19, 0.13, 0.06, 0.04];
 
 impl SimParams {
     pub fn level(name: &str) -> SimParams {
@@ -60,6 +70,8 @@ impl SimParams {
                 shifted_space_rate: 0.003,
                 hand_shift_rate: 0.0,
                 aim_sigma: 0.0,
+                mix: DEFAULT_MIX,
+                key_habit: 0.0,
             },
             "messy" => SimParams {
                 char_error_rate: 0.06,
@@ -68,6 +80,8 @@ impl SimParams {
                 shifted_space_rate: 0.012,
                 hand_shift_rate: 0.002,
                 aim_sigma: 0.0,
+                mix: DEFAULT_MIX,
+                key_habit: 0.0,
             },
             // The north star: typing without looking, fast and loose.
             "blind" => SimParams {
@@ -77,6 +91,8 @@ impl SimParams {
                 shifted_space_rate: 0.02,
                 hand_shift_rate: 0.006,
                 aim_sigma: 0.0,
+                mix: DEFAULT_MIX,
+                key_habit: 0.0,
             },
             // Fingers land roughly near the key, fast, without looking.
             "rough" | "rougher" => SimParams {
@@ -86,6 +102,8 @@ impl SimParams {
                 shifted_space_rate: 0.02,
                 hand_shift_rate: 0.004,
                 aim_sigma: if name == "rough" { 0.30 } else { 0.38 },
+                mix: DEFAULT_MIX,
+                key_habit: 0.0,
             },
             // The extreme: every press lands so loosely that about half of all
             // letters hit a neighbouring key ("jrkko" for "hello").
@@ -96,6 +114,8 @@ impl SimParams {
                 shifted_space_rate: 0.01,
                 hand_shift_rate: 0.004,
                 aim_sigma: 0.5,
+                mix: DEFAULT_MIX,
+                key_habit: 0.0,
             },
             _ => SimParams {
                 char_error_rate: 0.03,
@@ -104,6 +124,8 @@ impl SimParams {
                 shifted_space_rate: 0.006,
                 hand_shift_rate: 0.001,
                 aim_sigma: 0.0,
+                mix: DEFAULT_MIX,
+                key_habit: 0.0,
             },
         }
     }
@@ -134,15 +156,16 @@ enum Err {
     Far,
 }
 
-fn choose_err(r: f32) -> Err {
-    match r {
-        x if x < 0.36 => Err::Adjacent,
-        x if x < 0.58 => Err::Transpose,
-        x if x < 0.77 => Err::Omit,
-        x if x < 0.90 => Err::FatFinger,
-        x if x < 0.96 => Err::DoubleTap,
-        _ => Err::Far,
+fn choose_err(r: f32, mix: &[f32; 6]) -> Err {
+    const KINDS: [Err; 6] = [Err::Adjacent, Err::Transpose, Err::Omit, Err::FatFinger, Err::DoubleTap, Err::Far];
+    let mut acc = 0.0;
+    for (k, share) in KINDS.iter().zip(mix) {
+        acc += share;
+        if r < acc {
+            return *k;
+        }
     }
+    Err::Far
 }
 
 fn match_case(c: u8, like: u8) -> u8 {
@@ -234,12 +257,14 @@ impl Typist {
             let corruptible = c.is_ascii_alphabetic() && letters >= 2;
             if corruptible && self.rng.f() < self.p.char_error_rate {
                 let r = self.rng.f();
-                let kind = if self.p.aim_sigma > 0.0 { choose_err(0.36 + r * 0.6) } else { choose_err(r) };
+                let kind = if self.p.aim_sigma > 0.0 { choose_err(0.36 + r * 0.6, &DEFAULT_MIX) } else { choose_err(r, &self.p.mix) };
                 match kind {
                     Err::Adjacent => {
                         let n = self.kb.neighbours(lc);
                         let n: Vec<u8> = n.into_iter().filter(|k| k.is_ascii_alphabetic()).collect();
-                        out.push(match_case(self.rng.pick(&n), c));
+                        // A habitual slip always lands on the same wrong key.
+                        let hit = if self.rng.f() < self.p.key_habit { n[(lc as usize * 7) % n.len()] } else { self.rng.pick(&n) };
+                        out.push(match_case(hit, c));
                         gaps.push(self.iki());
                     }
                     Err::Far => {

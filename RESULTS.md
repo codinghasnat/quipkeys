@@ -222,9 +222,36 @@ score on the other. Word accuracy after correction:
 | **The engine's own fixes on the other set, slip rates only** (`examples/profile_sim.rs`, what the app does) | **92.7%** | **89.4%** |
 
 So the six slip rates help (+1.4 and +0.4 points), and they can be learned without knowing the right
-answers. Per-key confusions gave nothing at this amount of data (about 6,000 letters), so the app collects
-them but doesn't apply them. Caveats: one typist, prompted sentences that repeat across runs, and a run is
-only 30 words, so each run moves in steps of 3.3 points.
+answers. Per-key confusions gave nothing at this amount of data (about 6,000 letters; only one confusion was
+seen five times). Caveats: one typist, prompted sentences that repeat across runs, and a run is only 30
+words, so each run moves in steps of 3.3 points.
+
+### Simulated typists (`examples/learn_sim.rs`)
+
+Seven simulated typists with different habits each type 150 dev-split sentences a day for five days. As in
+the app, the engine learns only from its own kept fixes and correctly typed known words, and each day's
+engine is shaped by what was learned up to the day before. Scored on 300 held-out test-split sentences typed
+by the same typist. Word accuracy, with the share of correctly typed words changed in brackets:
+
+| Typist | As typed | No profile | After day 1 | After day 5 | Learning from the right answers | Day 5 + key confusions |
+|---|---|---|---|---|---|---|
+| average | 83.0% | 95.71% (0.10) | 95.89% (0.08) | 95.89% (0.08) | 96.02% | 95.89% |
+| accurate (1% of letters wrong) | 95.5% | 98.96% (0.09) | 98.98% (0.05) | 98.98% (0.05) | 98.98% | 98.98% |
+| swaps letters | 77.9% | 95.06% (0.06) | 95.28% (0.06) | 95.22% (0.06) | 95.30% | not run |
+| drops letters | 78.9% | 92.31% (0.05) | 93.59% (0.05) | 93.51% (0.03) | 93.68% | 93.51% |
+| hits extra keys | 79.0% | 95.48% (0.11) | 96.02% (0.14) | 96.12% (0.14) | 96.15% | not run |
+| like the real typist above | 75.3% | 93.29% (0.06) | 93.79% (0.06) | 93.83% (0.06) | 93.81% | 93.81% |
+| habitual wrong keys | 74.4% | 94.35% (0.06) | 94.41% (0.06) | 94.35% (0.06) | 94.41% | **95.58%** (0.09) |
+
+* Slip-rate learning helped every typist (+0.0 to +1.2 points) and hurt none. Almost all of the gain arrives
+  on day 1 (about 2,400 words), and it stays put over five days of learning from its own fixes: no drift.
+* Learning from its own fixes gets within about 0.1 points of learning from the right answers.
+* Key confusions: applying all of them cost most typists 0.1 to 0.2 points, because pairs not seen yet were
+  made dearer. Restricted to confusions seen at least five times, and only ever lowering a cost, they give the
+  habitual-wrong-key typist +1.2 points and leave the others unchanged. That is the rule the app uses.
+* The one cost: the extra-keys typist has slightly more correct words changed (0.11% → 0.14%).
+* These typists are my own models of habits, so this shows the mechanism works and is stable, not how large
+  the gain is for real people.
 
 ## Known gaps / next steps
 
