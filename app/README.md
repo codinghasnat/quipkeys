@@ -5,7 +5,8 @@ in, at the moment you press space.
 
 - **Toggle on/off:** Ctrl+Alt+Q (Windows) · Ctrl+Option+Q (macOS)
 - **Undo a correction:** press Backspace straight after it. The word goes
-  back to what you typed, and QuipKeys learns to leave that spelling alone.
+  back to what you typed, and QuipKeys leaves that spelling alone until it
+  quits. To keep it for good, save it in **My words**.
 - **Stays out of:** terminals, code editors and password managers (see the
   list below), and password fields.
 
@@ -25,7 +26,7 @@ macOS it also walks you through the one permission it needs.
   forgotten on Enter, a click or an app switch, and never written to disk.
 - The only files it writes are `quipkeys-settings.txt` (whether you've seen
   the welcome screen), `quipkeys-exclude.txt` (apps to skip) and
-  `quipkeys-words.txt` (your word list: only words you taught it). These live
+  `quipkeys-words.txt` (your word list: only words you chose to save). These live
   next to `quipkeys.exe` on Windows (or in `%APPDATA%\QuipKeys` if that folder
   isn't writable), and in `~/Library/Application Support/QuipKeys` on macOS.
 
@@ -101,14 +102,16 @@ QuipKeys never changes a word in your word list, and it fixes typos of those
 words ("quipkeyd" → "quipkeys"). **My words…** in the tray/menu opens a window
 where you can:
 - **Add a word** by typing it in. Use it for names, slang and jargon.
-- **Remove a word** with one click, for example one saved by an accidental
-  Backspace.
+- **Remove a word** with one click.
+- **Save a word you undid.** Words you restored with Backspace this session
+  are listed at the top, each with a Save button.
 - **Search** the list. The newest words are at the top.
 
-Pressing Backspace straight after a fix still undoes the fix and adds the word
-you typed. Changes apply from your next Enter, click or app switch. The list
+Backspace straight after a fix undoes it and protects that word until
+QuipKeys quits, but doesn't save it: Backspace is too easy to press by
+accident. Changes apply from your next Enter, click or app switch. The list
 is a plain text file (`quipkeys-words.txt`), and the window has a link to open
-it directly.
+it directly. Only this window writes to the file.
 
 Typing the same unknown word twice also teaches it, but only until QuipKeys
 quits. That's deliberate: saving it would mean writing what you type to disk.

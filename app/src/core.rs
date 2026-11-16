@@ -22,6 +22,11 @@ pub enum Key {
     /// Ctrl/Cmd/Alt, or a focus change: what's on screen is no longer what we
     /// think, so forget the tracked text.
     Reset,
+    /// A character we can't model was typed into the current word (a dead
+    /// key, an AltGr/Option character). The caret hasn't moved, but the rest
+    /// of this word must be left alone: correcting only the letters typed
+    /// after it would mangle the word ("naïve" -> "na" + fix of "ive").
+    Unknown,
     /// The on/off hotkey.
     Toggle,
 }
@@ -60,14 +65,16 @@ pub struct Core {
     pub enabled: bool,
     /// Personal word list: words the user taught QuipKeys (by undoing a fix),
     /// kept in a text file so they survive restarts. One word per line.
+    /// Leave everything up to the next space alone (see [`Key::Unknown`]).
+    skip: bool,
+    /// Words restored with undo: left alone for as long as the app runs.
+    /// They are never saved from here (Backspace after a fix is too common
+    /// a keystroke); the "My words" window offers to save them.
+    undone: Vec<String>,
     words_path: Option<PathBuf>,
     words_stamp: Option<SystemTime>,
     personal: Vec<String>,
 }
-
-const WORDS_HEADER: &str = "# Your words: QuipKeys never changes these, and fixes typos of them.\n\
-# Words are added here when you undo a correction (Backspace right after it).\n\
-# Add or remove words freely, one per line.\n";
 
 /// The letters of a typed chunk that make it a word ("Hasnat," -> "hasnat").
 fn word_core(chunk: &str) -> String {
@@ -101,11 +108,20 @@ impl Core {
             t0: None,
             last: None,
             enabled: true,
+            skip: false,
+            undone: Vec::new(),
             words_path,
             words_stamp: None,
             personal: Vec::new(),
         };
         core.reset();
+        // Build the engine's lazy tables now, off the keyboard hook's thread:
+        // the first unknown word must not pay for them inside the hook.
+        let engine = core.engine;
+        std::thread::spawn(move || {
+            engine.wordlikeness("warm");
+            engine.phonetic();
+        });
         core
     }
 
@@ -124,34 +140,19 @@ impl Core {
             .unwrap_or_default();
     }
 
-    /// Add a word to the personal list (and its file).
-    fn remember(&mut self, word: &str) {
-        let w = word_core(word);
-        if w.len() < 2 || self.personal.contains(&w) || self.engine.lx.id(&w).is_some() {
-            return;
-        }
-        self.personal.push(w.clone());
-        self.stream.teach(&w);
-        if let Some(path) = &self.words_path {
-            use std::io::Write;
-            let new_file = !path.exists();
-            if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
-                if new_file {
-                    let _ = f.write_all(WORDS_HEADER.as_bytes());
-                }
-                let _ = writeln!(f, "{w}");
-            }
-            self.words_stamp = std::fs::metadata(path).and_then(|m| m.modified()).ok();
-        }
+    /// Words undone this session and not (yet) in the saved list, newest last.
+    pub fn undone_words(&self) -> Vec<String> {
+        self.undone.iter().filter(|w| !self.personal.contains(w)).cloned().collect()
     }
 
     fn reset(&mut self) {
         // The text is forgotten; what we know about the typist's sloppiness isn't.
         self.stream = Stream::with_typist(self.engine, self.stream.typist());
         self.reload_words();
-        for w in &self.personal {
+        for w in self.personal.iter().chain(&self.undone) {
             self.stream.teach(w);
         }
+        self.skip = false;
         self.shown.clear();
         self.anchor = 0;
         self.cur.clear();
@@ -174,6 +175,16 @@ impl Core {
                 self.reset();
                 Action::Pass
             }
+            Key::Unknown => {
+                self.reset();
+                self.skip = true;
+                Action::Pass
+            }
+            Key::Char(..) | Key::Backspace if self.skip => Action::Pass,
+            Key::Space(_) if self.skip => {
+                self.skip = false;
+                Action::Pass
+            }
             Key::Char(c, t) => {
                 self.last = None;
                 self.cur.push(c);
@@ -187,11 +198,14 @@ impl Core {
                     for &i in &idxs {
                         self.stream.reject(i);
                     }
-                    // Undoing a fix teaches the word for good.
+                    // An undone word is protected until the app quits.
                     let typed: Vec<String> =
                         idxs.iter().filter_map(|&i| self.stream.words.get(i).map(|w| w.typed.clone())).collect();
                     for t in typed {
-                        self.remember(&t);
+                        let w = word_core(&t);
+                        if w.len() >= 2 && !self.undone.contains(&w) && !self.personal.contains(&w) {
+                            self.undone.push(w);
+                        }
                     }
                     let first = *idxs.iter().min().unwrap();
                     for (k, w) in self.stream.words.iter().enumerate().skip(first) {
@@ -222,7 +236,12 @@ impl Core {
     fn commit(&mut self) -> Action {
         self.last = None;
         if self.cur.is_empty() {
-            // Double space or space after a reset: nothing to decode.
+            // A second space in a row (or a space after a reset). The screen now
+            // has a gap we don't track, so a later fix reaching back across it
+            // would delete the wrong number of characters: start afresh.
+            if !self.shown.is_empty() {
+                self.reset();
+            }
             return Action::Pass;
         }
         let word = std::mem::take(&mut self.cur);
@@ -284,6 +303,7 @@ mod tests {
                     Key::Backspace => {
                         screen.pop();
                     }
+                    Key::Unknown => screen.push('é'),
                     _ => {}
                 },
                 Action::Replace { backspaces, text } => {
@@ -406,15 +426,17 @@ mod personal {
     use super::*;
 
     #[test]
-    fn undone_words_are_remembered_across_restarts() {
+    fn undone_words_last_the_session_and_saved_words_persist() {
         let path = std::env::temp_dir().join(format!("qk-words-{}.txt", std::process::id()));
         let _ = std::fs::remove_file(&path);
         let mut c = Core::with_words(Some(path.clone()));
         let mut k = keys("I wamt ");
         k.push(Key::Backspace);
         assert_eq!(simulate(&mut c, &k), "I wamt ");
-        assert!(std::fs::read_to_string(&path).unwrap().lines().any(|l| l == "wamt"));
-        // Same engine, new session: Enter, then the word again.
+        // Undo never writes the file: Backspace is too easy to hit by accident.
+        assert!(!path.exists());
+        assert_eq!(c.undone_words(), vec!["wamt".to_string()]);
+        // ...but the word is left alone for the rest of the session, across resets.
         c.on_key(Key::Reset);
         assert_eq!(simulate(&mut c, &keys("we wamt ")), "we wamt ");
 
@@ -426,6 +448,11 @@ mod personal {
         assert_eq!(simulate(&mut c, &keys("I use quipkeys ")), "I use quipkeys ");
         c.on_key(Key::Reset);
         assert_eq!(simulate(&mut c, &keys("I use quipkeyd ")), "I use quipkeys ");
+        // Once a word is saved, it no longer shows as "undone this session".
+        std::fs::write(&path, "wamt\n").unwrap();
+        c.words_stamp = None;
+        c.on_key(Key::Reset);
+        assert!(c.undone_words().is_empty());
         let _ = std::fs::remove_file(&path);
     }
 }
@@ -464,3 +491,35 @@ mod mashed {
         assert_eq!(kept, "Hasnat likes kubectl and nginx and chatgpt ");
     }
 }
+
+#[cfg(test)]
+mod edges {
+    use super::tests::{keys, simulate};
+    use super::*;
+
+    /// Two spaces leave a gap we don't track, so nothing may reach back across
+    /// it ("meetin  g" must not lose its first letter to a miscounted delete).
+    #[test]
+    fn double_space_never_miscounts() {
+        let mut c = Core::new();
+        let out = simulate(&mut c, &keys("nice to meetin  g you "));
+        // Every typed letter survives, and the gap is still there.
+        assert_eq!(out.replace(' ', ""), "nicetomeetingyou", "{out:?}");
+        assert!(out.contains("  g "), "{out:?}");
+        // The same slip with one space is still repaired.
+        let mut c = Core::new();
+        assert_eq!(simulate(&mut c, &keys("nice to meetin g you ")), "nice to meeting you ");
+    }
+
+    /// A character we can't model mid-word: the rest of that word is left alone.
+    #[test]
+    fn unknown_character_protects_the_word() {
+        let mut c = Core::new();
+        let mut k = keys("na");
+        k.push(Key::Unknown);
+        k.extend(keys("vw wamt "));
+        // "vw" (the tail of the word) is untouched; the next word is corrected again.
+        assert_eq!(simulate(&mut c, &k), "naévw want ");
+    }
+}
+

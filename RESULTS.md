@@ -148,6 +148,28 @@ Caveats:
 * Homophone swaps (sun/son, our/hour) only happen when the sentence clearly calls for one. Most are still
   left alone.
 
+## Spell by sound, second round (held-out results)
+
+Changes after the table above: sound-alike real words swap more readily (homophone cost 4.0 → 1.0), the
+letter-to-sound rules read "ew", "aw" and "ow" as vowels, the y-glide is cheap ("nyoomonya" → pneumonia),
+and an uncommon real word can be a sound-spelling of one at least 50 times more common ("wether" → weather).
+Tuned on dev only; the learned costs were re-fitted with the fixed rules.
+
+A new test, `examples/homophone_eval.rs`: in each Brown **test** sentence, one word is swapped for a common
+sound-alike (their/there, no/know, by/buy), and the untouched sentences are run too.
+
+| Toggle on | Before this round | Now |
+|---|---|---|
+| Sound spellings in sentences: fixed / wrong | 77.3% / 1.1% | **80.7%** / 1.1% |
+| Sound spellings, words alone: fixed / wrong | 57.0% / 1.3% | 57.0% / 1.3% |
+| Swapped sound-alikes restored (1,328 sentences) | not measured (25.5% with the toggle off) | **82.2%** |
+| Clean text: correct words changed (23,983 words) | 0.121% with the toggle off | 0.142% |
+| codespell misspellings: fixed / wrong | 75.7% / 2.0% | 75.7% / 2.0% |
+| Keyboard typos, word accuracy, moderate / blind | 96.38% / 88.15% | 96.32% / 88.06% |
+
+So sound-alike mix-ups go from mostly ignored to mostly fixed, for about 5 more wrongly changed words per
+24,000 words of clean text. All of this is with the toggle on; off, nothing here applies.
+
 ## Typing almost blind: neighbour-key reading and typist memory (held-out results)
 
 Two changes aimed at the extreme case, where most letters in a word are one key off

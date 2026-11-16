@@ -33,6 +33,9 @@ enum Job {
     Fix(usize, String),
     /// A user key held back while a fix was being typed.
     Held(Key),
+    /// A caret key (Enter, Tab, arrows...) or dead key held back the same way:
+    /// replayed as the same key press, then treated as `Key`.
+    Raw { key: Key, vk: u16, scan: u16, extended: bool },
     /// Forget the tracked text (a click or special key arrived while busy).
     Reset,
 }
@@ -106,6 +109,11 @@ fn debug() -> bool {
     *D.get_or_init(|| std::env::var_os("QK_DEBUG").is_some())
 }
 
+/// Words undone with Backspace this session (not saved), for the My words window.
+pub fn undone_words() -> Vec<String> {
+    CORE.get().map(|c| c.lock().unwrap().undone_words()).unwrap_or_default()
+}
+
 /// Run a key through the core; report toggles to the tray.
 fn feed(key: Key) -> Action {
     let toggle = key == Key::Toggle;
@@ -172,10 +180,13 @@ unsafe fn translate(kb: &KBDLLHOOKSTRUCT, hwnd: HWND) -> Option<Key> {
     }
     let ctrl = down(VK_CONTROL);
     let alt = down(VK_MENU);
-    if ctrl && alt && vk == b'Q' as u16 {
+    // AltGr arrives as left Ctrl + right Alt. It types characters ("@" is
+    // AltGr+Q on German keyboards), so it is neither the hotkey nor a shortcut.
+    let altgr = down(VK_RMENU) && down(VK_LCONTROL) && !down(VK_RCONTROL) && !down(VK_LMENU);
+    if ctrl && alt && !altgr && vk == b'Q' as u16 {
         return Some(Key::Toggle);
     }
-    if ctrl || alt || down(VK_LWIN) || down(VK_RWIN) {
+    if !altgr && (ctrl || alt) || down(VK_LWIN) || down(VK_RWIN) {
         return Some(Key::Reset); // a shortcut
     }
     match vk {
@@ -193,6 +204,10 @@ unsafe fn translate(kb: &KBDLLHOOKSTRUCT, hwnd: HWND) -> Option<Key> {
     if GetKeyState(VK_CAPITAL as i32) & 1 != 0 {
         state[VK_CAPITAL as usize] = 0x01;
     }
+    if altgr {
+        state[VK_CONTROL as usize] = 0x80;
+        state[VK_MENU as usize] = 0x80;
+    }
     let layout = GetKeyboardLayout(GetWindowThreadProcessId(hwnd, std::ptr::null_mut()));
     let mut buf = [0u16; 8];
     // Flag 0x4: don't change the keyboard state (keeps dead keys working).
@@ -204,7 +219,12 @@ unsafe fn translate(kb: &KBDLLHOOKSTRUCT, hwnd: HWND) -> Option<Key> {
             }
         }
     }
-    Some(Key::Reset) // dead keys, function keys, anything we can't model
+    if n < 0 || altgr {
+        // A dead key (accent waiting for its letter) or an AltGr combination we
+        // can't read: a character goes into the word, so leave that word alone.
+        return Some(Key::Unknown);
+    }
+    Some(Key::Reset) // function keys and anything else we can't model
 }
 
 unsafe extern "system" fn keyboard_hook(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
@@ -252,6 +272,15 @@ unsafe extern "system" fn keyboard_hook(code: i32, wparam: WPARAM, lparam: LPARA
                 sh.jobs.push_back(Job::Held(key));
                 1
             }
+            // Enter, Tab, arrows, dead keys: they must not overtake the fix and
+            // the held keys ("teh cat" + Enter would send without "cat"), so
+            // hold them too and replay the same key press in order.
+            _ if !(down(VK_CONTROL) || down(VK_MENU) || down(VK_LWIN) || down(VK_RWIN)) => {
+                sh.jobs.push_back(Job::Raw { key, vk: kb.vkCode as u16, scan: kb.scanCode as u16, extended: kb.flags & LLKHF_EXTENDED != 0 });
+                1
+            }
+            // A shortcut can't be replayed faithfully (its modifiers may be
+            // released by then): let it through and forget the tracked text.
             _ => {
                 sh.jobs.push_back(Job::Reset);
                 CallNextHookEx(KB_HOOK, code, wparam, lparam)
@@ -305,6 +334,11 @@ fn worker() {
             Job::Fix(n, text) => type_fix(n, &text),
             Job::Reset => {
                 feed(Key::Reset);
+            }
+            Job::Raw { key, vk, scan, extended } => {
+                let ext = if extended { KEYEVENTF_EXTENDEDKEY } else { 0 };
+                send(&[key_input(vk, scan, ext), key_input(vk, scan, ext | KEYEVENTF_KEYUP)]);
+                feed(key);
             }
             Job::Held(key) => {
                 let action = feed(key.clone());

@@ -56,13 +56,12 @@ pub fn words_path() -> PathBuf {
 /// Make sure the word list exists (so it can be opened for editing).
 pub fn write_words_if_missing() {
     if !words_path().exists() {
-        save_words(&[]);
+        let _ = std::fs::write(words_path(), WORDS_HEADER);
     }
 }
 
 const WORDS_HEADER: &str = "# Your words: QuipKeys never changes these, and fixes typos of them.\n\
-# Words are added here when you undo a correction (Backspace right after it),\n\
-# or from the My words window. One word per line.\n";
+# Add and remove them in the My words window, or edit this file: one word per line.\n";
 
 /// A word as it is stored: lower case; letters, apostrophes and hyphens; 2-40 long.
 pub fn clean_word(raw: &str) -> Option<String> {
@@ -85,32 +84,30 @@ pub fn words() -> Vec<String> {
     out
 }
 
-fn save_words(list: &[String]) {
-    let mut text = String::from(WORDS_HEADER);
-    for w in list {
-        text.push_str(w);
-        text.push('\n');
-    }
-    let _ = std::fs::write(words_path(), text);
-}
-
-/// Add a word. Ok(word as saved), or Err(why not).
+/// Add a word. Ok(word as saved), or Err(why not). Appends one line; the
+/// rest of the file (comments, hand-added entries) is left exactly as it is.
 pub fn add_word(raw: &str) -> Result<String, &'static str> {
     let w = clean_word(raw).ok_or("Use one word: letters only, at least 2 of them.")?;
-    let mut list = words();
-    if list.contains(&w) {
+    if words().contains(&w) {
         return Err("That word is already in your list.");
     }
-    list.push(w.clone());
-    save_words(&list);
+    let mut text = std::fs::read_to_string(words_path()).unwrap_or_else(|_| WORDS_HEADER.to_string());
+    if !text.is_empty() && !text.ends_with('\n') {
+        text.push('\n');
+    }
+    text.push_str(&w);
+    text.push('\n');
+    std::fs::write(words_path(), text).map_err(|_| "Couldn't save your word list.")?;
     Ok(w)
 }
 
+/// Remove a word: drops only the lines that are that word.
 pub fn remove_word(raw: &str) {
     let w = raw.trim().to_lowercase();
-    let mut list = words();
-    list.retain(|x| *x != w);
-    save_words(&list);
+    let Ok(text) = std::fs::read_to_string(words_path()) else { return };
+    let kept: Vec<&str> =
+        text.lines().filter(|l| l.trim_start().starts_with('#') || clean_word(l).as_deref() != Some(w.as_str())).collect();
+    let _ = std::fs::write(words_path(), kept.join("\n") + "\n");
 }
 
 /// A yes/no setting from quipkeys-settings.txt ("name=1").

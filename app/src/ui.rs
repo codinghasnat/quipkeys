@@ -62,6 +62,13 @@ struct Items {
     quit: MenuItem,
 }
 
+/// One of the app's small windows. Fields drop in order: the webview must go
+/// before the window it lives in.
+struct Page {
+    webview: WebView,
+    window: Window,
+}
+
 struct App {
     tray: Option<TrayIcon>,
     items: Items,
@@ -69,9 +76,9 @@ struct App {
     running: bool,
     /// Program name of the app last typed in, for "Don't correct in …".
     app: String,
-    welcome: Option<(Window, WebView)>,
+    welcome: Option<Page>,
     /// The "My words" window.
-    words: Option<(Window, WebView)>,
+    words: Option<Page>,
 }
 
 pub fn run() {
@@ -125,10 +132,10 @@ pub fn run() {
             }
             Event::UserEvent(e) => app.handle(e, target, flow),
             Event::WindowEvent { window_id, event: WindowEvent::CloseRequested, .. } => {
-                if app.welcome.as_ref().is_some_and(|(w, _)| w.id() == window_id) {
+                if app.welcome.as_ref().is_some_and(|p| p.window.id() == window_id) {
                     app.welcome = None;
                 }
-                if app.words.as_ref().is_some_and(|(w, _)| w.id() == window_id) {
+                if app.words.as_ref().is_some_and(|p| p.window.id() == window_id) {
                     app.words = None;
                 }
             }
@@ -235,16 +242,16 @@ impl App {
     }
 
     fn open_welcome(&mut self, target: &EventLoopWindowTarget<UiEvent>) {
-        if let Some((w, _)) = &self.welcome {
-            w.set_focus();
+        if let Some(p) = &self.welcome {
+            p.window.set_focus();
             return;
         }
         self.welcome = open_window(target, "Welcome to QuipKeys", (600.0, 660.0), false, WELCOME);
     }
 
     fn open_words(&mut self, target: &EventLoopWindowTarget<UiEvent>) {
-        if let Some((w, _)) = &self.words {
-            w.set_focus();
+        if let Some(p) = &self.words {
+            p.window.set_focus();
             return;
         }
         settings::write_words_if_missing();
@@ -253,16 +260,19 @@ impl App {
 
     /// Send the saved words to the "My words" window (it redraws only on change).
     fn push_words(&self) {
-        let Some((_, wv)) = &self.words else { return };
-        let list: Vec<String> = settings::words().iter().map(|w| js_string(w)).collect();
-        let _ = wv.evaluate_script(&format!("window.QKW && QKW.list([{}])", list.join(",")));
+        let Some(page) = &self.words else { return };
+        let js_list = |v: Vec<String>| v.iter().map(|w| js_string(w)).collect::<Vec<_>>().join(",");
+        let saved = settings::words();
+        // Undone this session and not saved: offered with a Save button.
+        let undone: Vec<String> = platform::undone_words().into_iter().filter(|w| !saved.contains(w)).collect();
+        let _ = page.webview.evaluate_script(&format!("window.QKW && QKW.list([{}], [{}])", js_list(saved), js_list(undone)));
     }
 
     /// A message from the "My words" window.
     fn words_ipc(&mut self, msg: &str) {
-        let Some((_, wv)) = &self.words else { return };
+        let Some(page) = &self.words else { return };
         let call = |js: String| {
-            let _ = wv.evaluate_script(&js);
+            let _ = page.webview.evaluate_script(&js);
         };
         if let Some(raw) = msg.strip_prefix("add:") {
             match settings::add_word(raw) {
@@ -279,7 +289,7 @@ impl App {
     }
 
     fn push_state(&mut self) {
-        let Some((_, wv)) = &self.welcome else { return };
+        let Some(Page { webview: wv, .. }) = &self.welcome else { return };
         let js = format!(
             "window.QK && QK.state({{perm: {}, running: {}, login: {}, onboarded: {}, sound: {}}})",
             platform::has_permission(),
@@ -342,7 +352,7 @@ fn open_window(
     size: (f64, f64),
     resizable: bool,
     html: &str,
-) -> Option<(Window, WebView)> {
+) -> Option<Page> {
     let size = tao::dpi::LogicalSize::new(size.0, size.1);
     let window = WindowBuilder::new()
         .with_title(title)
@@ -371,7 +381,7 @@ fn open_window(
         .build(&window)
         .ok()?;
     window.set_focus();
-    Some((window, webview))
+    Some(Page { webview, window })
 }
 
 /// "notepad.exe" -> "Notepad", "google chrome" -> "Google Chrome".

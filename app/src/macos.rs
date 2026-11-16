@@ -44,6 +44,7 @@ extern "C" {
     fn CGEventKeyboardSetUnicodeString(ev: CGEventRef, len: usize, buf: *const u16);
     fn CGEventCreateKeyboardEvent(source: *const c_void, keycode: u16, down: bool) -> CGEventRef;
     fn CGEventPost(tap: u32, ev: CGEventRef);
+    fn CGEventCreateCopy(ev: CGEventRef) -> CGEventRef;
     fn AXIsProcessTrusted() -> bool;
     fn AXIsProcessTrustedWithOptions(options: CFTypeRef) -> bool;
     static kAXTrustedCheckOptionPrompt: CFTypeRef;
@@ -105,8 +106,15 @@ const MARKER: i64 = 0x5155_4B59; // "QUKY"
 enum Job {
     Fix(usize, String),
     Held(Key),
+    /// Any other key press (Enter, arrows, a shortcut, a dead key) held back
+    /// while a fix is typed: a copy of the event, re-posted in order.
+    Raw(Key, HeldEvent),
     Reset,
 }
+
+/// An owned copy of a key event (released when posted).
+struct HeldEvent(CGEventRef);
+unsafe impl Send for HeldEvent {}
 
 struct Shared {
     busy: bool,
@@ -203,6 +211,11 @@ fn debug() -> bool {
     *D.get_or_init(|| std::env::var_os("QK_DEBUG").is_some())
 }
 
+/// Words undone with Backspace this session (not saved), for the My words window.
+pub fn undone_words() -> Vec<String> {
+    CORE.get().map(|c| c.lock().unwrap().undone_words()).unwrap_or_default()
+}
+
 /// Run a key through the core; report toggles to the menu.
 fn feed(key: Key) -> Action {
     let toggle = key == Key::Toggle;
@@ -244,15 +257,19 @@ unsafe fn translate(ev: CGEventRef) -> Key {
     if ctrl && opt && kc == KC_Q {
         return Key::Toggle;
     }
-    if ctrl || opt || cmd {
-        // A shortcut, or an Option-composed character we don't model.
-        return Key::Reset;
+    let caret_key = matches!(kc, KC_RETURN | KC_TAB | KC_ESCAPE | KC_KEYPAD_ENTER) || KC_NAV.contains(&kc);
+    if ctrl || cmd || (opt && (caret_key || kc == KC_SPACE || kc == KC_DELETE as i64)) {
+        return Key::Reset; // a shortcut, or Option moving the caret / deleting a word
+    }
+    if opt {
+        // An Option-composed character (é, ü, €): it goes into the word, and
+        // we can't model it, so that word is left alone.
+        return Key::Unknown;
     }
     match kc {
         KC_SPACE => return Key::Space(t),
         k if k == KC_DELETE as i64 => return Key::Backspace,
-        KC_RETURN | KC_TAB | KC_ESCAPE | KC_KEYPAD_ENTER => return Key::Reset,
-        k if KC_NAV.contains(&k) => return Key::Reset,
+        _ if caret_key => return Key::Reset,
         _ => {}
     }
     let _ = FLAG_SHIFT; // the character below already reflects Shift / Caps Lock
@@ -267,7 +284,10 @@ unsafe fn translate(ev: CGEventRef) -> Key {
             }
         }
     }
-    Key::Reset // dead keys, function keys, anything we can't model
+    if len == 0 {
+        return Key::Unknown; // a dead key: an accent waiting for its letter
+    }
+    Key::Reset // function keys and anything else we can't model
 }
 
 unsafe extern "C" fn callback(_proxy: CGEventTapProxy, ty: u32, ev: CGEventRef, _user: *mut c_void) -> CGEventRef {
@@ -275,6 +295,14 @@ unsafe extern "C" fn callback(_proxy: CGEventTapProxy, ty: u32, ev: CGEventRef, 
         // macOS switches a tap off if it is ever too slow; switch it back on.
         if let Some(tap) = TAP.get() {
             CGEventTapEnable(tap.0, true);
+        }
+        // Keys typed while the tap was off were never seen: forget the tracked text.
+        let (lock, _) = SHARED.get().unwrap();
+        let mut sh = lock.lock().unwrap();
+        if sh.busy {
+            sh.jobs.push_back(Job::Reset);
+        } else {
+            feed(Key::Reset);
         }
         return ev;
     }
@@ -322,9 +350,17 @@ unsafe extern "C" fn callback(_proxy: CGEventTapProxy, ty: u32, ev: CGEventRef, 
                 sh.jobs.push_back(Job::Held(key));
                 std::ptr::null_mut()
             }
+            // Enter, arrows, shortcuts, dead keys: they must not overtake the
+            // fix and the held keys ("teh cat" + Enter would send without
+            // "cat"). Hold a copy and re-post it in order.
             _ => {
-                sh.jobs.push_back(Job::Reset);
-                ev
+                let copy = CGEventCreateCopy(ev);
+                if copy.is_null() {
+                    sh.jobs.push_back(Job::Reset);
+                    return ev;
+                }
+                sh.jobs.push_back(Job::Raw(key, HeldEvent(copy)));
+                std::ptr::null_mut()
             }
         };
     }
@@ -358,6 +394,15 @@ fn worker() {
             Job::Fix(n, text) => type_fix(n, &text),
             Job::Reset => {
                 feed(Key::Reset);
+            }
+            Job::Raw(key, held) => {
+                unsafe {
+                    CGEventSetIntegerValueField(held.0, FIELD_USER_DATA, MARKER);
+                    CGEventPost(HID_TAP, held.0);
+                    CFRelease(held.0 as CFTypeRef);
+                }
+                pause("QK_KEY_DELAY_MS", 2.0);
+                feed(key);
             }
             Job::Held(key) => {
                 let action = feed(key.clone());
