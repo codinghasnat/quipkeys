@@ -24,6 +24,7 @@ fn main() {
     if let Some(v) = env("QK_PHON_SCALE") { cfg.phon_scale = v; }
     if let Some(v) = env("QK_PHON_MAX") { cfg.phon_max = v; }
     if let Some(v) = env("QK_PHON_HOMO") { cfg.phon_homophone = v; }
+    if let Some(v) = env("QK_PHON_REAL") { cfg.phon_real_base = v; }
     let e = Engine::new(cfg);
     let show = std::env::var_os("QK_SHOW").is_some();
     let sentences: Vec<Vec<String>> = std::fs::read_to_string(&a[2]).unwrap().lines()

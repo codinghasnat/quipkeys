@@ -114,6 +114,11 @@ pub fn spell_codes(word: &str) -> Vec<Vec<u8>> {
             while j < n && is_vowel_letter(w[j]) && !(j > i && w[j] == b'y' && j + 1 < n && is_vowel_letter(w[j + 1])) {
                 j += 1;
             }
+            // "ew", "aw", "ow" are vowel sounds ("new", "saw", "show") unless
+            // the w starts the next syllable ("away", "tower").
+            if j == i + 1 && j < n && w[j] == b'w' && matches!(c, b'a' | b'e' | b'o') && !(j + 1 < n && is_vowel_letter(w[j + 1])) {
+                j += 1;
+            }
             let run = &w[i..j];
             // Silent final e ("fone", "nite"), but not in "be", "the".
             if run == b"e" && j == n && i >= 2 {

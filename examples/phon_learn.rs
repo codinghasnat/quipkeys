@@ -108,6 +108,10 @@ fn main() {
         let v = &mut c.sub[a as usize][b as usize];
         *v = v.min(2.5);
     }
+    // The y-glide is an accent difference ("nyoo" / "noo" for "new"), which
+    // misspelling lists don't show: an extra or missing y stays cheap.
+    c.ins[b'y' as usize] = c.ins[b'y' as usize].min(1.5);
+    c.del[b'y' as usize] = c.del[b'y' as usize].min(1.5);
     // Write only the sounds the code uses.
     let syms: Vec<u8> = b"pbtdkgfvsmnlrwyhqxcjN123456789IWY".to_vec();
     let mut txt = String::from(

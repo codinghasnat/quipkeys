@@ -156,6 +156,11 @@ pub struct Config {
     pub phon_exact_len: usize,
     /// Base cost in spell-by-sound mode (see `set_sound_mode`).
     pub phon_base_sound: f32,
+    /// A typed real word also takes sounds-like candidates that are at least
+    /// this many times more common than it (0 = never).
+    pub phon_real_ratio: f32,
+    /// Base cost for those (the frequency gap is already strong evidence).
+    pub phon_real_base: f32,
     /// Channel cost of a real word standing for its homophone (0 = never).
     pub phon_homophone: f32,
 }
@@ -228,7 +233,9 @@ impl Default for Config {
             phon_max: 6.0,
             phon_base_sound: 5.0,
             phon_exact_len: 3,
-            phon_homophone: 4.0,
+            phon_real_ratio: 50.0,
+            phon_real_base: 5.0,
+            phon_homophone: 1.0,
         }
     }
 }
@@ -526,8 +533,13 @@ impl Engine {
         let rare = |id| self.lx.unigram_p(id) < 3e-7;
         let on = self.cfg.phonetic || sound_mode();
         if on && core.len() >= 3 && self.lx.id(core).is_none_or(rare) {
-            self.add_phonetic(core, &mut found);
+            self.add_phonetic(core, &mut found, 0.0);
         } else if let (true, Some(id)) = (on && self.cfg.phon_homophone > 0.0, self.lx.id(core)) {
+            // An uncommon real word may be a sound-spelling of a far more
+            // common one ("wether" -> weather, "wot" -> what).
+            if core.len() >= 3 && self.cfg.phon_real_ratio > 0.0 {
+                self.add_phonetic_with(core, &mut found, self.lx.unigram_p(id) * self.cfg.phon_real_ratio as f64, self.cfg.phon_real_base);
+            }
             // A real word may stand for its homophone (sun/son, rite/write):
             // only context can tell, and the real-word bar still applies.
             for h in self.phonetic().homophones(id) {
@@ -630,14 +642,22 @@ impl Engine {
 
     /// Add words that sound like `core` to the keyboard candidates, keeping
     /// the cheaper channel cost where a word is in both.
-    fn add_phonetic(&self, core: &str, found: &mut Vec<Candidate>) {
+    /// `min_p`: only words at least this frequent (0 = any).
+    fn add_phonetic(&self, core: &str, found: &mut Vec<Candidate>, min_p: f64) {
+        let base = if sound_mode() { self.cfg.phon_base_sound } else { self.cfg.phon_base };
+        self.add_phonetic_with(core, found, min_p, base)
+    }
+
+    fn add_phonetic_with(&self, core: &str, found: &mut Vec<Candidate>, min_p: f64, base: f32) {
         for (id, d) in self.phonetic().candidates(core, self.cfg.phon_max) {
+            if self.lx.unigram_p(id) < min_p {
+                continue;
+            }
             // Short words: a keyboard slip easily sounds like another short
             // word ("tha" -> the), so only exact sound matches count.
             if core.len() <= self.cfg.phon_exact_len && d > 0.0 {
                 continue;
             }
-            let base = if sound_mode() { self.cfg.phon_base_sound } else { self.cfg.phon_base };
             let cost = base + self.cfg.phon_scale * d;
             match found.iter_mut().find(|c| c.word == id) {
                 Some(c) => c.channel = c.channel.min(cost),

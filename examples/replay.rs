@@ -21,6 +21,7 @@ fn main() {
     }
     if std::env::var("QK_PHON").is_ok() {
         cfg.phonetic = true;
+        if let Some(v) = std::env::var("QK_PHON_REAL").ok().and_then(|v| v.parse::<f32>().ok()) { cfg.phon_real_base = v; }
     }
     if std::env::var("QK_RHYTHM").is_ok() {
         cfg.channel.rhythm = true;
