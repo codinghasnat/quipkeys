@@ -9,6 +9,7 @@
 use std::path::PathBuf;
 use std::time::SystemTime;
 
+use quipkeys::profile::Tallies;
 use quipkeys::{Config, Engine, Stream};
 
 /// A key event, already translated by the platform layer.
@@ -71,6 +72,15 @@ pub struct Core {
     /// They are never saved from here (Backspace after a fix is too common
     /// a keystroke); the "My words" window offers to save them.
     undone: Vec<String>,
+    /// What has been learned about this typist's slips (counts only, no
+    /// text). Saved to `profile_path`; applied to the engine at start-up.
+    tallies: Tallies,
+    profile_path: Option<PathBuf>,
+    pub learning: bool,
+    /// Words learned from since the last save.
+    unsaved: usize,
+    /// The fix most recently learned from, so an undo can take it back out.
+    last_learned: Option<(String, String)>,
     words_path: Option<PathBuf>,
     words_stamp: Option<SystemTime>,
     personal: Vec<String>,
@@ -88,12 +98,57 @@ impl Core {
         Core::with_words(None)
     }
 
-    /// A core that loads and saves the personal word list at `words_path`.
+    /// A core that loads the personal word list at `words_path` (tests).
+    #[cfg(test)]
     pub fn with_words(words_path: Option<PathBuf>) -> Core {
         // Sounds-like matching is off unless the user switches on "Spell by
         // sound" (quipkeys::decoder::set_sound_mode), so ordinary typing is
         // corrected exactly as before.
         Core::build(Config::default(), words_path)
+    }
+
+    /// The app's core: the personal word list, plus the typing profile at
+    /// `profile_path`. What was learned in earlier sessions shapes the engine
+    /// now; what is learned in this one is saved for the next start.
+    pub fn open(words_path: Option<PathBuf>, profile_path: Option<PathBuf>, learning: bool) -> Core {
+        let tallies = profile_path.as_ref().and_then(|p| std::fs::read_to_string(p).ok()).map(|t| Tallies::from_text(&t)).unwrap_or_default();
+        let mut cfg = Config::default();
+        if learning {
+            tallies.apply(&mut cfg.channel);
+        }
+        let mut core = Core::build(cfg, words_path);
+        core.tallies = tallies;
+        core.profile_path = profile_path;
+        core.learning = learning;
+        core
+    }
+
+    /// Switch learning on or off (from the menu). Off keeps what was learned.
+    pub fn set_learning(&mut self, on: bool) {
+        self.learning = on;
+        self.save_profile();
+    }
+
+    /// Forget everything learned about the typist.
+    pub fn forget_profile(&mut self) {
+        self.tallies = Tallies::default();
+        self.last_learned = None;
+        self.unsaved = 0;
+        if let Some(p) = &self.profile_path {
+            let _ = std::fs::remove_file(p);
+        }
+    }
+
+    /// Letters of typing learned from so far.
+    pub fn learned_letters(&self) -> u64 {
+        self.tallies.letters
+    }
+
+    fn save_profile(&mut self) {
+        if let (Some(p), true) = (&self.profile_path, self.unsaved > 0) {
+            let _ = std::fs::write(p, self.tallies.to_text());
+            self.unsaved = 0;
+        }
     }
 
     fn build(cfg: Config, words_path: Option<PathBuf>) -> Core {
@@ -110,6 +165,11 @@ impl Core {
             enabled: true,
             skip: false,
             undone: Vec::new(),
+            tallies: Tallies::default(),
+            profile_path: None,
+            learning: false,
+            unsaved: 0,
+            last_learned: None,
             words_path,
             words_stamp: None,
             personal: Vec::new(),
@@ -146,6 +206,9 @@ impl Core {
     }
 
     fn reset(&mut self) {
+        if self.unsaved >= 20 {
+            self.save_profile();
+        }
         // The text is forgotten; what we know about the typist's sloppiness isn't.
         self.stream = Stream::with_typist(self.engine, self.stream.typist());
         self.reload_words();
@@ -198,6 +261,10 @@ impl Core {
                     for &i in &idxs {
                         self.stream.reject(i);
                     }
+                    // The fix was wrong: take what it taught back out.
+                    if let Some((typed, meant)) = self.last_learned.take() {
+                        self.tallies.observe(&self.engine.ch.kb, &typed, &meant, false);
+                    }
                     // An undone word is protected until the app quits.
                     let typed: Vec<String> =
                         idxs.iter().filter_map(|&i| self.stream.words.get(i).map(|w| w.typed.clone())).collect();
@@ -249,6 +316,14 @@ impl Core {
         let times = (times.len() == word.len()).then_some(times);
         let before_all: Vec<String> = self.shown.clone();
         let edits = self.stream.push(&word, times);
+        self.last_learned = None;
+        if self.learning {
+            self.last_learned = self.tallies.learn(self.engine, &self.stream, &edits);
+            self.unsaved += 1;
+            if self.unsaved >= 100 {
+                self.save_profile();
+            }
+        }
         self.shown.push(word.clone());
         // Keep the editable window bounded.
         if self.shown.len() - self.anchor > EDITABLE_WORDS * 4 {
@@ -520,6 +595,39 @@ mod edges {
         k.extend(keys("vw wamt "));
         // "vw" (the tail of the word) is untouched; the next word is corrected again.
         assert_eq!(simulate(&mut c, &k), "naévw want ");
+    }
+}
+
+#[cfg(test)]
+mod learning {
+    use super::tests::{keys, simulate};
+    use super::*;
+
+    /// Kept fixes are learned from, an undone fix is taken back out, and what
+    /// is saved is counts only: none of the words typed appear in the file.
+    #[test]
+    fn learns_slips_and_saves_only_counts() {
+        let path = std::env::temp_dir().join(format!("qk-profile-{}.txt", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        let mut c = Core::open(None, Some(path.clone()), true);
+        simulate(&mut c, &keys("I wamt to go to the stpre "));
+        let after_two = c.tallies.clone();
+        assert!(after_two.letters > 15 && after_two.sub.iter().flatten().sum::<u32>() == 2, "{after_two:?}");
+        // A fix that gets undone teaches nothing.
+        let mut k = keys("teh ");
+        k.push(Key::Backspace);
+        simulate(&mut c, &k);
+        assert_eq!(c.tallies.transpose, 0);
+        c.set_learning(true); // forces a save
+        let text = std::fs::read_to_string(&path).unwrap();
+        for word in ["want", "wamt", "store", "stpre"] {
+            assert!(!text.contains(word), "profile file contains {word:?}");
+        }
+        // A new core picks the tallies up again; forgetting removes the file.
+        let mut c2 = Core::open(None, Some(path.clone()), true);
+        assert_eq!(c2.learned_letters(), c.learned_letters());
+        c2.forget_profile();
+        assert!(!path.exists() && c2.learned_letters() == 0);
     }
 }
 

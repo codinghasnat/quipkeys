@@ -26,7 +26,8 @@ macOS it also walks you through the one permission it needs.
   forgotten on Enter, a click or an app switch, and never written to disk.
 - The only files it writes are `quipkeys-settings.txt` (whether you've seen
   the welcome screen), `quipkeys-exclude.txt` (apps to skip) and
-  `quipkeys-words.txt` (your word list: only words you chose to save). These live
+  `quipkeys-words.txt` (your word list: only words you chose to save), and
+  `quipkeys-profile.txt` (tallies of your kinds of slips: counts, no words). These live
   next to `quipkeys.exe` on Windows (or in `%APPDATA%\QuipKeys` if that folder
   isn't writable), and in `~/Library/Application Support/QuipKeys` on macOS.
 
@@ -95,6 +96,26 @@ or the menu. With it off, QuipKeys corrects exactly as before. In tests on
 spellings it had never seen, it fixed about 3 in 4 in real sentences and wrongly
 changed about 1 in 100. Ordinary typo-fixing gets slightly less sharp while it's
 on: word accuracy drops by 0.2 to 1.2 points. Details are in the main RESULTS.md.
+
+## It learns your typing
+
+Everyone slips differently: some people swap letters, some drop them, some hit
+extra keys. QuipKeys keeps a tally of the kinds of slips *you* make and leans
+its corrections that way.
+- **What it learns from:** words it fixed that you kept, and ordinary words
+  you typed correctly. Undoing a fix takes that example back out.
+- **What it stores:** counts only, such as "letters swapped: 35", in
+  `quipkeys-profile.txt` on your computer. It never stores a word, and
+  nothing is sent anywhere.
+- **When it applies:** once it has about 400 words of your typing, and from
+  the next time QuipKeys starts.
+- **Your control:** **Learn my typing habits** in the menu switches it off;
+  **Forget what it learned** wipes it.
+
+In a test on one person's recorded typing, learning on one set of runs and
+scoring on another raised words right by 0.4 to 1.4 points. It also collects
+which keys you hit for which, but doesn't use that yet: on the same data it
+made no measurable difference.
 
 ## Your words
 

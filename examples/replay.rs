@@ -12,6 +12,14 @@ fn main() {
         cfg.channel.timing = false;
         cfg.channel.sub_per_key = 2.0;
     }
+    // A personal typing profile (scripts/real/fit_profile.py).
+    if let Ok(path) = std::env::var("QK_PROFILE") {
+        cfg.channel.apply_profile(&std::fs::read_to_string(path).expect("profile file"));
+    }
+    // Tallies learned by the app or examples/profile_sim.rs (applied even when small).
+    if let Ok(path) = std::env::var("QK_TALLIES") {
+        quipkeys::profile::Tallies::from_text(&std::fs::read_to_string(path).expect("tallies file")).apply_with_min(&mut cfg.channel, 0);
+    }
     if std::env::var("QK_NB").is_ok() {
         cfg.neighbour = true;
         let f = |k: &str| std::env::var(k).ok().and_then(|v| v.parse::<f32>().ok());

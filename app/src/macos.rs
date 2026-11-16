@@ -211,6 +211,25 @@ fn debug() -> bool {
     *D.get_or_init(|| std::env::var_os("QK_DEBUG").is_some())
 }
 
+/// Switch learning of the user's typing habits on or off.
+pub fn set_learning(on: bool) {
+    if let Some(c) = CORE.get() {
+        c.lock().unwrap().set_learning(on);
+    }
+}
+
+/// Forget everything learned about the user's typing.
+pub fn forget_profile() {
+    if let Some(c) = CORE.get() {
+        c.lock().unwrap().forget_profile();
+    }
+}
+
+/// Letters of typing learned from so far.
+pub fn learned_letters() -> u64 {
+    CORE.get().map(|c| c.lock().unwrap().learned_letters()).unwrap_or(0)
+}
+
 /// Words undone with Backspace this session (not saved), for the My words window.
 pub fn undone_words() -> Vec<String> {
     CORE.get().map(|c| c.lock().unwrap().undone_words()).unwrap_or_default()

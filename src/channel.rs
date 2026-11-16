@@ -38,6 +38,42 @@ pub struct ChannelParams {
     /// a very fast overlapping pair for a swap). Needs key times and the
     /// typist's typical gap (set by the stream, see RHYTHM).
     pub rhythm: bool,
+    /// A typist's own key confusions: (intended, typed, cost) overrides of the
+    /// geometric substitution cost. Empty = the average typist. See
+    /// `apply_profile` and scripts/real/fit_profile.py.
+    pub sub_overrides: Vec<(u8, u8, f32)>,
+}
+
+impl ChannelParams {
+    /// Load a personal typing profile (text): lines of
+    /// `s <intended> <typed> <cost>` for key confusions, and
+    /// `p <name> <cost>` for the slip costs (ins_double, ins_adjacent,
+    /// ins_other, del_double, del_other, transpose). Unknown lines are ignored.
+    pub fn apply_profile(&mut self, text: &str) {
+        for line in text.lines() {
+            let f: Vec<&str> = line.split_whitespace().collect();
+            match f.as_slice() {
+                ["s", a, b, v] if a.len() == 1 && b.len() == 1 => {
+                    if let Ok(v) = v.parse::<f32>() {
+                        self.sub_overrides.push((a.as_bytes()[0], b.as_bytes()[0], v));
+                    }
+                }
+                ["p", name, v] => {
+                    let Ok(v) = v.parse::<f32>() else { continue };
+                    match *name {
+                        "ins_double" => self.ins_double = v,
+                        "ins_adjacent" => self.ins_adjacent = v,
+                        "ins_other" => self.ins_other = v,
+                        "del_double" => self.del_double = v,
+                        "del_other" => self.del_other = v,
+                        "transpose" => self.transpose = v,
+                        _ => {}
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
 }
 
 thread_local! {
@@ -89,6 +125,7 @@ impl Default for ChannelParams {
             slow_ms: 120.0,
             first_letter: 1.5,
             rhythm: false,
+            sub_overrides: Vec::new(),
         }
     }
 }
@@ -127,6 +164,11 @@ impl Channel {
                     let d = kb.distance(a, b);
                     (p.sub_adjacent + p.sub_per_key * (d - 1.0).max(0.0)).min(p.sub_max)
                 };
+            }
+        }
+        for &(want, got, cost) in &p.sub_overrides {
+            if want != got {
+                sub_table[(want & 127) as usize][(got & 127) as usize] = cost;
             }
         }
         Channel { kb, p, sub_table }

@@ -55,6 +55,8 @@ struct Items {
     enabled: CheckMenuItem,
     skip: CheckMenuItem,
     sound: CheckMenuItem,
+    learn: CheckMenuItem,
+    forget: MenuItem,
     login: CheckMenuItem,
     excluded: MenuItem,
     words: MenuItem,
@@ -103,6 +105,8 @@ pub fn run() {
         enabled: CheckMenuItem::new(format!("Correct my typing\t{HOTKEY}"), true, true, None),
         skip: CheckMenuItem::new("Don't correct in this app", false, false, None),
         sound: CheckMenuItem::new("Spell by sound", true, settings::sound_mode(), None),
+        learn: CheckMenuItem::new("Learn my typing habits", true, settings::learning(), None),
+        forget: MenuItem::new("Forget what it learned", true, None),
         login: CheckMenuItem::new("Start at login", true, settings::start_at_login(), None),
         excluded: MenuItem::new("Edit excluded apps…", true, None),
         words: MenuItem::new("My words…", true, None),
@@ -153,6 +157,9 @@ fn build_tray(items: &Items) -> TrayIcon {
         &items.skip,
         &items.sound,
         &PredefinedMenuItem::separator(),
+        &items.learn,
+        &items.forget,
+        &PredefinedMenuItem::separator(),
         &items.login,
         &items.words,
         &items.excluded,
@@ -192,6 +199,11 @@ impl App {
                     platform::set_enabled(self.on);
                 } else if id == *it.skip.id() {
                     settings::set_excluded(&self.app, it.skip.is_checked());
+                } else if id == *it.learn.id() {
+                    settings::set_learning(it.learn.is_checked());
+                    platform::set_learning(it.learn.is_checked());
+                } else if id == *it.forget.id() {
+                    platform::forget_profile();
                 } else if id == *it.sound.id() {
                     settings::set_sound_mode(it.sound.is_checked());
                 } else if id == *it.login.id() {
@@ -233,6 +245,15 @@ impl App {
         }
         it.login.set_checked(settings::start_at_login());
         it.sound.set_checked(settings::sound_mode());
+        it.learn.set_checked(settings::learning());
+        // Show how much it has to go on; nothing is applied below 2,000 letters.
+        let letters = platform::learned_letters();
+        it.forget.set_enabled(letters > 0);
+        it.forget.set_text(if letters > 0 {
+            format!("Forget what it learned ({} words of typing)", letters / 5)
+        } else {
+            "Forget what it learned".to_string()
+        });
         if let Some(t) = &self.tray {
             let _ = t.set_icon(Some(icon(self.on && self.running)));
             #[cfg(target_os = "macos")]

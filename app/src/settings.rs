@@ -133,6 +133,20 @@ pub fn set_onboarded() {
     set_flag("onboarded", true);
 }
 
+/// The typing profile: tallies of the user's kinds of slips (counts, no text).
+pub fn profile_path() -> PathBuf {
+    config_dir().join("quipkeys-profile.txt")
+}
+
+/// Learn the user's typing habits (on unless switched off).
+pub fn learning() -> bool {
+    !flag("no_learning")
+}
+
+pub fn set_learning(on: bool) {
+    set_flag("no_learning", !on);
+}
+
 /// Spell-by-sound mode: expect words spelt the way they sound.
 pub fn sound_mode() -> bool {
     flag("spell_by_sound")

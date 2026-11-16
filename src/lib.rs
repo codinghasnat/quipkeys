@@ -11,6 +11,7 @@ pub mod lexicon;
 pub mod ngrams;
 pub mod nnlm;
 pub mod phonetic;
+pub mod profile;
 pub mod search;
 pub mod sim;
 pub mod stream;

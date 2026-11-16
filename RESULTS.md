@@ -207,6 +207,25 @@ at the top of this file predates both changes (no `--carry`).
 Still out of reach: a mashed word with no context ("jrkko" alone stays as typed), sentences where every
 word is mashed, and mashed words that happen to be real words ("us" for "is").
 
+## Learning one typist (measured on real runs)
+
+`src/profile.rs` keeps tallies of a typist's kinds of slips and turns them into channel costs. Tested on
+the 50 real runs of one typist, in two sets recorded at different times (33 and 17 runs): learn on one set,
+score on the other. Word accuracy after correction:
+
+| Learned from | Test: set 1 (33 runs) | Test: set 2 (17 runs) |
+|---|---|---|
+| Nothing (default) | 91.3% | 89.0% |
+| The correct answers on the other set, all of it (`scripts/real/fit_profile.py`) | 92.5% | 89.0% |
+| ... key confusions only | 91.1% | 89.2% |
+| ... slip rates only (drop, add, double, swap) | 92.3% | 89.4% |
+| **The engine's own fixes on the other set, slip rates only** (`examples/profile_sim.rs`, what the app does) | **92.7%** | **89.4%** |
+
+So the six slip rates help (+1.4 and +0.4 points), and they can be learned without knowing the right
+answers. Per-key confusions gave nothing at this amount of data (about 6,000 letters), so the app collects
+them but doesn't apply them. Caveats: one typist, prompted sentences that repeat across runs, and a run is
+only 30 words, so each run moves in steps of 3.3 points.
+
 ## Known gaps / next steps
 
 * **Wrong corrections are about 0.11–0.12%** (about 1 in 850 correct words). Most are rare words and names missing from
