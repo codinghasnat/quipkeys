@@ -120,11 +120,12 @@
   </section>
 
   <section class="step" data-step="use">
-    <h1>Three keys to know</h1>
+    <h1>Four keys to know</h1>
     <p>There's nothing to learn. Type the way you normally do.</p>
     <div class="keys">
       <div class="k"><div class="caps"><kbd>space</kbd></div><span><b>Fixes the word you just typed.</b> The correction appears as the space does.</span></div>
       <div class="k"><div class="caps"><kbd>⌫ Backspace</kbd></div><span><b>Undoes a fix</b> if you press it straight after one. That word is then left alone until QuipKeys quits; save it for good in <b>My words</b>.</span></div>
+      <div class="k"><div class="caps" id="nextkey"></div><span><b>Wrong word?</b> Press it straight after the word to swap in the next best guess (<i>ship</i> → <i>shop</i>). Press again for the one after.</span></div>
       <div class="k"><div class="caps" id="hotkey"></div><span><b>Pauses or resumes QuipKeys</b> anywhere, any time.</span></div>
     </div>
     <p class="note" id="trayNote"></p>
@@ -174,6 +175,7 @@
   let at = 0, perm = !mac, running = !mac, permSince = 0, loginSet = false;
 
   document.getElementById('hotkey').innerHTML = (mac ? ['⌃ Ctrl', '⌥ Option', 'Q'] : ['Ctrl', 'Alt', 'Q']).map(k => `<kbd>${k}</kbd>`).join('');
+  document.getElementById('nextkey').innerHTML = (mac ? ['⌃ Ctrl', '⌥ Option', 'N'] : ['Ctrl', 'Alt', 'N']).map(k => `<kbd>${k}</kbd>`).join('');
   document.getElementById('trayNote').textContent = mac
     ? 'QuipKeys lives in the menu bar at the top of the screen. Click its icon to pause it, skip an app, or quit.'
     : 'QuipKeys lives in the system tray (bottom right, maybe under the ^ arrow). Click its icon to pause it, skip an app, or quit.';

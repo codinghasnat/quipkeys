@@ -893,6 +893,59 @@ impl<'e> Stream<'e> {
         Some(Edit { index, old, new, confidence: 1.0, revision: false })
     }
 
+    /// Other readings of chunk `index`, most likely first, written as they
+    /// would appear on screen (the chunk's own punctuation and capitals).
+    /// Its current output is left out; what was typed is included if that
+    /// isn't the current output. For a "next guess" key.
+    pub fn alternatives(&self, index: usize, n: usize) -> Vec<String> {
+        let Some(w) = self.words.get(index) else { return Vec::new() };
+        let core = w.tok.core.to_ascii_lowercase();
+        if core.len() < 2 || !core.bytes().all(|c| c.is_ascii_lowercase() || c == b'\'') {
+            return Vec::new();
+        }
+        let next_idx = (index + 1..self.words.len()).find(|&k| !self.words[k].output.is_empty());
+        let next = next_idx.and_then(|k| self.words[k].out_id);
+        let next2 = next_idx
+            .and_then(|k| (k + 1..self.words.len()).find(|&j| !self.words[j].output.is_empty()))
+            .and_then(|j| self.words[j].out_id);
+        let cache = self.cache.clone();
+        let ctx = Ctx {
+            cache: Some(&cache),
+            prev3: self.ctx_prev3(index),
+            prev2: self.ctx_prev2(index),
+            prev: self.ctx_prev(index),
+            next: if w.tok.ends_sentence { None } else { next },
+            next2: if w.tok.ends_sentence { None } else { next2 },
+            ..Default::default()
+        };
+        let mut hyps = self.engine.hypotheses(&core, w.core_times(), &ctx);
+        hyps.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+        let mut out: Vec<String> = Vec::new();
+        for (h, _) in &hyps {
+            let text = match h {
+                crate::decoder::Hyp::Keep => w.typed.clone(),
+                _ => format!("{}{}{}", w.tok.lead, recase_lx(&self.engine.lx, &self.engine.hyp_text(h, &core), w.capital()), w.tok.trail),
+            };
+            if text != w.output && !out.contains(&text) {
+                out.push(text);
+            }
+            if out.len() == n {
+                break;
+            }
+        }
+        out
+    }
+
+    /// The user picked `text` for chunk `index` (a "next guess" key): show it
+    /// and leave it alone from now on.
+    pub fn choose(&mut self, index: usize, text: &str) {
+        let Some(w) = self.words.get_mut(index) else { return };
+        w.output = text.to_string();
+        w.changed = w.output != w.typed;
+        w.protected = true;
+        self.words[index].out_id = self.id_of(text);
+    }
+
     /// Teach a word for the rest of this stream: it is never "corrected", and
     /// typos of it are corrected to it. (The app calls this for every word in
     /// the user's personal word list whenever it starts a new stream.)

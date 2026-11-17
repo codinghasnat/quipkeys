@@ -30,6 +30,9 @@ pub enum Key {
     Unknown,
     /// The on/off hotkey.
     Toggle,
+    /// The "next guess" hotkey: swap the word just typed for the next most
+    /// likely reading ("ship" -> "shop"); press again for the one after.
+    NextGuess,
 }
 
 /// What the platform layer should do with the key it just reported.
@@ -63,6 +66,14 @@ pub struct Core {
     /// The last replacement, for one-key undo: (chunk indices changed,
     /// text that was on screen before, text typed instead).
     last: Option<(Vec<usize>, String, String)>,
+    /// Cycling the last word with the next-guess key: (chunk index, readings
+    /// with what was on screen first, position now).
+    guess: Option<(usize, Vec<String>, usize)>,
+    /// The pair learned from the current guess, so changing it can take it back.
+    guess_learned: Option<(String, String)>,
+    /// Changes made since the platform last asked (for the tray's "recent
+    /// fixes" and the icon flash): (before, after).
+    notes: Vec<(String, String)>,
     pub enabled: bool,
     /// Personal word list: words the user taught QuipKeys (by undoing a fix),
     /// kept in a text file so they survive restarts. One word per line.
@@ -162,6 +173,9 @@ impl Core {
             cur_times: Vec::new(),
             t0: None,
             last: None,
+            guess: None,
+            guess_learned: None,
+            notes: Vec::new(),
             enabled: true,
             skip: false,
             undone: Vec::new(),
@@ -224,7 +238,16 @@ impl Core {
         self.last = None;
     }
 
+    /// Changes made since the last call: (what was on screen, what replaced it).
+    pub fn take_notes(&mut self) -> Vec<(String, String)> {
+        std::mem::take(&mut self.notes)
+    }
+
     pub fn on_key(&mut self, key: Key) -> Action {
+        if key != Key::NextGuess {
+            self.guess = None;
+            self.guess_learned = None;
+        }
         if key == Key::Toggle {
             self.enabled = !self.enabled;
             self.reset();
@@ -294,6 +317,7 @@ impl Core {
                 Action::Pass
             }
             Key::Space(_) => self.commit(),
+            Key::NextGuess => self.next_guess(),
             Key::Toggle => unreachable!(),
         }
     }
@@ -353,8 +377,55 @@ impl Core {
         let backspaces = before.chars().count();
         let text = format!("{after} ");
         let idxs: Vec<usize> = edits.iter().map(|e| e.index).collect();
+        self.notes.push((before.clone(), after.clone()));
         self.last = Some((idxs, before, text.clone()));
         Action::Replace { backspaces, text }
+    }
+
+    /// Swap the word just typed for its next most likely reading. Works only
+    /// straight after the space (nothing typed since); otherwise does nothing.
+    fn next_guess(&mut self) -> Action {
+        if !self.cur.is_empty() || self.skip {
+            return Action::Swallow;
+        }
+        let Some(i) = self.shown.len().checked_sub(1) else { return Action::Swallow };
+        if self.shown[i].is_empty() || i < self.anchor {
+            return Action::Swallow;
+        }
+        if self.guess.is_none() {
+            let mut options = vec![self.shown[i].clone()];
+            options.extend(self.stream.alternatives(i, 4));
+            if options.len() < 2 {
+                return Action::Swallow;
+            }
+            // Cycling away from a fix means the fix was wrong: forget what it taught.
+            if let Some((typed, meant)) = self.last_learned.take() {
+                self.tallies.observe(&self.engine.ch.kb, &typed, &meant, false);
+            }
+            self.guess = Some((i, options, 0));
+        }
+        let (idx, options, pos) = self.guess.as_mut().unwrap();
+        let from = options[*pos].clone();
+        *pos = (*pos + 1) % options.len();
+        let to = options[*pos].clone();
+        let idx = *idx;
+        self.stream.choose(idx, &to);
+        self.shown[idx] = to.clone();
+        self.last = None;
+        // Learn from the user's pick (and only the latest one).
+        if let Some((t, m)) = self.guess_learned.take() {
+            self.tallies.observe(&self.engine.ch.kb, &t, &m, false);
+        }
+        if self.learning {
+            let typed = word_core(&self.stream.words[idx].typed);
+            let meant = word_core(&to);
+            if !meant.contains(' ') && meant != typed {
+                self.tallies.observe(&self.engine.ch.kb, &typed, &meant, true);
+                self.guess_learned = Some((typed, meant));
+            }
+        }
+        self.notes.push((from.clone(), to.clone()));
+        Action::Replace { backspaces: from.chars().count() + 1, text: format!("{to} ") }
     }
 }
 
@@ -628,6 +699,43 @@ mod learning {
         assert_eq!(c2.learned_letters(), c.learned_letters());
         c2.forget_profile();
         assert!(!path.exists() && c2.learned_letters() == 0);
+    }
+}
+
+#[cfg(test)]
+mod guess {
+    use super::tests::{keys, simulate};
+    use super::*;
+
+    /// The next-guess key swaps the word just typed for the next reading, and
+    /// a full cycle brings back what was there.
+    #[test]
+    fn cycles_the_last_word() {
+        let mut c = Core::new();
+        let mut k = keys("go to the ship ");
+        k.push(Key::NextGuess);
+        assert_eq!(simulate(&mut c, &k), "go to the shop ");
+        // Typing on keeps the choice.
+        assert_eq!(simulate(&mut c, &keys("now ")), "now ");
+        assert_eq!(c.shown.iter().rev().nth(1).map(String::as_str), Some("shop"));
+        // Cycling all the way round gets back to the start.
+        let mut c = Core::new();
+        let mut k = keys("go to the ship ");
+        for _ in 0..5 {
+            k.push(Key::NextGuess);
+        }
+        assert_eq!(simulate(&mut c, &k), "go to the ship ");
+        // Mid-word, it does nothing.
+        let mut c = Core::new();
+        let mut k = keys("go to the sh");
+        k.push(Key::NextGuess);
+        assert_eq!(simulate(&mut c, &k), "go to the sh");
+        // It reports what changed, for the tray menu.
+        let mut c = Core::new();
+        let mut k = keys("I wamt ");
+        k.push(Key::NextGuess);
+        simulate(&mut c, &k);
+        assert_eq!(c.take_notes(), vec![("wamt".to_string(), "want".to_string()), ("want".to_string(), "wait".to_string())]);
     }
 }
 

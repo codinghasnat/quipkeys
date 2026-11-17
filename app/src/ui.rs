@@ -9,7 +9,7 @@ use std::sync::{Mutex, OnceLock};
 use tao::event::{Event, StartCause, WindowEvent};
 use tao::event_loop::{ControlFlow, EventLoopBuilder, EventLoopProxy, EventLoopWindowTarget};
 use tao::window::{Window, WindowBuilder};
-use tray_icon::menu::{CheckMenuItem, Menu, MenuEvent, MenuId, MenuItem, PredefinedMenuItem};
+use tray_icon::menu::{CheckMenuItem, Menu, MenuEvent, MenuId, MenuItem, PredefinedMenuItem, Submenu};
 use tray_icon::{Icon, TrayIcon, TrayIconBuilder};
 use wry::{WebView, WebViewBuilder};
 
@@ -25,6 +25,10 @@ const WORDS: &str = include_str!("words.html");
 const HOTKEY: &str = "Ctrl+Option+Q";
 #[cfg(windows)]
 const HOTKEY: &str = "Ctrl+Alt+Q";
+#[cfg(windows)]
+const NEXT_KEY: &str = "Ctrl+Alt+N";
+#[cfg(target_os = "macos")]
+const NEXT_KEY: &str = "Ctrl+Option+N";
 
 #[derive(Debug)]
 #[allow(dead_code)] // some variants are only sent on one platform
@@ -39,7 +43,14 @@ pub enum UiEvent {
     Menu(MenuId),
     /// A message from the welcome or "My words" window.
     Ipc(String),
+    /// Words QuipKeys just changed: (what was on screen, what replaced it).
+    Fixed(Vec<(String, String)>),
 }
+
+/// How long the icon flashes blue after a change.
+const FLASH: std::time::Duration = std::time::Duration::from_millis(650);
+/// How many recent changes the menu lists.
+const RECENT: usize = 5;
 
 static PROXY: OnceLock<Mutex<EventLoopProxy<UiEvent>>> = OnceLock::new();
 
@@ -52,6 +63,9 @@ pub fn notify(e: UiEvent) {
 
 struct Items {
     status: MenuItem,
+    /// "Recent fixes" and its fixed rows (newest first), so you can see what changed.
+    recent: Submenu,
+    recent_rows: Vec<MenuItem>,
     enabled: CheckMenuItem,
     skip: CheckMenuItem,
     sound: CheckMenuItem,
@@ -81,6 +95,10 @@ struct App {
     welcome: Option<Page>,
     /// The "My words" window.
     words: Option<Page>,
+    /// Recent changes, newest first; kept in memory only, gone when QuipKeys quits.
+    fixes: std::collections::VecDeque<(String, String)>,
+    /// The icon shows the "just fixed" colour until then.
+    flash_until: Option<std::time::Instant>,
 }
 
 pub fn run() {
@@ -102,6 +120,8 @@ pub fn run() {
 
     let items = Items {
         status: MenuItem::new("QuipKeys is correcting", false, None),
+        recent: Submenu::new("Recent fixes", true),
+        recent_rows: (0..RECENT).map(|_| MenuItem::new("", false, None)).collect(),
         enabled: CheckMenuItem::new(format!("Correct my typing\t{HOTKEY}"), true, true, None),
         skip: CheckMenuItem::new("Don't correct in this app", false, false, None),
         sound: CheckMenuItem::new("Spell by sound", true, settings::sound_mode(), None),
@@ -113,14 +133,20 @@ pub fn run() {
         welcome: MenuItem::new("Welcome & privacy…", true, None),
         quit: MenuItem::new("Quit QuipKeys", true, None),
     };
-    let mut app = App { tray: None, items, on: true, running: platform::has_permission(), app: String::new(), welcome: None, words: None };
+    for row in &items.recent_rows {
+        let _ = items.recent.append(row);
+    }
+    let _ = items.recent.append(&PredefinedMenuItem::separator());
+    let _ = items.recent.append(&MenuItem::new(format!("Wrong word? Press {NEXT_KEY} straight after it"), false, None));
+    let mut app = App { tray: None, items, on: true, running: platform::has_permission(), app: String::new(), welcome: None, words: None, fixes: Default::default(), flash_until: None };
 
     event_loop.run(move |event, target, flow| {
-        *flow = if app.welcome.is_some() || app.words.is_some() {
-            // Keep the open window fresh (permission status; words added by undo).
-            ControlFlow::WaitUntil(std::time::Instant::now() + std::time::Duration::from_millis(700))
-        } else {
-            ControlFlow::Wait
+        let now = std::time::Instant::now();
+        let window_tick = (app.welcome.is_some() || app.words.is_some()).then(|| now + std::time::Duration::from_millis(700));
+        // Wake for whichever comes first: the open window's refresh, or the end of an icon flash.
+        *flow = match [window_tick, app.flash_until].into_iter().flatten().min() {
+            Some(at) => ControlFlow::WaitUntil(at),
+            None => ControlFlow::Wait,
         };
         match event {
             Event::NewEvents(StartCause::Init) => {
@@ -131,6 +157,10 @@ pub fn run() {
                 }
             }
             Event::NewEvents(StartCause::ResumeTimeReached { .. }) => {
+                if app.flash_until.is_some_and(|t| t <= std::time::Instant::now()) {
+                    app.flash_until = None;
+                    app.refresh();
+                }
                 app.push_state();
                 app.push_words();
             }
@@ -152,6 +182,7 @@ fn build_tray(items: &Items) -> TrayIcon {
     let menu = Menu::new();
     let _ = menu.append_items(&[
         &items.status,
+        &items.recent,
         &PredefinedMenuItem::separator(),
         &items.enabled,
         &items.skip,
@@ -188,6 +219,14 @@ impl App {
                 self.running = true;
                 self.refresh();
                 self.push_state();
+            }
+            UiEvent::Fixed(changes) => {
+                for (from, to) in changes {
+                    self.fixes.push_front((from, to));
+                }
+                self.fixes.truncate(RECENT);
+                self.flash_until = Some(std::time::Instant::now() + FLASH);
+                self.refresh();
             }
             UiEvent::Error(msg) => {
                 self.items.status.set_text(&msg);
@@ -246,6 +285,15 @@ impl App {
         it.login.set_checked(settings::start_at_login());
         it.sound.set_checked(settings::sound_mode());
         it.learn.set_checked(settings::learning());
+        let short = |s: &str| if s.chars().count() > 28 { format!("{}…", s.chars().take(27).collect::<String>()) } else { s.to_string() };
+        for (k, row) in it.recent_rows.iter().enumerate() {
+            match self.fixes.get(k) {
+                Some((from, to)) => row.set_text(format!("{}  →  {}", short(from), short(to))),
+                None if k == 0 => row.set_text("Nothing changed yet"),
+                None => row.set_text(""),
+            }
+        }
+        it.recent.set_text(if self.fixes.is_empty() { "Recent fixes".to_string() } else { format!("Recent fixes: {}", short(&self.fixes[0].1)) });
         // Show how much it has to go on; nothing is applied below 2,000 letters.
         let letters = platform::learned_letters();
         it.forget.set_enabled(letters > 0);
@@ -255,9 +303,11 @@ impl App {
             "Forget what it learned".to_string()
         });
         if let Some(t) = &self.tray {
-            let _ = t.set_icon(Some(icon(self.on && self.running)));
+            let flashing = self.flash_until.is_some();
+            let _ = t.set_icon(Some(if flashing { icon_flash() } else { icon(self.on && self.running) }));
+            // The flash is in colour; the normal menu-bar icon is a tinted template.
             #[cfg(target_os = "macos")]
-            t.set_icon_as_template(true);
+            t.set_icon_as_template(!flashing);
             let _ = t.set_tooltip(Some(if self.on { "QuipKeys: on" } else { "QuipKeys: paused" }));
         }
     }
@@ -424,7 +474,19 @@ fn display_name(program: &str) -> String {
 /// at 64x64 with anti-aliasing. Windows gets the colour version (greyed out
 /// while paused). macOS gets a template image, a keycap silhouette with the Q
 /// cut out, which the system tints to suit the menu bar (faded while paused).
+/// The icon for a moment after a fix: the keycap in autocorrect blue.
+fn icon_flash() -> Icon {
+    icon_colours(true, [0x1a, 0x56, 0xd6], [0xff, 0xff, 0xff], false)
+}
+
 fn icon(on: bool) -> Icon {
+    let yellow = if on { [0xffu8, 0xe1, 0x4a] } else { [0xc9u8, 0xc3, 0xa8] };
+    icon_colours(on, yellow, [0x17, 0x14, 0x0a], cfg!(target_os = "macos"))
+}
+
+/// Draw the logo: `top` is the keycap colour, `ink` the Q and base colour.
+/// `template`: a silhouette with the Q cut out (macOS tints it).
+fn icon_colours(on: bool, top_colour: [u8; 3], ink: [u8; 3], template: bool) -> Icon {
     const N: usize = 64;
     // Shapes in the SVG's 64-unit coordinates.
     let rrect = |x: f32, y: f32, x0: f32, y0: f32, w: f32, h: f32, r: f32| -> bool {
@@ -448,9 +510,7 @@ fn icon(on: bool) -> Icon {
         let t = t.min(1.0);
         ((x - ax - t * (bx - ax)).powi(2) + (y - ay - t * (by - ay)).powi(2)).sqrt() <= 3.25
     };
-    let template = cfg!(target_os = "macos");
-    let ink = [0x17u8, 0x14, 0x0a];
-    let yellow = if on { [0xffu8, 0xe1, 0x4a] } else { [0xc9u8, 0xc3, 0xa8] };
+    let yellow = top_colour;
     let mut px = vec![0u8; N * N * 4];
     for y in 0..N {
         for x in 0..N {

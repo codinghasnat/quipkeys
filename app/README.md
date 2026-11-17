@@ -4,6 +4,14 @@ Runs in the background and corrects each word in whatever app you're typing
 in, at the moment you press space.
 
 - **Toggle on/off:** Ctrl+Alt+Q (Windows) · Ctrl+Option+Q (macOS)
+- **Wrong word? Next guess:** Ctrl+Alt+N (Windows) · Ctrl+Option+N (macOS),
+  straight after the word. It swaps in the next most likely reading ("ship"
+  → "shop", "of" → "if"); press again for the one after, and a full cycle
+  brings back what was there. This is how to fix a slip that made another
+  real word, which QuipKeys can't safely change by itself.
+- **See what changed:** the tray/menu-bar icon flashes blue for a moment on
+  every fix, and **Recent fixes** in its menu lists the last five (kept in
+  memory only, gone when QuipKeys quits).
 - **Undo a correction:** press Backspace straight after it. The word goes
   back to what you typed, and QuipKeys leaves that spelling alone until it
   quits. To keep it for good, save it in **My words**.

@@ -91,6 +91,7 @@ const FLAG_COMMAND: u64 = 0x0010_0000;
 
 // Virtual key codes (Events.h, ANSI layout positions).
 const KC_Q: i64 = 12;
+const KC_N: i64 = 45;
 const KC_RETURN: i64 = 36;
 const KC_TAB: i64 = 48;
 const KC_SPACE: i64 = 49;
@@ -249,6 +250,10 @@ fn feed(key: Key) -> Action {
     if toggle {
         notify(UiEvent::Enabled(core.enabled));
     }
+    let notes = core.take_notes();
+    if !notes.is_empty() {
+        notify(UiEvent::Fixed(notes));
+    }
     action
 }
 
@@ -275,6 +280,9 @@ unsafe fn translate(ev: CGEventRef) -> Key {
     let (ctrl, opt, cmd) = (flags & FLAG_CONTROL != 0, flags & FLAG_OPTION != 0, flags & FLAG_COMMAND != 0);
     if ctrl && opt && kc == KC_Q {
         return Key::Toggle;
+    }
+    if ctrl && opt && kc == KC_N {
+        return Key::NextGuess;
     }
     let caret_key = matches!(kc, KC_RETURN | KC_TAB | KC_ESCAPE | KC_KEYPAD_ENTER) || KC_NAV.contains(&kc);
     if ctrl || cmd || (opt && (caret_key || kc == KC_SPACE || kc == KC_DELETE as i64)) {
@@ -365,7 +373,7 @@ unsafe extern "C" fn callback(_proxy: CGEventTapProxy, ty: u32, ev: CGEventRef, 
     }
     if sh.busy {
         return match key {
-            Key::Char(..) | Key::Space(_) | Key::Backspace | Key::Toggle => {
+            Key::Char(..) | Key::Space(_) | Key::Backspace | Key::Toggle | Key::NextGuess => {
                 sh.jobs.push_back(Job::Held(key));
                 std::ptr::null_mut()
             }

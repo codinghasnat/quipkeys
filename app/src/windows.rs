@@ -147,6 +147,10 @@ fn feed(key: Key) -> Action {
     if toggle {
         notify(UiEvent::Enabled(core.enabled));
     }
+    let notes = core.take_notes();
+    if !notes.is_empty() {
+        notify(UiEvent::Fixed(notes));
+    }
     action
 }
 
@@ -204,6 +208,9 @@ unsafe fn translate(kb: &KBDLLHOOKSTRUCT, hwnd: HWND) -> Option<Key> {
     let altgr = down(VK_RMENU) && down(VK_LCONTROL) && !down(VK_RCONTROL) && !down(VK_LMENU);
     if ctrl && alt && !altgr && vk == b'Q' as u16 {
         return Some(Key::Toggle);
+    }
+    if ctrl && alt && !altgr && vk == b'N' as u16 {
+        return Some(Key::NextGuess);
     }
     if !altgr && (ctrl || alt) || down(VK_LWIN) || down(VK_RWIN) {
         return Some(Key::Reset); // a shortcut
@@ -287,7 +294,7 @@ unsafe extern "system" fn keyboard_hook(code: i32, wparam: WPARAM, lparam: LPARA
         // A fix is being typed. Hold plain keys back and replay them after;
         // let anything else through and forget the tracked text.
         return match key {
-            Key::Char(..) | Key::Space(_) | Key::Backspace | Key::Toggle => {
+            Key::Char(..) | Key::Space(_) | Key::Backspace | Key::Toggle | Key::NextGuess => {
                 sh.jobs.push_back(Job::Held(key));
                 1
             }
