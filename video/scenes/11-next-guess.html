@@ -1,0 +1,58 @@
+<!doctype html><html><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&family=Atkinson+Hyperlegible:wght@400;700&family=IBM+Plex+Mono:wght@400;600&display=block" rel="stylesheet">
+<link rel="stylesheet" href="../style.css"><script src="../lib.js"></script></head><body><div id="stage"></div>
+<script>
+// 11 — Next guess: a slip that makes another real word ("ship" for "shop").
+// No autocorrect touches it; Ctrl+Alt+N swaps in QuipKeys' next reading.
+const LOGO = (top) => `<svg viewBox="0 0 64 64" width="100%" height="100%"><rect x="4" y="8" width="56" height="52" rx="13" fill="#17140a"/><rect x="8" y="4" width="48" height="46" rx="10" fill="${top}"/><circle cx="30" cy="25.5" r="11" fill="none" stroke="#17140a" stroke-width="6"/><path d="M32.5 28l11.5 11.5" stroke="#17140a" stroke-width="6.5"/><circle cx="44" cy="39.5" r="3.25" fill="#17140a"/></svg>`;
+const sheet = el("div", "sheet abs"); sheet.style.cssText += "left:160px;top:110px;width:1600px;height:420px;";
+const bar = el("div", "abs", sheet); bar.style.cssText = "left:0;top:0;width:1600px;height:64px;border-bottom:2px solid rgba(23,20,10,.08)";
+const icon = el("div", "abs", sheet); icon.style.cssText = "left:1520px;top:10px;width:44px;height:44px;border-radius:10px";
+const l1 = el("div", "mono abs", sheet), l2 = el("div", "mono abs", sheet);
+[l1, l2].forEach((l, i) => (l.style.cssText = `left:56px;top:${110 + i * 150}px;font-size:76px;white-space:pre`));
+const tag = el("div", "tag abs"); tag.style.fontSize = "30px";
+const mkKey = (txt, w) => { const k = el("div", "cap abs", null, txt); k.style.cssText += `width:${w}px;height:130px;font:700 46px/1 var(--body);border-radius:22px`; return k; };
+const kCtrl = mkKey("Ctrl", 230), kAlt = mkKey("Alt", 230), kN = mkKey("N", 150);
+const plus = [el("div", "abs", null, "+"), el("div", "abs", null, "+")];
+plus.forEach((p) => (p.style.cssText = "font:900 64px/1 var(--display);color:var(--ink-soft)"));
+const mac = el("div", "abs foot", null, "Ctrl + Option + N on a Mac"); mac.style.fontSize = "30px";
+const cap = el("div", "abs", null, "Wrong word? One key for the next guess."); cap.style.cssText = "left:160px;top:800px;font:900 64px/1.05 var(--display);font-variation-settings:'wdth' 118;white-space:nowrap";
+const cap2 = el("div", "abs", null, "Slips that make a real word sail past autocorrect. Not past you."); cap2.style.cssText = "left:160px;top:900px;font:700 38px/1 var(--body);color:var(--ink-soft);white-space:nowrap";
+const CPS = 15;
+const A = { s: "go to the ", w: "ship", fix: "shop", start: 0.4, press: 2.9 };
+const B = { s: "let me know ", w: "of", fix: "if", rest: "you can", start: 4.0, press: 5.6 };
+function line(o, t) {
+  const full = o.s + o.w + " ";
+  const n = Math.max(0, Math.min(full.length, Math.floor((t - o.start) * CPS)));
+  let h = esc(full.slice(0, Math.min(n, o.s.length)));
+  if (n > o.s.length) {
+    if (t >= o.press + 0.12) {
+      const a = 0.28 * lerp(t, [o.press + 0.12, o.press + 1.4], [1, 0], ease.linear);
+      h += `<span class="fix" style="background:rgba(26,86,214,${a});border-radius:8px">${o.fix}</span> `;
+    } else h += esc(full.slice(o.s.length, n));
+  }
+  if (o.rest && t > o.press + 0.4) h += esc(typed(o.rest, t, o.press + 0.4, CPS));
+  return h;
+}
+window.scene = { duration: 8.5, render(t) {
+  l1.innerHTML = line(A, t); l2.innerHTML = line(B, t);
+  // the keys: Ctrl and Alt held, N tapped
+  const hold = (p) => (t > p - 0.25 && t < p + 0.35 ? 1 : 0);
+  const pressAt = t < 4.6 ? A.press : B.press;
+  press(kCtrl, hold(pressAt), hold(pressAt) ? "#fff3b0" : ""); press(kAlt, hold(pressAt), hold(pressAt) ? "#fff3b0" : "");
+  const nAmt = tap(t, pressAt - 0.05, 0.3); press(kN, nAmt, nAmt > 0 ? "#cfe0ff" : "");
+  place(kCtrl, 160, 600); place(plus[0], 418, 630); place(kAlt, 470, 600); place(plus[1], 728, 630); place(kN, 780, 600);
+  place(mac, 960, 650); show(mac, lerp(t, [2.4, 2.8], [0, 1]));
+  // tray icon flashes blue on a change
+  const flash = (t > A.press + 0.12 && t < A.press + 0.77) || (t > B.press + 0.12 && t < B.press + 0.77);
+  icon.innerHTML = LOGO(flash ? "#5b8cff" : "#ffe14a");
+  // tags
+  const typedA = A.start + (A.s.length + A.w.length + 1) / CPS;
+  if (t > typedA && t < A.press) { tag.textContent = "“ship” is a real word. Autocorrect leaves it."; tag.style.background = "var(--ink)"; tag.style.color = "var(--paper)"; show(tag, 1); }
+  else if (t >= A.press + 0.12 && t < B.press + 1.6) { tag.textContent = "Next guess, in place. Press again for the one after."; tag.style.background = "var(--fix)"; tag.style.color = "#fff"; show(tag, 1); }
+  else show(tag, 0);
+  place(tag, 160, 40);
+  show(cap, lerp(t, [6.3, 6.7], [0, 1])); place(cap, 0, lerp(t, [6.3, 6.8], [24, 0]));
+  show(cap2, lerp(t, [6.8, 7.2], [0, 1]));
+}};
+</script></body></html>

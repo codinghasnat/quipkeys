@@ -1,0 +1,58 @@
+<!doctype html><html><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&family=Atkinson+Hyperlegible:wght@400;700&family=IBM+Plex+Mono:wght@400;600&display=block" rel="stylesheet">
+<link rel="stylesheet" href="../style.css"><script src="../lib.js"></script></head><body><div id="stage"></div>
+<script>
+// 15 — Every app: the same fix in a chat, an email, a doc and notes. It stays out
+// of terminals and password fields. Generic windows, no real brands.
+const WINS = [
+  { title: "Chat", pre: "running late, be ", typo: "thrre", fix: "there", post: " in 5" },
+  { title: "Email", pre: "Thanks for ", typo: "teh", fix: "the", post: " update" },
+  { title: "Document", pre: "The ", typo: "resluts", fix: "results", post: " were clear" },
+  { title: "Notes", pre: "milk, eggs, ", typo: "braed", fix: "bread", post: "" },
+  { title: "Terminal", pre: "$ git psuh", out: "QuipKeys stays out" },
+  { title: "Password", pw: true, out: "Always skipped" },
+];
+const CW = 540, CH = 300, GX = 60, GY = 40, X0 = 120, Y0 = 70;
+const wins = WINS.map((w, i) => {
+  const x = X0 + (i % 3) * (CW + GX), y = Y0 + Math.floor(i / 3) * (CH + GY);
+  const dark = w.title === "Terminal";
+  const box = el("div", "abs sheet"); box.style.cssText += `left:${x}px;top:${y}px;width:${CW}px;height:${CH}px;overflow:hidden;${dark ? "background:#1e1c14;" : ""}`;
+  const bar = el("div", "abs", box); bar.style.cssText = `left:0;top:0;width:100%;height:54px;display:flex;align-items:center;gap:10px;padding:0 20px;border-bottom:2px solid ${dark ? "#333" : "rgba(23,20,10,.08)"}`;
+  bar.innerHTML = `<i style="width:14px;height:14px;border-radius:50%;background:#e8a29a"></i><i style="width:14px;height:14px;border-radius:50%;background:#ecd27e"></i><i style="width:14px;height:14px;border-radius:50%;background:#a8d49a"></i><b style="margin-left:14px;font:700 26px/1 var(--body);color:${dark ? "#cfc7a4" : "var(--ink-soft)"}">${w.title}</b>`;
+  const txt = el("div", "abs mono", box); txt.style.cssText = `left:30px;top:100px;width:${CW - 60}px;font-size:40px;line-height:1.35;${dark ? "color:#f2ecd2;" : ""}`;
+  if (w.pw) txt.style.cssText += "border:3px solid rgba(23,20,10,.25);border-radius:10px;padding:10px 16px;top:96px";
+  const badge = el("div", "abs tag", box, w.out || ""); badge.style.cssText += "left:30px;top:220px;font-size:26px";
+  return { w, txt, badge, start: 0.4 + i * 0.85 };
+});
+const cap = el("div", "abs", null, "Every app you type in. Except the ones you shouldn’t."); cap.style.cssText = "left:120px;top:780px;font:900 56px/1.05 var(--display);font-variation-settings:'wdth' 118;white-space:nowrap";
+const cap2 = el("div", "abs", null, "Terminals, code editors, password managers and password fields are left alone."); cap2.style.cssText = "left:120px;top:880px;font:700 36px/1 var(--body);color:var(--ink-soft);white-space:nowrap";
+const CPS = 20;
+window.scene = { duration: 9.5, render(t) {
+  wins.forEach(({ w, txt, badge, start }) => {
+    if (w.pw) {
+      const n = Math.max(0, Math.min(10, Math.floor((t - start) * 14)));
+      txt.textContent = "•".repeat(n) || " ";
+      show(badge, lerp(t, [start + 0.9, start + 1.2], [0, 1])); badge.style.background = "var(--ink)";
+      return;
+    }
+    if (w.out) {
+      txt.textContent = typed(w.pre, t, start, CPS) + ((t - start) * 2 % 1 < 0.5 ? "▌" : " ");
+      show(badge, lerp(t, [start + 0.8, start + 1.1], [0, 1])); badge.style.background = "#4d4526"; badge.style.color = "#fff";
+      return;
+    }
+    const full = w.pre + w.typo + " " + w.post.trimStart();
+    const n = Math.max(0, Math.min(full.length, Math.floor((t - start) * CPS)));
+    const fixAt = start + (w.pre.length + w.typo.length + 1) / CPS;
+    let h = esc(full.slice(0, Math.min(n, w.pre.length)));
+    if (t >= fixAt) {
+      const a = 0.28 * lerp(t, [fixAt, fixAt + 1.2], [1, 0], ease.linear);
+      h += `<span class="fix" style="background:rgba(26,86,214,${a});border-radius:6px">${w.fix}</span>` + esc(full.slice(w.pre.length + w.typo.length, n));
+    } else h += esc(full.slice(w.pre.length, n));
+    txt.innerHTML = h;
+    badge.textContent = `${w.typo} → ${w.fix}`; badge.style.background = "var(--fix)"; badge.style.color = "#fff";
+    show(badge, t >= fixAt ? lerp(t, [fixAt, fixAt + 0.25], [0, 1]) : 0);
+  });
+  show(cap, lerp(t, [5.9, 6.3], [0, 1])); place(cap, 0, lerp(t, [5.9, 6.4], [24, 0]));
+  show(cap2, lerp(t, [6.4, 6.8], [0, 1]));
+}};
+</script></body></html>

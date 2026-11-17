@@ -1,6 +1,6 @@
 # Pitch-video animations
 
-Ten short clips to cut between demo footage. Each is 1920×1080, 30 fps, H.264,
+Fifteen short clips to cut between demo footage. Each is 1920×1080, 30 fps, H.264,
 with no audio. They use the same look as the website: yellow paper, keycaps,
 red squiggles for typos and blue for fixes. The finished files are in `out/`.
 
@@ -16,8 +16,13 @@ red squiggles for typos and blue for fixes. The finished files are in `out/`.
 | `08-the-whole-sentence` | 9.6 s | "I'll meet you form the station": confidence passes 90%, so "from"; "Lunch with Hasnat": 41%, so it's left alone | Autocorrect ignores "form" (a real word) and turns "Hasnat" into "Hasn't" |
 | `09-undo-and-remember` | 8.5 s | "that fit is bussin" gets fixed, one Backspace undoes it, and the word flies into "My words"; next time it stays | "Laptop autocorrect keeps 'fixing' it." |
 | `10-nothing-leaves` | 9.6 s | Corrections keep working with the Wi-Fi cut and nothing reaching the cloud; then Spell by sound: fone → phone, nollij → knowledge | Private and offline; free for dyslexic typists too |
+| `11-next-guess` | 8.5 s | "go to the ship": a real word, so nothing flags it. Ctrl+Alt+N swaps in "shop"; again on "let me know of you can" → "if". The menu-bar icon flashes blue on each change | Slips that make another real word get past every autocorrect; here one key fixes them |
+| `12-mashed-keys` | 9 s | "jrkko how are you": four of five keys are one off. The keys you hit go red, the ones you meant get a blue ring, and it becomes "hello" | "Laptop autocorrect: no suggestions." |
+| `13-it-learns-you` | 9.5 s | Day 1 to day 5: kept fixes tick past, a heat map builds on the keys (an illustrative M-for-N typist), and the profile file fills with counts. "no words · no sentences · nothing sent" | "It learns how you slip. Not what you write." |
+| `14-eyes-off-the-keyboard` | 9 s | Bar chart of words right: typing blind 61.7% → 88.9%; mashing keys 17.2% → 74.7% | Measured on simulated typing, 1,500 held-out sentences per level (RESULTS.md) |
+| `15-every-app` | 9.5 s | Generic chat, email, document and notes windows each fix a typo; a terminal ("git psuh") and a password field are left alone | "Every app you type in. Except the ones you shouldn't." |
 
-Suggested five for a short cut: 01, 02, 03, 04, 05.
+Suggested five for a short cut: 01, 02, 03, 04, 05. For a value-focused cut: 03, 12, 14, 11, 05.
 
 ## Re-rendering
 

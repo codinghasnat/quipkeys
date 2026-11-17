@@ -1,0 +1,43 @@
+<!doctype html><html><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&family=Atkinson+Hyperlegible:wght@400;700&family=IBM+Plex+Mono:wght@400;600&display=block" rel="stylesheet">
+<link rel="stylesheet" href="../style.css"><script src="../lib.js"></script></head><body><div id="stage"></div>
+<script>
+// 13 — It learns you: a tally of the kinds of slips you make, built from the
+// fixes you keep. Counts only, never words, never sent anywhere.
+const day = el("div", "abs display"); day.style.cssText = "left:120px;top:70px;font-size:96px";
+const sub = el("div", "abs foot"); sub.style.cssText = "left:120px;top:180px;font-size:30px";
+const kb = keyboard(null, 120, 300, 78, 9);
+const ticker = el("div", "abs mono"); ticker.style.cssText = "left:120px;top:720px;font-size:40px;white-space:pre";
+const file = el("div", "abs"); file.style.cssText = "left:1150px;top:90px;width:650px;height:560px;background:var(--ink);border-radius:18px;color:var(--paper);padding:34px 40px";
+const fname = el("div", "mono", file, "quipkeys-profile.txt"); fname.style.cssText = "font-size:28px;color:#bdb27a;margin-bottom:28px";
+const ROWSF = [["letters typed", 18400], ["letters swapped", 35], ["doubled letter dropped", 12], ["extra key hit", 21], ["m hit for n", 9]];
+const rows = ROWSF.map(([k], i) => { const r = el("div", "mono", file); r.style.cssText = "font-size:34px;line-height:1.9;display:flex;justify-content:space-between"; return r; });
+const nopeRow = el("div", "abs"); nopeRow.style.cssText = "left:1150px;top:690px;display:flex;gap:44px";
+const nope = ["no words", "no sentences", "nothing sent"].map((s, i) => { const d = el("div", "mono", nopeRow, s); d.style.cssText = `font-size:34px;color:var(--ink);text-decoration:line-through;text-decoration-thickness:4px;text-decoration-color:var(--squiggle)`; return d; });
+const cap = el("div", "abs", null, "It learns how you slip. Not what you write."); cap.style.cssText = "left:120px;top:850px;font:900 64px/1.05 var(--display);font-variation-settings:'wdth' 118;white-space:nowrap";
+const cap2 = el("div", "abs", null, "Every fix you keep teaches it. Undo one and it unlearns it."); cap2.style.cssText = "left:120px;top:945px;font:700 36px/1 var(--body);color:var(--ink-soft);white-space:nowrap";
+const FIXES = [["teh", "the"], ["mow", "now"], ["writting", "writing"], ["becuase", "because"], ["mever", "never"], ["adress", "address"], ["jusst", "just"], ["kmow", "know"], ["recieve", "receive"], ["meed", "need"]];
+// how hot each key gets by the end (the illustrative habit: M for N, plus a few swaps)
+const HEAT = { m: 1, n: 0.75, e: 0.55, h: 0.4, t: 0.45, s: 0.35, i: 0.3, r: 0.25, d: 0.2 };
+window.scene = { duration: 9.5, render(t) {
+  const p = lerp(t, [0.5, 6.2], [0, 1], ease.linear);
+  const d = 1 + Math.min(4, Math.floor(p * 5));
+  day.textContent = `Day ${d}`;
+  sub.textContent = "Illustration: a typist who often hits M for N";
+  show(sub, lerp(t, [0.3, 0.7], [0, 1]));
+  const eased = ease.out(p);
+  for (const c of Object.keys(kb.keys)) {
+    const h = (HEAT[c] || 0) * eased;
+    kb.keys[c].style.background = h > 0.02 ? `linear-gradient(180deg, rgba(26,86,214,${0.85 * h}), rgba(26,86,214,${0.7 * h})), linear-gradient(180deg, var(--cap), #f5edcc)` : "";
+    kb.keys[c].style.color = h > 0.55 ? "#fff" : "";
+  }
+  const i = Math.floor((t - 0.5) / 0.55);
+  if (i >= 0 && t < 6.4) { const [a, b] = FIXES[i % FIXES.length]; ticker.innerHTML = `${esc(a)} → <span class="fix">${b}</span>  <span style="font-size:30px;color:var(--ink-soft)">kept ✓</span>`; show(ticker, 1); }
+  else show(ticker, t < 0.5 ? 0 : lerp(t, [6.4, 6.7], [1, 0]));
+  ROWSF.forEach(([k, v], j) => { const n = Math.round(v * eased); rows[j].innerHTML = `<span>${k}:</span><span>${n.toLocaleString("en-GB")}</span>`; });
+  rows[4].style.color = eased > 0.4 ? "#9dbbff" : "";
+  nope.forEach((e, j) => { show(e, lerp(t, [3.0 + j * 0.35, 3.4 + j * 0.35], [0, 1])); });
+  show(cap, lerp(t, [6.6, 7.0], [0, 1])); place(cap, 0, lerp(t, [6.6, 7.1], [24, 0]));
+  show(cap2, lerp(t, [7.1, 7.5], [0, 1]));
+}};
+</script></body></html>

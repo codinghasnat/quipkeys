@@ -1,0 +1,40 @@
+<!doctype html><html><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&family=Atkinson+Hyperlegible:wght@400;700&family=IBM+Plex+Mono:wght@400;600&display=block" rel="stylesheet">
+<link rel="stylesheet" href="../style.css"><script src="../lib.js"></script></head><body><div id="stage"></div>
+<script>
+// 14 — Eyes off the keyboard: measured word accuracy on simulated sloppy typing.
+// Numbers from RESULTS.md (Brown test split, 1,500 held-out sentences per level).
+const title = el("div", "abs display", null, "Eyes off the keyboard."); title.style.cssText = "left:160px;top:80px;font-size:110px";
+const lead = el("div", "abs", null, "Words that come out right"); lead.style.cssText = "left:160px;top:215px;font:700 40px/1 var(--body);color:var(--ink-soft)";
+const X0 = 640, MAXW = 880; // 100% = MAXW px
+const GROUPS = [
+  { name: "Typing blind", note: "1 letter in 10 wrong", y: 330, a: 61.7, b: 88.9 },
+  { name: "Mashing keys", note: "half the letters a key off", y: 620, a: 17.2, b: 74.7 },
+];
+const parts = GROUPS.map((g) => {
+  const n = el("div", "abs", null, g.name); n.style.cssText = `left:160px;top:${g.y + 10}px;font:900 52px/1 var(--display);font-variation-settings:'wdth' 112`;
+  const no = el("div", "abs foot", null, g.note); no.style.cssText = `left:160px;top:${g.y + 78}px;font-size:30px`;
+  const mk = (top, colour) => { const b = el("div", "abs"); b.style.cssText = `left:${X0}px;top:${top}px;height:84px;border-radius:0 4px 4px 0;background:${colour}`; return b; };
+  const ba = mk(g.y, "#b9ab6a"), bb = mk(g.y + 96, "var(--fix)");
+  const la = el("div", "abs"), lb = el("div", "abs");
+  la.style.cssText = "font:600 34px/84px var(--mono);white-space:nowrap;color:var(--ink-soft)";
+  lb.style.cssText = "font:600 40px/84px var(--mono);white-space:nowrap;color:var(--ink)";
+  return { g, ba, bb, la, lb };
+});
+const axis = el("div", "abs"); axis.style.cssText = `left:${X0 - 2}px;top:310px;width:2px;height:520px;background:rgba(23,20,10,.35)`;
+const foot = el("div", "abs foot", null, "Simulated typing on 1,500 held-out sentences per level. Full method and numbers in RESULTS.md."); foot.style.cssText = "left:160px;top:960px;font-size:26px";
+window.scene = { duration: 9, render(t) {
+  show(title, lerp(t, [0.1, 0.5], [0, 1])); place(title, 0, lerp(t, [0.1, 0.6], [20, 0]));
+  show(lead, lerp(t, [0.5, 0.9], [0, 1]));
+  parts.forEach(({ g, ba, bb, la, lb }, i) => {
+    const s = 1.0 + i * 2.6;
+    const fa = lerp(t, [s, s + 0.7], [0, 1]), fb = lerp(t, [s + 0.9, s + 2.0], [0, 1]);
+    ba.style.width = (MAXW * g.a / 100) * fa + "px"; bb.style.width = (MAXW * g.b / 100) * fb + "px";
+    la.innerHTML = `${(g.a * fa).toFixed(1)}% <span style="font-size:28px">as typed</span>`;
+    lb.innerHTML = `${(g.b * fb).toFixed(1)}% <span style="font-size:30px;color:var(--fix)">with QuipKeys</span>`;
+    place(la, X0 + (MAXW * g.a / 100) * fa + 18, g.y); place(lb, X0 + (MAXW * g.b / 100) * fb + 18, g.y + 96);
+    show(la, fa > 0 ? 1 : 0); show(lb, fb > 0 ? 1 : 0);
+  });
+  show(foot, lerp(t, [6.4, 6.8], [0, 1]));
+}};
+</script></body></html>

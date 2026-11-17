@@ -1,0 +1,51 @@
+<!doctype html><html><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&family=Atkinson+Hyperlegible:wght@400;700&family=IBM+Plex+Mono:wght@400;600&display=block" rel="stylesheet">
+<link rel="stylesheet" href="../style.css"><script src="../lib.js"></script></head><body><div id="stage"></div>
+<script>
+// 12 — Mashed keys: every letter of "hello" but one lands a key off ("jrkko").
+// QuipKeys reads the keys beside the ones you hit and lets the sentence decide.
+const sheet = el("div", "sheet abs"); sheet.style.cssText += "left:160px;top:60px;width:1600px;height:300px;";
+const line = el("div", "mono abs", sheet); line.style.cssText = "left:56px;top:56px;font-size:84px;white-space:pre";
+const hint = el("div", "mono abs", sheet); hint.style.cssText = "left:56px;top:190px;font-size:34px;color:var(--ink-soft);white-space:pre";
+const kb = keyboard(null, 470, 450, 88, 10);
+const tag = el("div", "tag abs"); tag.style.fontSize = "30px";
+const cap = el("div", "abs", null, "Four keys off. Still “hello”."); cap.style.cssText = "left:160px;top:870px;font:900 66px/1.05 var(--display);font-variation-settings:'wdth' 118;white-space:nowrap";
+const cap2 = el("div", "abs", null, "It tries the keys beside the ones you hit, and the sentence picks."); cap2.style.cssText = "left:160px;top:968px;font:700 36px/1 var(--body);color:var(--ink-soft);white-space:nowrap";
+const typedW = "jrkko", meant = "hello";
+const text = "jrkko how are you ";
+// timing: the mashed word slowly, the rest at normal speed
+const times = []; let tt = 0.5;
+for (let i = 0; i < text.length; i++) { times.push(tt); tt += i < 5 ? 0.34 : 0.075; }
+const fixAt = times[5] + 0.12;
+window.scene = { duration: 9, render(t) {
+  const n = times.filter((x) => x <= t).length;
+  let h;
+  if (t >= fixAt) {
+    const a = 0.28 * lerp(t, [fixAt, fixAt + 1.3], [1, 0], ease.linear);
+    h = `<span class="fix" style="background:rgba(26,86,214,${a});border-radius:8px">hello</span>` + esc(text.slice(5, n));
+  } else h = `<span class="${n >= 5 ? "typo" : ""}">${esc(text.slice(0, Math.min(n, 5)))}</span>` + esc(text.slice(5, n));
+  line.innerHTML = h;
+  // under the mashed word: what each key was a neighbour of
+  const pairs = [...typedW].map((c, i) => (c === meant[i] ? `${c}✓` : `${c}→${meant[i]}`));
+  hint.textContent = pairs.slice(0, Math.min(n, 5)).join("   ");
+  show(hint, t < fixAt + 2.2 ? 1 : lerp(t, [fixAt + 2.2, fixAt + 2.6], [1, 0]));
+  // keys: typed key pressed, intended neighbour glows blue for the mashed part
+  for (const c of Object.keys(kb.keys)) press(kb.keys[c], 0, "");
+  for (const c of Object.keys(kb.keys)) kb.keys[c].style.outline = "";
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i]; const amt = tap(t, times[i], i < 5 ? 0.3 : 0.12);
+    if (amt > 0) press(kb.keys[c], amt, i < 5 && c !== meant[i] ? "#ffd2d2" : "#fff3b0");
+  }
+  for (let i = 0; i < 5; i++) {
+    const on = t >= times[i] && t < fixAt + 1.6;
+    const m = kb.keys[meant[i]];
+    if (on && meant[i] !== typedW[i]) { m.style.outline = "6px solid var(--fix)"; m.style.outlineOffset = "3px"; }
+  }
+  if (n >= 5 && t < fixAt) { tag.textContent = "Laptop autocorrect: no suggestions"; tag.style.background = "var(--squiggle)"; tag.style.color = "#fff"; show(tag, 1); }
+  else if (t >= fixAt && t < 6.4) { tag.textContent = "QuipKeys: “hello”"; tag.style.background = "var(--fix)"; tag.style.color = "#fff"; show(tag, 1); }
+  else show(tag, 0);
+  place(tag, 160, 374);
+  show(cap, lerp(t, [6.2, 6.6], [0, 1])); place(cap, 0, lerp(t, [6.2, 6.7], [24, 0]));
+  show(cap2, lerp(t, [6.7, 7.1], [0, 1]));
+}};
+</script></body></html>
