@@ -1,6 +1,6 @@
 # Pitch-video animations
 
-Fifteen short clips to cut between demo footage. Each is 1920×1080, 30 fps, H.264,
+Nineteen short clips to cut between demo footage. Each is 1920×1080, 30 fps, H.264,
 with no audio. They use the same look as the website: yellow paper, keycaps,
 red squiggles for typos and blue for fixes. The finished files are in `out/`.
 
@@ -21,8 +21,12 @@ red squiggles for typos and blue for fixes. The finished files are in `out/`.
 | `13-it-learns-you` | 9.5 s | Day 1 to day 5: kept fixes tick past, a heat map builds on the keys (an illustrative M-for-N typist), and the profile file fills with counts. "no words · no sentences · nothing sent" | "It learns how you slip. Not what you write." |
 | `14-eyes-off-the-keyboard` | 9 s | Bar chart of words right: typing blind 61.7% → 88.9%; mashing keys 17.2% → 74.7% | Measured on simulated typing, 1,500 held-out sentences per level (RESULTS.md) |
 | `15-every-app` | 9.5 s | Generic chat, email, document and notes windows each fix a typo; a terminal ("git psuh") and a password field are left alone | "Every app you type in. Except the ones you shouldn't." |
+| `16-pay-then-click` | 9.5 s | A generic subscription grammar checker (labelled as an illustration): a cursor clicks Accept on each fix, one fix is "Premium only", and the click counter climbs. QuipKeys fixes the same text as it's typed with 0 clicks | "Pay every month. Then click every fix yourself." |
+| `17-before-telepathy` | 10 s | Cards for voice dictation (heads turn), silent speech (a breathing mouth) and telepathy ("Not yet") get crossed out; the keyboard card pops forward | "The keyboard isn't weird. It's just never been fixed." |
+| `18-spell-by-sound` | 9 s | "I need to call my frend on the fone", "the docter sed I am fine", "my skool has a new libary" each get fixed as typed. All are real engine output with Spell by sound on | Footnote: fixes about 3 in 4 sound spellings in real sentences, and misses some |
+| `19-build-it-together` | 8 s | Logo, repo link, and idea cards that anyone can pick up (layouts, languages, Linux, "Your idea here") | "Free. The code's public. Not perfect yet. Let's build it together." Licence footnote |
 
-Suggested five for a short cut: 01, 02, 03, 04, 05. For a value-focused cut: 03, 12, 14, 11, 05.
+Suggested five for a short cut: 01, 02, 03, 04, 05. For a value-focused cut: 03, 12, 14, 11, 05. The full intro video's script, with a clip for each line, is in [SCRIPT.md](SCRIPT.md).
 
 ## Re-rendering
 

@@ -1,0 +1,29 @@
+<!doctype html><html><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&family=Atkinson+Hyperlegible:wght@400;700&family=IBM+Plex+Mono:wght@400;600&display=block" rel="stylesheet">
+<link rel="stylesheet" href="../style.css"><script src="../lib.js"></script></head><body><div id="stage"></div>
+<script>
+// 19 — Build it together: the code is public, ideas and pull requests welcome.
+// The idea cards are suggestions, not real pull requests.
+const LOGO = `<svg viewBox="0 0 64 64" width="100%" height="100%"><rect x="4" y="8" width="56" height="52" rx="13" fill="#17140a"/><rect x="8" y="4" width="48" height="46" rx="10" fill="#fffbea"/><circle cx="30" cy="25.5" r="11" fill="none" stroke="#17140a" stroke-width="6"/><path d="M32.5 28l11.5 11.5" stroke="#17140a" stroke-width="6.5"/><circle cx="44" cy="39.5" r="3.25" fill="#17140a"/></svg>`;
+const logo = el("div", "abs", null, LOGO); logo.style.cssText = "left:160px;top:110px;width:150px;height:150px";
+const name = el("div", "abs display", null, "QuipKeys"); name.style.cssText = "left:340px;top:120px;font-size:110px";
+const url = el("div", "abs mono", null, "github.com/codinghasnat/quipkeys"); url.style.cssText = "left:344px;top:232px;font-size:36px;color:var(--ink-soft)";
+const head = el("div", "abs", null, "Ideas we’d love help with"); head.style.cssText = "left:160px;top:350px;font:700 34px/1 var(--body);color:var(--ink-soft)";
+const IDEAS = [["AZERTY and Dvorak layouts", "idea"], ["More languages", "idea"], ["Linux support", "idea"], ["Your idea here", "you"]];
+const cards = IDEAS.map(([s, k], i) => {
+  const c = el("div", "abs"); c.style.cssText = `left:160px;top:${410 + i * 100}px;width:820px;height:80px;border-radius:14px;padding:0 28px;display:flex;align-items:center;justify-content:space-between;font:700 38px/1 var(--body);${k === "you" ? "border:4px dashed var(--ink);" : "background:var(--sheet);box-shadow:0 14px 30px -14px rgba(77,62,0,.5);"}`;
+  c.innerHTML = `<span>${s}</span><span class="tag" style="font-size:24px;${k === "you" ? "background:var(--fix);color:#fff" : ""}">${k === "you" ? "open a pull request" : "up for grabs"}</span>`;
+  return c;
+});
+const cap = el("div", "abs", null, "Free. The code’s public.<br>Not perfect yet."); cap.style.cssText = "left:1060px;top:420px;white-space:nowrap;font:900 52px/1.05 var(--display);font-variation-settings:'wdth' 118";
+const cap2 = el("div", "abs", null, "Let’s build it together."); cap2.style.cssText = "left:1060px;top:580px;font:900 60px/1.05 var(--display);font-variation-settings:'wdth' 118;color:var(--fix)";
+const foot = el("div", "abs foot", null, "Free for personal and other non-commercial use (PolyForm Noncommercial licence)."); foot.style.cssText = "left:160px;top:960px;font-size:26px";
+window.scene = { duration: 8, render(t) {
+  show(logo, lerp(t, [0.1, 0.4], [0, 1])); logo.style.transform = `scale(${lerp(t, [0.1, 0.7], [0.6, 1], ease.spring)})`;
+  show(name, lerp(t, [0.3, 0.7], [0, 1])); show(url, lerp(t, [0.6, 1.0], [0, 1])); show(head, lerp(t, [1.0, 1.3], [0, 1]));
+  cards.forEach((c, i) => { const a = 1.3 + i * 0.45; show(c, lerp(t, [a, a + 0.3], [0, 1])); place(c, lerp(t, [a, a + 0.5], [-40, 0]), 0); });
+  cards[3].style.borderColor = Math.floor(t * 2) % 2 && t > 3 ? "var(--fix)" : "var(--ink)";
+  show(cap, lerp(t, [3.6, 4.0], [0, 1])); show(cap2, lerp(t, [4.6, 5.0], [0, 1]));
+  show(foot, lerp(t, [5.2, 5.6], [0, 1]));
+}};
+</script></body></html>

@@ -1,0 +1,39 @@
+<!doctype html><html><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&family=Atkinson+Hyperlegible:wght@400;700&family=IBM+Plex+Mono:wght@400;600&display=block" rel="stylesheet">
+<link rel="stylesheet" href="../style.css"><script src="../lib.js"></script></head><body><div id="stage"></div>
+<script>
+// 18 — Spell by sound (the opt-in mode for people who spell by ear, e.g. with
+// dyslexia). These three sentences are real engine output with the mode on.
+const tag = el("div", "tag abs", null, "Spell by sound · free, switch it on in the menu"); tag.style.fontSize = "30px"; place(tag, 160, 70);
+const sheet = el("div", "sheet abs"); sheet.style.cssText += "left:160px;top:150px;width:1600px;height:560px;";
+const LINES = [
+  [["i", "I"], ["need"], ["to"], ["call"], ["my"], ["frend", "friend"], ["on"], ["the"], ["fone", "phone"]],
+  [["the"], ["docter", "doctor"], ["sed", "said"], ["i", "I"], ["am"], ["fine"]],
+  [["my"], ["skool", "school"], ["has"], ["a"], ["new"], ["libary", "library"]],
+];
+const rows = LINES.map((_, i) => { const d = el("div", "abs mono", sheet); d.style.cssText = `left:56px;top:${70 + i * 160}px;font-size:66px;white-space:pre`; return d; });
+const cap = el("div", "abs", null, "Spell it how it sounds. QuipKeys finds the word."); cap.style.cssText = "left:160px;top:780px;font:900 56px/1.05 var(--display);font-variation-settings:'wdth' 118;white-space:nowrap";
+const foot = el("div", "abs foot", null, "Real output with Spell by sound on. In tests it fixed about 3 in 4 sound-spellings in real sentences, and misses some."); foot.style.cssText = "left:160px;top:880px;font-size:28px;width:1600px";
+const CPS = 17;
+const starts = [0.4, 2.9, 4.7];
+window.scene = { duration: 9, render(t) {
+  LINES.forEach((words, li) => {
+    const full = words.map((w) => w[0]).join(" ") + " ";
+    const n = Math.max(0, Math.min(full.length, Math.floor((t - starts[li]) * CPS)));
+    let pos = 0, h = "";
+    words.forEach(([w, fix]) => {
+      const done = n > pos + w.length; // its space has been typed
+      if (done && fix && fix !== w.toUpperCase()) {
+        const at = starts[li] + (pos + w.length + 1) / CPS;
+        const a = 0.28 * lerp(t, [at, at + 1.2], [1, 0], ease.linear);
+        h += fix.length > 1 ? `<span class="fix" style="background:rgba(26,86,214,${a});border-radius:8px">${fix}</span> ` : `${fix} `;
+      } else if (done) h += (fix || w) + " ";
+      else h += esc(w.slice(0, Math.max(0, n - pos)));
+      pos += w.length + 1;
+    });
+    rows[li].innerHTML = h;
+  });
+  show(cap, lerp(t, [6.4, 6.8], [0, 1])); place(cap, 0, lerp(t, [6.4, 6.9], [24, 0]));
+  show(foot, lerp(t, [6.9, 7.3], [0, 1]));
+}};
+</script></body></html>
