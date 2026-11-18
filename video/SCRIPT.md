@@ -11,7 +11,7 @@ are suggested rewrites of your draft. The reasons are in the notes at the end.
 
 | VO | On screen |
 |---|---|
-| *"What if every typo fixed itself the moment you made it?"* | **01 slip-and-snap**, full clip (6.5 s). The squiggle, then the snap on space. |
+| *"What if every typo fixed itself the moment you made it?"* | **20 same-keystrokes**, 0–3.9 s. "gsopu votygssu ti tou": normal spellcheck makes it "opus voteless ti you", QuipKeys makes it "happy birthday to you". Works as a silent cold open, before you say anything. |
 
 ## 2. Grammarly (0:06–0:15)
 
@@ -23,7 +23,7 @@ are suggested rewrites of your draft. The reasons are in the notes at the end.
 
 | VO | On screen |
 |---|---|
-| "Autocorrect already sucks…" | **02 sliding-space**, 0–5 s. Autocorrect's "Hello ice to me you", then QuipKeys slides the spaces. |
+| "Autocorrect already sucks…" | **20 same-keystrokes**, 3.9–8.3 s. Spellcheck: "rgsbk yup sp my gr put help". QuipKeys: "thank you so much for your help". |
 | *"Your phone fixed fat-finger typing years ago. Your laptop never did."* | **03 phone-vs-desk**, 0–5 s. |
 
 ## 4. Before telepathy (0:24–0:40)
@@ -47,8 +47,8 @@ are suggested rewrites of your draft. The reasons are in the notes at the end.
 
 | VO | On screen |
 |---|---|
-| "It literally lets you slap your fingers on the keyboard, and it fixes your typos like magic." | **05 mash-and-done**, 0–2.7 s (the mashing only, cut before the end card). Then **12 mashed-keys**, 0–6 s. |
-| *"For anyone who'd rather talk than stare at their keys."* (finishing your unfinished line) | Demo: you typing fast, eyes on the screen. |
+| "It literally lets you slap your fingers on the keyboard, and it fixes your typos like magic." | **05 mash-and-done**, 0–2.7 s (the mashing only, cut before the end card): "u cam't nwkorvr yhid acyialky eprla" becomes "I can't believe this actually works". Then **20 same-keystrokes**, 8.3–12.2 s ("qhsr atw yiu diobh rpmihhy" → "what are you doing tonight"). |
+| *"For anyone who'd rather talk than stare at their keys."* (finishing your unfinished line) | **12 mashed-keys**, 0–6 s, or a demo of you typing fast with your eyes on the screen. |
 
 ## 7. The proof (0:58–1:06)
 
@@ -68,7 +68,7 @@ are suggested rewrites of your draft. The reasons are in the notes at the end.
 
 | VO | On screen |
 |---|---|
-| *"It works in every app you type in, and stays out of your terminal and your passwords."* | **15 every-app**, 0–7 s. |
+| *"It works in every app you type in, and stays out of your terminal and your passwords."* | **15 every-app**, 0–7 s. Every window gets wrecked typing ("rjanjd gpe rgr uosate" → "thanks for the update"), and the "you typed" line shows the input. |
 | *"It learns the mistakes you make, and none of it leaves your computer."* | **13 it-learns-you**, 0–6 s, then **10 nothing-leaves**, 0–4 s. |
 
 ## 10. Dyslexia (1:26–1:38)
@@ -76,7 +76,7 @@ are suggested rewrites of your draft. The reasons are in the notes at the end.
 | VO | On screen |
 |---|---|
 | "I had a friend with dyslexia who couldn't type very well and spent a long time thinking about spellings." | A-roll. |
-| "But now he doesn't have to think anymore. *He spells it how it sounds, and QuipKeys finds the word.*" | **18 spell-by-sound**, full clip (9 s). These sentences are real engine output. |
+| "But now he doesn't have to think anymore. *He spells it how it sounds, and QuipKeys finds the word.*" | **18 spell-by-sound**, full clip (10.5 s). "sea the oshun" → "see the ocean" (spellcheck: "sea the shun"); "a nise restorant" → "a nice restaurant" (spellcheck: "a niche restoration"); "sum noledge" → "some knowledge" (spellcheck: "sum no ledge"). |
 
 ## 11. Free, and built together (1:38–1:50)
 
@@ -96,7 +96,7 @@ are suggested rewrites of your draft. The reasons are in the notes at the end.
 
 ## Clips not used
 
-**07 your-rhythm** and **09 undo-and-remember** don't have a slot. 09 can replace
+**01 slip-and-snap**, **02 sliding-space**, **07 your-rhythm** and **09 undo-and-remember** don't have a slot. 01 is a one-letter slip that any autocorrect handles, so it's dropped from the hook. 09 can replace
 the second half of section 8 if you'd rather show undo than next guess.
 
 ## Notes on the wording
@@ -118,3 +118,22 @@ the second half of section 8 if you'd rather show undo than next guess.
 - **The numbers** (one in six → three in four, +30%) come from simulated typing in
   RESULTS.md. If anyone asks, say "in our tests".
 - It's spelled **Wispr Flow**.
+
+## Where the examples come from
+
+Every QuipKeys result on screen in clips 05, 15, 18 and 20 is real engine output from a cold
+start (no warm-up, no learned profile). The clips replay it word by word, including the
+moments the engine goes back and fixes an earlier word once the next one arrives. Every
+"normal spellcheck" result is Hunspell's first suggestion for each word. Hunspell is the
+checker in Firefox and LibreOffice. To reproduce them:
+
+```
+echo "! gsopu votygssu ti tou | happy birthday to you" | cargo run --release --example extreme
+echo "can you sea the oshun" | cargo run --release --example phon_sentence
+echo gsopu | hunspell -d en_US -a
+```
+
+The wrecked sentences were picked from random neighbour-key versions that decode
+perfectly, so they're best cases. Most wrecked sentences come out well, but not all
+of them. The honest average is clip 14: about 3 in 4 words right when half the letters
+are a key off.

@@ -1,0 +1,49 @@
+<!doctype html><html><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&family=Atkinson+Hyperlegible:wght@400;700&family=IBM+Plex+Mono:wght@400;600&display=block" rel="stylesheet">
+<link rel="stylesheet" href="../style.css"><script src="../lib.js"></script></head><body><div id="stage"></div>
+<script>
+// 20 — Same keystrokes: wrecked typing, a standard spellchecker's guesses
+// (Hunspell's first suggestion per word, real output) vs QuipKeys (real
+// engine output, replayed word by word, including its revisions).
+const S = [
+  { typed: "gsopu votygssu ti tou", wrong: "14 of 18", check: "opus voteless ti you",
+    steps: ["gsopu", "gsopu votygssu", "gsopu birthday to", "happy birthday to you"] },
+  { typed: "rgsbk ypu sp myvg gpr yput hwlp", wrong: "14 of 25", check: "rgsbk yup sp my gr put help",
+    steps: ["rgsbk", "thank you", "thank you so", "thank you so much", "thank you so much for", "thank you so much for your", "thank you so much for your help"] },
+  { typed: "qhsr atw yiu diobh rpmihhy", wrong: "15 of 22", check: "qophs taw you dhobi rpmihhy",
+    steps: ["what", "what atw", "what are you", "what are you doing", "what are you doing tonight"] },
+];
+const tag = el("div", "tag abs", null, "Same keystrokes"); tag.style.fontSize = "30px"; place(tag, 120, 70);
+const sheet = el("div", "sheet abs"); sheet.style.cssText += "left:120px;top:150px;width:1680px;height:600px;";
+const mkRow = (y, label, colour) => {
+  const l = el("div", "abs", sheet, label); l.style.cssText = `left:50px;top:${y + 18}px;width:270px;font:700 30px/1.1 var(--body);color:${colour}`;
+  const v = el("div", "abs mono", sheet); v.style.cssText = `left:330px;top:${y}px;font-size:64px;white-space:pre`;
+  return v;
+};
+const rT = mkRow(50, "You typed", "var(--ink-soft)"), rC = mkRow(250, "Normal<br>spellcheck", "var(--ink-soft)"), rQ = mkRow(420, "QuipKeys", "var(--fix)");
+const wrong = el("div", "abs mono", sheet); wrong.style.cssText = "left:330px;top:140px;font-size:30px;color:var(--squiggle)";
+const markC = el("div", "abs", sheet, "✗"); markC.style.cssText = "left:1580px;top:250px;font:900 64px/1 var(--display);color:var(--squiggle)";
+const markQ = el("div", "abs", sheet, "✓"); markQ.style.cssText = "left:1580px;top:420px;font:900 64px/1 var(--display);color:var(--fix)";
+const cap = el("div", "abs", null, "Same keystrokes. Only one of them can read it."); cap.style.cssText = "left:120px;top:800px;font:900 58px/1.05 var(--display);font-variation-settings:'wdth' 118;white-space:nowrap";
+const foot = el("div", "abs foot", null, "Spellcheck: Hunspell’s first suggestion for each word (the checker in Firefox and LibreOffice). QuipKeys: real engine output, replayed word by word."); foot.style.cssText = "left:120px;top:900px;width:1680px;font-size:26px";
+const CPS = 13, HOLD = 1.9;
+let t0 = 0.3; S.forEach((s) => { s.start = t0; s.toks = s.typed.split(" "); s.len = (s.typed.length + 1) / CPS; t0 += s.len + HOLD; });
+const END = t0;
+window.scene = { duration: END + 2.6, render(t) {
+  let s = S[S.length - 1]; for (const x of S) if (t < x.start + x.len + HOLD) { s = x; break; }
+  const local = t - s.start;
+  const fade = lerp(local, [0, 0.25], [0, 1]) * (s === S[S.length - 1] ? 1 : lerp(local, [s.len + HOLD - 0.3, s.len + HOLD], [1, 0]));
+  [rT, rC, rQ, wrong].forEach((e) => show(e, fade));
+  const n = Math.max(0, Math.floor(local * CPS));
+  rT.innerHTML = `<span class="${n > s.typed.length ? "typo" : ""}">${esc(s.typed.slice(0, n))}</span>`;
+  const d = decodeLine(s.toks, s.steps, t, s.start, CPS);
+  rQ.innerHTML = d.html;
+  rC.innerHTML = checkerLine(s.toks, s.check.split(" "), d.done);
+  wrong.textContent = n > s.typed.length ? `${s.wrong} letters wrong` : "";
+  const fin = d.done === d.total;
+  show(markC, fin ? lerp(t, [d.endT + 0.2, d.endT + 0.4], [0, 1]) * fade : 0);
+  show(markQ, fin ? lerp(t, [d.endT + 0.4, d.endT + 0.6], [0, 1]) * fade : 0);
+  show(cap, lerp(t, [END - 0.4, END], [0, 1])); place(cap, 0, lerp(t, [END - 0.4, END + 0.1], [24, 0]));
+  show(foot, lerp(t, [END, END + 0.4], [0, 1]));
+}};
+</script></body></html>

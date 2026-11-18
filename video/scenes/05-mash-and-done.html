@@ -5,13 +5,15 @@
 const LOGO = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="120" height="120"><rect x="4" y="8" width="56" height="52" rx="13" fill="#17140a"/><rect x="8" y="4" width="48" height="46" rx="10" fill="#fffbea"/><circle cx="30" cy="25.5" r="11" fill="none" stroke="#17140a" stroke-width="6"/><path d="M32.5 28l11.5 11.5" stroke="#17140a" stroke-width="6.5"/><circle cx="44" cy="39.5" r="3.25" fill="#17140a"/></svg>`;
 // 05 — Mash and done: chaotic keyboard mashing, every typo snaps blue at the
 // space, then a hard cut to silence and the tagline.
-const typedW = ["i", "cnat", "beleive", "tihs", "acutally", "wroks", "lmaooo"];
-const fixedW = ["I", "can't", "believe", "this", "actually", "works", "lmaooo"];
+// Real engine output (cold start): 17 of 29 letters a key off, replayed word by word.
+const typedW = ["u", "cam't", "nwkorvr", "yhid", "acyialky", "eprla"];
+const STEPS = ["u", "I can't", "I can't believe", "I can't believe this", "I can't believe this actually", "I can't believe this actually works"];
 const typedS = typedW.join(" ") + " ";
 const CPS = 26, T0 = 0.25, CUT = 2.75;
 const mash = el("div", "abs");
 const sheet = el("div", "sheet abs", mash); sheet.style.cssText += "left:236px;top:90px;width:1448px;height:220px;";
-const tx = el("div", "mono abs", sheet); tx.style.cssText = "left:50px;top:62px;font-size:84px;white-space:pre";
+const tx = el("div", "mono abs", sheet); tx.style.cssText = "left:50px;top:72px;font-size:64px;white-space:pre";
+const raw = el("div", "mono abs", sheet); raw.style.cssText = "left:52px;top:158px;font-size:30px;white-space:pre;color:var(--ink-soft)";
 const kb = keyboard(mash, 356, 420, 110, 12);
 const r = rng(7), taps = [];
 for (let t = 0.1; t < CUT; t += 0.035 + r() * 0.03) taps.push([ROWS.join("")[Math.floor(r() * 26)], t, r() < 0.3]);
@@ -32,10 +34,10 @@ window.scene = { duration: 7, render(t) {
     for (const [c, at, red] of taps) { const a = tap(t, at, 0.12); if (a) press(kb.keys[c], a, red ? "#ffd6d0" : ""); }
     press(kb.keys[" "], 0);
     // text: words fix the moment their space is typed
-    const n = Math.max(0, Math.min(typedS.length, Math.floor((t - T0) * CPS)));
-    const s = typedS.slice(0, n), parts = s.split(" ");
-    tx.innerHTML = parts.map((w, i) => i < parts.length - 1 ? (fixedW[i] !== w ? `<span class="fix">${fixedW[i]}</span>` : w) : esc(w)).join(" ");
-    for (let i = 0; i < parts.length - 1; i++) if (Math.abs(t - (T0 + (typedW.slice(0, i + 1).join(" ").length + 1) / CPS)) < 0.06) press(kb.keys[" "], 1);
+    tx.innerHTML = decodeLine(typedW, STEPS, t, T0, CPS).html;
+    const rn = Math.max(0, Math.floor((t - T0) * CPS));
+    raw.innerHTML = rn ? `you typed: <span style="color:var(--squiggle)">${esc(typedS.slice(0, rn))}</span>` : "";
+    for (let i = 0; i < typedW.length; i++) if (Math.abs(t - (T0 + (typedW.slice(0, i + 1).join(" ").length + 1) / CPS)) < 0.06) press(kb.keys[" "], 1);
   } else {
     const a1 = lerp(t, [CUT + 0.05, CUT + 0.35], [0, 1]), a2 = lerp(t, [CUT + 0.9, CUT + 1.3], [0, 1], ease.spring), a3 = lerp(t, [CUT + 1.9, CUT + 2.3], [0, 1]);
     show(l1, a1); place(l1, 0, 0);

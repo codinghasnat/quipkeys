@@ -2,13 +2,13 @@
 <link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&family=Atkinson+Hyperlegible:wght@400;700&family=IBM+Plex+Mono:wght@400;600&display=block" rel="stylesheet">
 <link rel="stylesheet" href="../style.css"><script src="../lib.js"></script></head><body><div id="stage"></div>
 <script>
-// 15 — Every app: the same fix in a chat, an email, a doc and notes. It stays out
+// 15 — Every app: wrecked typing (real engine output, word by word) fixed in a chat, an email, a doc and notes. It stays out
 // of terminals and password fields. Generic windows, no real brands.
 const WINS = [
-  { title: "Chat", pre: "running late, be ", typo: "thrre", fix: "there", post: " in 5" },
-  { title: "Email", pre: "Thanks for ", typo: "teh", fix: "the", post: " update" },
-  { title: "Document", pre: "The ", typo: "resluts", fix: "results", post: " were clear" },
-  { title: "Notes", pre: "milk, eggs, ", typo: "braed", fix: "bread", post: "" },
+  { title: "Chat", typed: "bjy nilk abd vread", steps: ["bjy", "buy milk", "buy milk and", "buy milk and bread"] },
+  { title: "Email", typed: "rjanjd gpe rgr uosate", steps: ["thanks", "thanks gpe", "thanks for the", "thanks for the update"] },
+  { title: "Document", typed: "yjr tedikys eere twsllt vkear", steps: ["the", "the tedikys", "the results were", "the results were really", "the results were really clear"] },
+  { title: "Notes", typed: "ckeam ghe jitchen", steps: ["clean", "clean the", "clean the kitchen"] },
   { title: "Terminal", pre: "$ git psuh", out: "QuipKeys stays out" },
   { title: "Password", pw: true, out: "Always skipped" },
 ];
@@ -26,7 +26,7 @@ const wins = WINS.map((w, i) => {
 });
 const cap = el("div", "abs", null, "Every app you type in. Except the ones you shouldn’t."); cap.style.cssText = "left:120px;top:780px;font:900 56px/1.05 var(--display);font-variation-settings:'wdth' 118;white-space:nowrap";
 const cap2 = el("div", "abs", null, "Terminals, code editors, password managers and password fields are left alone."); cap2.style.cssText = "left:120px;top:880px;font:700 36px/1 var(--body);color:var(--ink-soft);white-space:nowrap";
-const CPS = 20;
+const CPS = 14;
 window.scene = { duration: 9.5, render(t) {
   wins.forEach(({ w, txt, badge, start }) => {
     if (w.pw) {
@@ -40,17 +40,10 @@ window.scene = { duration: 9.5, render(t) {
       show(badge, lerp(t, [start + 0.8, start + 1.1], [0, 1])); badge.style.background = "#4d4526"; badge.style.color = "#fff";
       return;
     }
-    const full = w.pre + w.typo + " " + w.post.trimStart();
-    const n = Math.max(0, Math.min(full.length, Math.floor((t - start) * CPS)));
-    const fixAt = start + (w.pre.length + w.typo.length + 1) / CPS;
-    let h = esc(full.slice(0, Math.min(n, w.pre.length)));
-    if (t >= fixAt) {
-      const a = 0.28 * lerp(t, [fixAt, fixAt + 1.2], [1, 0], ease.linear);
-      h += `<span class="fix" style="background:rgba(26,86,214,${a});border-radius:6px">${w.fix}</span>` + esc(full.slice(w.pre.length + w.typo.length, n));
-    } else h += esc(full.slice(w.pre.length, n));
-    txt.innerHTML = h;
-    badge.textContent = `${w.typo} → ${w.fix}`; badge.style.background = "var(--fix)"; badge.style.color = "#fff";
-    show(badge, t >= fixAt ? lerp(t, [fixAt, fixAt + 0.25], [0, 1]) : 0);
+    const d = decodeLine(w.typed.split(" "), w.steps, t, start, CPS);
+    txt.innerHTML = d.html;
+    badge.innerHTML = `you typed: <span style="text-decoration:underline wavy var(--squiggle) 2px;text-underline-offset:5px">${esc(w.typed)}</span>`; badge.style.cssText += "font-size:18px;background:#fff3b0;color:var(--ink);top:226px";
+    show(badge, d.done === d.total ? lerp(t, [d.endT, d.endT + 0.25], [0, 1]) : 0);
   });
   show(cap, lerp(t, [5.9, 6.3], [0, 1])); place(cap, 0, lerp(t, [5.9, 6.4], [24, 0]));
   show(cap2, lerp(t, [6.4, 6.8], [0, 1]));

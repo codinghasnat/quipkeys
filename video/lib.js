@@ -88,3 +88,36 @@ function tap(t, at, dur = 0.16) { if (t < at || t > at + dur) return 0; const p 
 // typing from `start` with `cps` characters per second.
 function typed(s, t, start, cps = 14) { return s.slice(0, Math.max(0, Math.floor((t - start) * cps))); }
 function esc(s) { return s.replace(/&/g, "&amp;").replace(/</g, "&lt;"); }
+
+// ---------- replaying real engine output ----------
+// typed: the tokens as typed; steps[i]: the engine's whole line after token i
+// (captured from the real decoder). Draws the line at time t, typing from
+// `start` at `cps`: words the engine has changed are blue (with a fading
+// highlight), words it will still change later carry the red squiggle.
+function decodeLine(typed, steps, t, start, cps) {
+  const n = Math.max(0, Math.floor((t - start) * cps));
+  const ends = []; let pos = 0;
+  typed.forEach((w) => { pos += w.length; ends.push(pos); pos += 1; });
+  const done = ends.filter((e) => n >= e + 1).length;
+  const fin = steps[steps.length - 1].split(" ");
+  const cur = done ? steps[done - 1].split(" ") : [];
+  const parts = cur.map((w, j) => {
+    if (w !== typed[j]) {
+      let k = 0; while (steps[k].split(" ")[j] === typed[j]) k++;
+      const at = start + (ends[k] + 1) / cps;
+      const a = 0.28 * lerp(t, [at, at + 1.2], [1, 0], ease.linear);
+      return `<span class="fix" style="background:rgba(26,86,214,${a});border-radius:8px">${esc(w)}</span>`;
+    }
+    return w !== fin[j] ? `<span class="typo">${esc(w)}</span>` : esc(w);
+  });
+  let h = parts.join(" ");
+  if (done < typed.length) {
+    const startOf = done ? ends[done - 1] + 1 : 0;
+    h += (done ? " " : "") + esc(typed[done].slice(0, Math.max(0, n - startOf)));
+  }
+  return { html: h, done, total: typed.length, endT: start + (ends[ends.length - 1] + 1) / cps };
+}
+// a plain spellchecker's result word by word (its first suggestion per word)
+function checkerLine(typed, fixed, done) {
+  return fixed.slice(0, done).map((w, j) => (w !== typed[j] ? `<span style="color:var(--squiggle)">${esc(w)}</span>` : esc(w))).join(" ");
+}
