@@ -1,6 +1,6 @@
 # Pitch-video animations
 
-Twenty short clips to cut between demo footage. Each is 1920×1080, 30 fps, H.264,
+Twenty-four short clips to cut between demo footage. Each is 1920×1080, 30 fps, H.264,
 with no audio. They use the same look as the website: yellow paper, keycaps,
 red squiggles for typos and blue for fixes. The finished files are in `out/`.
 
@@ -26,6 +26,10 @@ red squiggles for typos and blue for fixes. The finished files are in `out/`.
 | `18-spell-by-sound` | 10.5 s | "can you sea the oshun", "it was a nise restorant", "i need sum noledge", fixed as typed (real output, Spell by sound on). Under each one is what a normal spellchecker makes of it: "sea the shun", "niche restoration", "sum no ledge" | Footnote: fixes about 3 in 4 sound spellings in real sentences, and misses some |
 | `19-build-it-together` | 8 s | Logo, repo link, and idea cards that anyone can pick up (layouts, languages, Linux, "Your idea here") | "Free. The code's public. Not perfect yet. Let's build it together." Licence footnote |
 | `20-same-keystrokes` | 14.8 s | Three wrecked sentences (14–17 letters wrong) typed out. A normal spellchecker (Hunspell, real output) gives "opus voteless ti you"; QuipKeys (real output, word by word) gives "happy birthday to you" | "Same keystrokes. Only one of them can read it." |
+| `21-write-it-for-me` | 11 s | A mail window: "say friday works, many thanks" typed in the reply, the email copied, Ctrl+Alt+W, "Writing…", and the instruction becomes a finished reply | "Type what you mean. It writes the email." The reply wording is labelled as an illustration |
+| `22-either-order` | 10 s | Two lanes, "Copy, then type" and "Type, then copy", reach the same reply | "Copy first or type first. Same reply." |
+| `23-no-tab-hopping` | 10 s | The usual way (7 steps, 2 window switches through an AI chat tab) vs QuipKeys (3 steps, 0 switches) | "No tab-hopping. It writes where you are." |
+| `24-your-model-your-call` | 9 s | Claude (online, your own key, sends only when you press the key) vs a model on your computer (nothing leaves), plus the safety rules | "Pick the brain. QuipKeys does the rest." |
 
 Suggested five for a short cut: 01, 02, 03, 04, 05. For a value-focused cut: 03, 12, 14, 11, 05. The full intro video's script, with a clip for each line, is in [SCRIPT.md](SCRIPT.md).
 

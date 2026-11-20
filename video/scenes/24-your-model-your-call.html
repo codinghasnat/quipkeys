@@ -1,0 +1,25 @@
+<!doctype html><html><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&family=Atkinson+Hyperlegible:wght@400;700&family=IBM+Plex+Mono:wght@400;600&display=block" rel="stylesheet">
+<link rel="stylesheet" href="../style.css"><script src="../lib.js"></script></head><body><div id="stage"></div>
+<script>
+// 24 — Your model, your call: Claude online or a model on your computer,
+// plus the safety rules. Typo fixing stays offline either way.
+const title = el("div", "abs display", null, "Your model. Your call."); title.style.cssText = "left:120px;top:60px;font-size:96px";
+const card = (x, head, lines, colour) => {
+  const c = el("div", "sheet abs"); c.style.cssText += `left:${x}px;top:200px;width:810px;height:360px;padding:30px 36px;border-top:10px solid ${colour}`;
+  c.innerHTML = `<div style="font:900 46px/1 var(--display);font-variation-settings:'wdth' 112;margin-bottom:22px">${head}</div>` +
+    lines.map((l) => `<div style="font:700 30px/1.3 var(--body);margin-bottom:12px;color:var(--ink-soft)">• ${l}</div>`).join("");
+  return c;
+};
+const c1 = card(120, "Claude (online)", ["Best writing", "Your own API key", "Sends your instruction and the copied text only when you press the key"], "var(--fix)");
+const c2 = card(990, "On your computer", ["Nothing leaves your computer", "Ollama, LM Studio and similar", "Plainer writing, a bit slower"], "var(--ink)");
+const chips = ["Off until you switch it on", "Kept typing? It waits on your clipboard", "Passwords and links are never sent", "Typo fixing stays offline"].map((s) => {
+  const d = el("div", "abs tag", null, s); d.style.cssText += "font-size:28px;padding:14px 18px;background:#fff3b0;color:var(--ink)"; return d; });
+const cap = el("div", "abs", null, "Pick the brain. QuipKeys does the rest."); cap.style.cssText = "left:120px;top:850px;font:900 60px/1.05 var(--display);font-variation-settings:'wdth' 118;white-space:nowrap";
+window.scene = { duration: 9, render(t) {
+  show(title, lerp(t, [0.1, 0.5], [0, 1]));
+  [c1, c2].forEach((c, i) => { const a = 0.6 + i * 0.5; show(c, lerp(t, [a, a + 0.35], [0, 1])); c.style.transform = `translateY(${lerp(t, [a, a + 0.5], [40, 0])}px)`; });
+  chips.forEach((c, i) => { const a = 2.4 + i * 0.5; show(c, lerp(t, [a, a + 0.3], [0, 1])); place(c, i % 2 ? 990 : 120, 620 + Math.floor(i / 2) * 90); });
+  show(cap, lerp(t, [5.2, 5.6], [0, 1])); place(cap, 0, lerp(t, [5.2, 5.7], [24, 0]));
+}};
+</script></body></html>

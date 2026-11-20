@@ -1,0 +1,58 @@
+<!doctype html><html><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&family=Atkinson+Hyperlegible:wght@400;700&family=IBM+Plex+Mono:wght@400;600&display=block" rel="stylesheet">
+<link rel="stylesheet" href="../style.css"><script src="../lib.js"></script></head><body><div id="stage"></div>
+<script>
+// 21 — Write it for me: type an instruction, copy the email, press the
+// hotkey; the instruction turns into the finished reply. Illustration: the
+// reply wording here is an example, real wording comes from the chosen model.
+const win = el("div", "sheet abs"); win.style.cssText += "left:120px;top:50px;width:1680px;height:610px;overflow:hidden";
+const bar = el("div", "abs", win); bar.style.cssText = "left:0;top:0;width:1680px;height:58px;display:flex;align-items:center;gap:10px;padding:0 22px;border-bottom:2px solid rgba(23,20,10,.08)";
+bar.innerHTML = `<i style="width:14px;height:14px;border-radius:50%;background:#e8a29a"></i><i style="width:14px;height:14px;border-radius:50%;background:#ecd27e"></i><i style="width:14px;height:14px;border-radius:50%;background:#a8d49a"></i><b style="margin-left:14px;font:700 26px/1 var(--body);color:var(--ink-soft)">Mail</b>`;
+const mail = el("div", "abs", win); mail.style.cssText = "left:40px;top:84px;width:760px;height:490px;background:#f4efd8;border-radius:12px;padding:26px 30px;font:400 30px/1.45 var(--body)";
+mail.innerHTML = `<div style="font-weight:700">Sam Lee</div><div style="color:var(--ink-soft);font-size:24px;margin-bottom:18px">Subject: Friday?</div><span id="body">Hi Hasnat, could we move our call to Friday at 3pm instead? Thursday got busy. Thanks, Sam</span>`;
+const body = mail.querySelector("#body");
+const reply = el("div", "abs", win); reply.style.cssText = "left:840px;top:84px;width:800px;height:490px;border:3px solid rgba(23,20,10,.12);border-radius:12px;padding:24px 28px";
+const rl = el("div", "", reply, "Reply"); rl.style.cssText = "font:700 24px/1 var(--body);color:var(--ink-soft);margin-bottom:18px";
+const rt = el("div", "mono", reply); rt.style.cssText = "font-size:34px;line-height:1.45;white-space:pre-wrap";
+const pill = el("div", "abs tag", win); pill.style.cssText += "left:1440px;top:12px;font-size:22px";
+const copied = el("div", "abs tag", win, "Copied ✓"); copied.style.cssText += "left:640px;top:100px;font-size:22px;background:var(--fix);color:#fff";
+const mk = (txt, w) => { const k = el("div", "cap abs", null, txt); k.style.cssText += `width:${w}px;height:110px;font:700 40px/1 var(--body);border-radius:20px`; return k; };
+const kC = mk("Ctrl", 190), kA = mk("Alt", 190), kW = mk("W", 130);
+const plus = [el("div", "abs", null, "+"), el("div", "abs", null, "+")]; plus.forEach((p) => (p.style.cssText = "font:900 54px/1 var(--display);color:var(--ink-soft)"));
+const mac = el("div", "abs foot", null, "Ctrl + Option + W on a Mac"); mac.style.fontSize = "28px";
+const cap = el("div", "abs", null, "Type what you mean. It writes the email."); cap.style.cssText = "left:120px;top:840px;font:900 62px/1.05 var(--display);font-variation-settings:'wdth' 118;white-space:nowrap";
+const cap2 = el("div", "abs", null, "Your instruction + what you copied → the finished reply, right where you're typing."); cap2.style.cssText = "left:120px;top:930px;font:700 34px/1 var(--body);color:var(--ink-soft);white-space:nowrap";
+const foot = el("div", "abs foot", null, "Illustration: the wording comes from the model you choose. Off until you switch it on."); foot.style.cssText = "left:120px;top:1000px;font-size:24px";
+const INSTR = "say friday works, many thanks";
+const REPLY = "Hi Sam,\n\nFriday at 3pm works for me. Many thanks for moving it!\n\nBest,\nHasnat";
+const T_TYPE = 0.5, CPS = 17, T_COPY = 2.9, T_KEY = 4.3, T_DONE = 6.2;
+window.scene = { duration: 11, render(t) {
+  // 1. instruction typed into the reply
+  if (t < T_DONE) {
+    const s = typed(INSTR, t, T_TYPE, CPS);
+    const writing = t > T_KEY + 0.1;
+    const shimmer = writing ? 0.35 + 0.35 * Math.sin(t * 9) : 1;
+    rt.innerHTML = `<span style="opacity:${shimmer}">${esc(s)}</span>` + (!writing && Math.floor(t * 2.2) % 2 ? "▌" : "");
+  } else {
+    const a = 0.25 * lerp(t, [T_DONE, T_DONE + 1.6], [1, 0], ease.linear);
+    rt.innerHTML = `<span class="fix" style="background:rgba(26,86,214,${a});border-radius:6px">${esc(REPLY)}</span>`;
+  }
+  // 2. the email is selected and copied
+  const sel = lerp(t, [T_COPY, T_COPY + 0.5], [0, 100], ease.inOut);
+  body.style.background = sel > 0 ? `linear-gradient(90deg, rgba(26,86,214,.22) ${sel}%, transparent ${sel}%)` : "";
+  if (t > T_KEY) body.style.background = "";
+  show(copied, t > T_COPY + 0.5 && t < T_KEY + 1.5 ? 1 : 0);
+  // 3. the hotkey
+  const hold = t > T_KEY - 0.2 && t < T_KEY + 0.35;
+  press(kC, hold ? 1 : 0, hold ? "#fff3b0" : ""); press(kA, hold ? 1 : 0, hold ? "#fff3b0" : "");
+  const w = tap(t, T_KEY - 0.05, 0.3); press(kW, w, w ? "#cfe0ff" : "");
+  place(kC, 120, 700); place(plus[0], 330, 725); place(kA, 380, 700); place(plus[1], 590, 725); place(kW, 640, 700);
+  place(mac, 810, 740); show(mac, lerp(t, [T_KEY - 0.6, T_KEY - 0.2], [0, 1]));
+  // status pill
+  if (t > T_KEY + 0.1 && t < T_DONE) { pill.textContent = "Writing…"; pill.style.background = "var(--ink)"; pill.style.color = "var(--paper)"; show(pill, 1); }
+  else if (t >= T_DONE && t < T_DONE + 1.8) { pill.textContent = "Done ✓"; pill.style.background = "var(--fix)"; pill.style.color = "#fff"; show(pill, 1); }
+  else show(pill, 0);
+  show(cap, lerp(t, [7.6, 8.0], [0, 1])); place(cap, 0, lerp(t, [7.6, 8.1], [24, 0]));
+  show(cap2, lerp(t, [8.1, 8.5], [0, 1])); show(foot, lerp(t, [8.4, 8.8], [0, 1]));
+}};
+</script></body></html>

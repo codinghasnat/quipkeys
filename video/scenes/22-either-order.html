@@ -1,0 +1,37 @@
+<!doctype html><html><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&family=Atkinson+Hyperlegible:wght@400;700&family=IBM+Plex+Mono:wght@400;600&display=block" rel="stylesheet">
+<link rel="stylesheet" href="../style.css"><script src="../lib.js"></script></head><body><div id="stage"></div>
+<script>
+// 22 — Either order: copy first or type first, the same reply comes out.
+const title = el("div", "abs display", null, "Either order."); title.style.cssText = "left:120px;top:60px;font-size:100px";
+const lanes = [
+  { name: "Copy, then type", steps: ["copy", "type", "key"], x: 120 },
+  { name: "Type, then copy", steps: ["type", "copy", "key"], x: 990 },
+].map((L) => {
+  const box = el("div", "sheet abs"); box.style.cssText += `left:${L.x}px;top:210px;width:810px;height:560px;padding:34px 38px`;
+  const h = el("div", "", box, L.name); h.style.cssText = "font:900 44px/1 var(--display);font-variation-settings:'wdth' 112;margin-bottom:26px";
+  const rows = L.steps.map((s, i) => {
+    const r = el("div", "", box); r.style.cssText = "display:flex;align-items:center;gap:16px;font:700 36px/1.2 var(--body);margin:0 0 22px";
+    const label = { copy: "Copy the email", type: "Type “say yes, thanks”", key: "Press Ctrl+Alt+W" }[s];
+    r.innerHTML = `<span style="width:52px;height:52px;border-radius:50%;background:var(--ink);color:var(--paper);display:grid;place-items:center;font:900 28px/1 var(--display)">${i + 1}</span><span>${label}</span>`;
+    return r;
+  });
+  const res = el("div", "mono", box); res.style.cssText = "margin-top:26px;padding:20px 22px;border:3px solid rgba(23,20,10,.12);border-radius:12px;font-size:34px;line-height:1.4;white-space:pre-wrap;min-height:140px";
+  return { ...L, rows, res };
+});
+const cap = el("div", "abs", null, "Copy first or type first. Same reply."); cap.style.cssText = "left:120px;top:870px;font:900 60px/1.05 var(--display);font-variation-settings:'wdth' 118;white-space:nowrap";
+const cap2 = el("div", "abs", null, "Even if you clicked away to copy, it finds your instruction and checks it before replacing it."); cap2.style.cssText = "left:120px;top:960px;font:700 32px/1 var(--body);color:var(--ink-soft);white-space:nowrap";
+const REPLY = "Hi Sam, yes, Friday at 3pm\nworks. Thanks!";
+window.scene = { duration: 10, render(t) {
+  show(title, lerp(t, [0.1, 0.5], [0, 1]));
+  lanes.forEach((L, li) => {
+    const t0 = 0.8 + li * 0.25;
+    L.rows.forEach((r, i) => { const a = t0 + i * 1.1; show(r, lerp(t, [a, a + 0.3], [0, 1])); r.style.transform = `translateX(${lerp(t, [a, a + 0.4], [-30, 0])}px)`; });
+    const done = t0 + 3 * 1.1 + 0.6;
+    if (t < done) L.res.innerHTML = `<span style="color:var(--ink-soft)">${t > done - 0.7 ? "Writing…" : ""}</span>`;
+    else L.res.innerHTML = `<span class="fix">${esc(REPLY)}</span>`;
+  });
+  show(cap, lerp(t, [5.8, 6.2], [0, 1])); place(cap, 0, lerp(t, [5.8, 6.3], [24, 0]));
+  show(cap2, lerp(t, [6.3, 6.7], [0, 1]));
+}};
+</script></body></html>
