@@ -22,7 +22,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Condvar, Mutex, OnceLock};
 use std::time::Instant;
 
-use crate::core::{Action, Core, Key};
+use crate::compose::{self, Ops, Status};
+use crate::core::{Action, ComposeReq, Core, Key};
 use crate::settings;
 use crate::ui::{notify, UiEvent};
 
@@ -92,6 +93,13 @@ const FLAG_COMMAND: u64 = 0x0010_0000;
 // Virtual key codes (Events.h, ANSI layout positions).
 const KC_Q: i64 = 12;
 const KC_N: i64 = 45;
+const KC_W: i64 = 13;
+const KC_C: u16 = 8;
+const KC_V: u16 = 9;
+const KC_LEFT: u16 = 123;
+const KC_RIGHT: u16 = 124;
+/// Real arrow-key events carry the numeric-pad and function-key flags.
+const ARROW_FLAGS: u64 = 0x0020_0000 | 0x0080_0000;
 const KC_RETURN: i64 = 36;
 const KC_TAB: i64 = 48;
 const KC_SPACE: i64 = 49;
@@ -151,6 +159,7 @@ pub fn start(core: Core) {
         .set((Mutex::new(Shared { busy: false, jobs: VecDeque::new(), last_pid: -1, excluded: false, gen: u32::MAX }), Condvar::new()))
         .ok();
     std::thread::spawn(worker);
+    compose::watch_clipboard(pasteboard_change_count);
     std::thread::spawn(|| unsafe {
         let mask = (1u64 << KEY_DOWN) | (1 << LEFT_MOUSE_DOWN) | (1 << RIGHT_MOUSE_DOWN) | (1 << OTHER_MOUSE_DOWN);
         // Wait for permission (the welcome window walks the user through it).
@@ -284,6 +293,9 @@ unsafe fn translate(ev: CGEventRef) -> Key {
     if ctrl && opt && kc == KC_N {
         return Key::NextGuess;
     }
+    if ctrl && opt && kc == KC_W {
+        return Key::Compose;
+    }
     let caret_key = matches!(kc, KC_RETURN | KC_TAB | KC_ESCAPE | KC_KEYPAD_ENTER) || KC_NAV.contains(&kc);
     if ctrl || cmd || (opt && (caret_key || kc == KC_SPACE || kc == KC_DELETE as i64)) {
         return Key::Reset; // a shortcut, or Option moving the caret / deleting a word
@@ -373,7 +385,7 @@ unsafe extern "C" fn callback(_proxy: CGEventTapProxy, ty: u32, ev: CGEventRef, 
     }
     if sh.busy {
         return match key {
-            Key::Char(..) | Key::Space(_) | Key::Backspace | Key::Toggle | Key::NextGuess => {
+            Key::Char(..) | Key::Space(_) | Key::Backspace | Key::Toggle | Key::NextGuess | Key::Compose => {
                 sh.jobs.push_back(Job::Held(key));
                 std::ptr::null_mut()
             }
@@ -395,6 +407,10 @@ unsafe extern "C" fn callback(_proxy: CGEventTapProxy, ty: u32, ev: CGEventRef, 
     match action {
         Action::Pass => ev,
         Action::Swallow => std::ptr::null_mut(),
+        Action::Compose(req) => {
+            start_compose(req);
+            std::ptr::null_mut()
+        }
         Action::Replace { backspaces, text } => {
             sh.busy = true;
             sh.jobs.push_back(Job::Fix(backspaces, text));
@@ -436,6 +452,7 @@ fn worker() {
                 match action {
                     Action::Pass => replay(&key),
                     Action::Replace { backspaces, text } => type_fix(backspaces, &text),
+                    Action::Compose(req) => start_compose(req),
                     Action::Swallow => {}
                 }
             }
@@ -505,5 +522,181 @@ fn replay(key: &Key) {
             pause("QK_BS_DELAY_MS", 3.0);
         }
         _ => {}
+    }
+}
+
+// ------------------------------------------------------------ write it for me
+
+#[link(name = "objc")]
+extern "C" {
+    fn objc_getClass(name: *const std::ffi::c_char) -> *mut c_void;
+    fn sel_registerName(name: *const std::ffi::c_char) -> *mut c_void;
+    fn objc_msgSend();
+    fn objc_autoreleasePoolPush() -> *mut c_void;
+    fn objc_autoreleasePoolPop(pool: *mut c_void);
+}
+#[link(name = "AppKit", kind = "framework")]
+extern "C" {
+    static NSPasteboardTypeString: *mut c_void;
+}
+
+type Id = *mut c_void;
+
+/// objc_msgSend with no arguments.
+unsafe fn msg0(obj: Id, sel: &std::ffi::CStr) -> Id {
+    let f: unsafe extern "C" fn(Id, Id) -> Id = std::mem::transmute(objc_msgSend as *const ());
+    f(obj, sel_registerName(sel.as_ptr()))
+}
+
+/// objc_msgSend with one or two pointer arguments.
+unsafe fn msg1(obj: Id, sel: &std::ffi::CStr, a: *const c_void) -> Id {
+    let f: unsafe extern "C" fn(Id, Id, *const c_void) -> Id = std::mem::transmute(objc_msgSend as *const ());
+    f(obj, sel_registerName(sel.as_ptr()), a)
+}
+
+unsafe fn msg2(obj: Id, sel: &std::ffi::CStr, a: *const c_void, b: *const c_void) -> Id {
+    let f: unsafe extern "C" fn(Id, Id, *const c_void, *const c_void) -> Id = std::mem::transmute(objc_msgSend as *const ());
+    f(obj, sel_registerName(sel.as_ptr()), a, b)
+}
+
+unsafe fn general_pasteboard() -> Id {
+    let class = objc_getClass(c"NSPasteboard".as_ptr());
+    if class.is_null() {
+        return std::ptr::null_mut();
+    }
+    msg0(class, c"generalPasteboard")
+}
+
+/// The clipboard's plain text, if it has any.
+fn pasteboard_text() -> Option<String> {
+    unsafe {
+        let pool = objc_autoreleasePoolPush();
+        let mut out = None;
+        let board = general_pasteboard();
+        if !board.is_null() {
+            let s = msg1(board, c"stringForType:", NSPasteboardTypeString);
+            if !s.is_null() {
+                let utf8 = msg0(s, c"UTF8String") as *const std::ffi::c_char;
+                if !utf8.is_null() {
+                    out = Some(std::ffi::CStr::from_ptr(utf8).to_string_lossy().into_owned());
+                }
+            }
+        }
+        objc_autoreleasePoolPop(pool);
+        out
+    }
+}
+
+/// Put plain text on the clipboard.
+fn set_pasteboard_text(text: &str) {
+    let Ok(c) = std::ffi::CString::new(text.replace('\0', "")) else { return };
+    unsafe {
+        let pool = objc_autoreleasePoolPush();
+        let board = general_pasteboard();
+        let class = objc_getClass(c"NSString".as_ptr());
+        if !board.is_null() && !class.is_null() {
+            let s = msg1(class, c"stringWithUTF8String:", c.as_ptr() as *const c_void);
+            if !s.is_null() {
+                msg0(board, c"clearContents");
+                msg2(board, c"setString:forType:", s, NSPasteboardTypeString);
+            }
+        }
+        objc_autoreleasePoolPop(pool);
+    }
+}
+#[link(name = "ApplicationServices", kind = "framework")]
+extern "C" {
+    fn CGEventSourceFlagsState(state: i32) -> u64;
+}
+
+/// NSPasteboard.generalPasteboard.changeCount: bumps on every copy. Only the
+/// counter is read, never the contents.
+fn pasteboard_change_count() -> u64 {
+    unsafe {
+        let pool = objc_autoreleasePoolPush();
+        let board = general_pasteboard();
+        let n = if board.is_null() { 0 } else { msg0(board, c"changeCount") as u64 };
+        objc_autoreleasePoolPop(pool);
+        n
+    }
+}
+
+fn start_compose(req: ComposeReq) {
+    let gen0 = CORE.get().unwrap().lock().unwrap().generation();
+    compose::spawn(req, gen0, Box::new(MacOps));
+}
+
+/// Keyboard and clipboard work for compose.rs.
+struct MacOps;
+
+/// Wait (up to 3 s) until Control, Option, Shift and Command are let go, so
+/// injected keys aren't combined with held ones.
+fn modifiers_released() {
+    const HELD: u64 = FLAG_SHIFT | FLAG_CONTROL | FLAG_OPTION | FLAG_COMMAND;
+    for _ in 0..150 {
+        // 1 = kCGEventSourceStateHIDSystemState: the physical keys.
+        if unsafe { CGEventSourceFlagsState(1) } & HELD == 0 {
+            return;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+}
+
+/// One key press with modifier flags, tagged with our marker.
+fn post_with_flags(keycode: u16, flags: u64) {
+    unsafe {
+        for down in [true, false] {
+            let ev = CGEventCreateKeyboardEvent(std::ptr::null(), keycode, down);
+            if ev.is_null() {
+                return;
+            }
+            CGEventSetFlags(ev, flags);
+            CGEventSetIntegerValueField(ev, FIELD_USER_DATA, MARKER);
+            CGEventPost(HID_TAP, ev);
+            CFRelease(ev as CFTypeRef);
+        }
+    }
+    pause("QK_KEY_DELAY_MS", 2.0);
+}
+
+impl Ops for MacOps {
+    fn clipboard_text(&self) -> Option<String> {
+        pasteboard_text()
+    }
+    fn clipboard_age(&self) -> Option<std::time::Duration> {
+        compose::clipboard_age()
+    }
+    fn set_clipboard(&self, text: &str) {
+        set_pasteboard_text(text);
+    }
+    fn backspace(&self, n: usize) {
+        modifiers_released();
+        type_fix(n, "");
+    }
+    fn select_left(&self, n: usize) {
+        modifiers_released();
+        for _ in 0..n {
+            post_with_flags(KC_LEFT, FLAG_SHIFT | ARROW_FLAGS);
+        }
+    }
+    fn deselect(&self) {
+        post_with_flags(KC_RIGHT, ARROW_FLAGS);
+    }
+    fn copy(&self) {
+        modifiers_released();
+        post_with_flags(KC_C, FLAG_COMMAND);
+    }
+    fn paste(&self) {
+        modifiers_released();
+        post_with_flags(KC_V, FLAG_COMMAND);
+    }
+    fn generation(&self) -> u64 {
+        CORE.get().unwrap().lock().unwrap().generation()
+    }
+    fn wait(&self, ms: u64) {
+        std::thread::sleep(std::time::Duration::from_millis(ms));
+    }
+    fn status(&self, s: Status) {
+        notify(UiEvent::Compose(s));
     }
 }

@@ -21,7 +21,8 @@ use windows_sys::Win32::System::Threading::{OpenProcess, QueryFullProcessImageNa
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::*;
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
 
-use crate::core::{Action, Core, Key};
+use crate::compose::{self, Ops, Status};
+use crate::core::{Action, ComposeReq, Core, Key};
 use crate::settings;
 use crate::ui::{notify, UiEvent};
 
@@ -72,6 +73,7 @@ pub fn start(core: Core) {
         ))
         .ok();
     std::thread::spawn(worker);
+    compose::watch_clipboard(|| unsafe { windows_sys::Win32::System::DataExchange::GetClipboardSequenceNumber() as u64 });
     std::thread::spawn(|| unsafe {
         let module = GetModuleHandleW(std::ptr::null());
         KB_HOOK = SetWindowsHookExW(WH_KEYBOARD_LL, Some(keyboard_hook), module, 0);
@@ -212,6 +214,9 @@ unsafe fn translate(kb: &KBDLLHOOKSTRUCT, hwnd: HWND) -> Option<Key> {
     if ctrl && alt && !altgr && vk == b'N' as u16 {
         return Some(Key::NextGuess);
     }
+    if ctrl && alt && !altgr && vk == b'W' as u16 {
+        return Some(Key::Compose);
+    }
     if !altgr && (ctrl || alt) || down(VK_LWIN) || down(VK_RWIN) {
         return Some(Key::Reset); // a shortcut
     }
@@ -294,7 +299,7 @@ unsafe extern "system" fn keyboard_hook(code: i32, wparam: WPARAM, lparam: LPARA
         // A fix is being typed. Hold plain keys back and replay them after;
         // let anything else through and forget the tracked text.
         return match key {
-            Key::Char(..) | Key::Space(_) | Key::Backspace | Key::Toggle | Key::NextGuess => {
+            Key::Char(..) | Key::Space(_) | Key::Backspace | Key::Toggle | Key::NextGuess | Key::Compose => {
                 sh.jobs.push_back(Job::Held(key));
                 1
             }
@@ -317,6 +322,10 @@ unsafe extern "system" fn keyboard_hook(code: i32, wparam: WPARAM, lparam: LPARA
     match action {
         Action::Pass => CallNextHookEx(KB_HOOK, code, wparam, lparam),
         Action::Swallow => 1,
+        Action::Compose(req) => {
+            start_compose(req);
+            1
+        }
         Action::Replace { backspaces, text } => {
             sh.busy = true;
             sh.jobs.push_back(Job::Fix(backspaces, text));
@@ -371,6 +380,7 @@ fn worker() {
                 match action {
                     Action::Pass => replay(&key),
                     Action::Replace { backspaces, text } => type_fix(backspaces, &text),
+                    Action::Compose(req) => start_compose(req),
                     Action::Swallow => {}
                 }
             }
@@ -423,4 +433,77 @@ fn replay(key: &Key) {
         _ => {}
     }
     send(&v);
+}
+
+// ------------------------------------------------------------ write it for me
+
+fn start_compose(req: ComposeReq) {
+    let gen0 = CORE.get().unwrap().lock().unwrap().generation();
+    compose::spawn(req, gen0, Box::new(WinOps));
+}
+
+/// Keyboard and clipboard work for compose.rs.
+struct WinOps;
+
+/// Wait (up to 3 s) until the user has let go of Ctrl, Alt, Shift and Win,
+/// so injected keys aren't combined with held ones (Ctrl+Alt+V...).
+fn modifiers_released() {
+    for _ in 0..150 {
+        if ![VK_CONTROL, VK_MENU, VK_SHIFT, VK_LWIN, VK_RWIN].into_iter().any(down) {
+            return;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+}
+
+fn chord(modifier: u16, key: u16) {
+    send(&[key_input(modifier, 0, 0), key_input(key, 0, 0), key_input(key, 0, KEYEVENTF_KEYUP), key_input(modifier, 0, KEYEVENTF_KEYUP)]);
+}
+
+impl Ops for WinOps {
+    fn clipboard_text(&self) -> Option<String> {
+        arboard::Clipboard::new().ok()?.get_text().ok()
+    }
+    fn clipboard_age(&self) -> Option<std::time::Duration> {
+        compose::clipboard_age()
+    }
+    fn set_clipboard(&self, text: &str) {
+        if let Ok(mut c) = arboard::Clipboard::new() {
+            let _ = c.set_text(text.to_string());
+        }
+    }
+    fn backspace(&self, n: usize) {
+        modifiers_released();
+        type_fix(n, "");
+    }
+    fn select_left(&self, n: usize) {
+        modifiers_released();
+        let mut v = vec![key_input(VK_SHIFT, 0, 0)];
+        for _ in 0..n {
+            v.push(key_input(VK_LEFT, 0, KEYEVENTF_EXTENDEDKEY));
+            v.push(key_input(VK_LEFT, 0, KEYEVENTF_EXTENDEDKEY | KEYEVENTF_KEYUP));
+        }
+        v.push(key_input(VK_SHIFT, 0, KEYEVENTF_KEYUP));
+        send(&v);
+    }
+    fn deselect(&self) {
+        send(&[key_input(VK_RIGHT, 0, KEYEVENTF_EXTENDEDKEY), key_input(VK_RIGHT, 0, KEYEVENTF_EXTENDEDKEY | KEYEVENTF_KEYUP)]);
+    }
+    fn copy(&self) {
+        modifiers_released();
+        chord(VK_CONTROL, b'C' as u16);
+    }
+    fn paste(&self) {
+        modifiers_released();
+        chord(VK_CONTROL, b'V' as u16);
+    }
+    fn generation(&self) -> u64 {
+        CORE.get().unwrap().lock().unwrap().generation()
+    }
+    fn wait(&self, ms: u64) {
+        std::thread::sleep(std::time::Duration::from_millis(ms));
+    }
+    fn status(&self, s: Status) {
+        notify(UiEvent::Compose(s));
+    }
 }

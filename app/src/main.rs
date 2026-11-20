@@ -7,6 +7,8 @@
 #![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 #![cfg_attr(not(any(windows, target_os = "macos")), allow(dead_code))]
 
+mod ai;
+mod compose;
 mod core;
 #[cfg(target_os = "macos")]
 mod macos;

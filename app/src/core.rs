@@ -7,7 +7,7 @@
 //! into [`Key`]s, asks [`Core::on_key`] what to do, and performs the answer.
 
 use std::path::PathBuf;
-use std::time::SystemTime;
+use std::time::{Duration, Instant, SystemTime};
 
 use quipkeys::profile::Tallies;
 use quipkeys::{Config, Engine, Stream};
@@ -33,6 +33,31 @@ pub enum Key {
     /// The "next guess" hotkey: swap the word just typed for the next most
     /// likely reading ("ship" -> "shop"); press again for the one after.
     NextGuess,
+    /// The "write it for me" hotkey: turn what was just typed into a prompt,
+    /// with the clipboard as context (see compose.rs).
+    Compose,
+}
+
+/// How the instruction for a compose request is on screen, so it can be
+/// replaced by the reply.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Grab {
+    /// Typed just now, caret straight after it: delete this many characters.
+    Typed(usize),
+    /// Typed earlier, before a click or app switch (the user went to copy the
+    /// context and came back). The caret is probably at its end again: select
+    /// that many characters back and check the selection is exactly `text`
+    /// before replacing it.
+    Earlier(String),
+    /// Nothing typed: insert at the caret.
+    Nothing,
+}
+
+/// A compose request: the instruction (what the user typed) and where it is.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ComposeReq {
+    pub instruction: String,
+    pub grab: Grab,
 }
 
 /// What the platform layer should do with the key it just reported.
@@ -44,7 +69,14 @@ pub enum Action {
     Replace { backspaces: usize, text: String },
     /// Swallow the key and do nothing else (the toggle hotkey).
     Swallow,
+    /// Swallow the key and start a compose request (see compose.rs).
+    Compose(ComposeReq),
 }
+
+/// An earlier run of typing stays usable as an instruction for this long.
+const PARKED_FOR: Duration = Duration::from_secs(10 * 60);
+/// Longest instruction kept (characters); longer runs aren't instructions.
+const RUN_MAX: usize = 2000;
 
 /// How many recent words may still be changed on screen. Older edits from the
 /// stream (rare) are ignored rather than reaching far back into the text.
@@ -95,6 +127,17 @@ pub struct Core {
     words_path: Option<PathBuf>,
     words_stamp: Option<SystemTime>,
     personal: Vec<String>,
+    /// Exactly what has been typed into the field since the caret last moved
+    /// (corrections included), for the compose hotkey. Memory only.
+    run: String,
+    /// False once the run stops matching the screen (deleted past its start,
+    /// or grew too long).
+    run_ok: bool,
+    /// The previous run, kept for a few minutes after a click or app switch.
+    parked: Option<(String, Instant)>,
+    /// Bumped on every key, so a slow compose request can tell whether the
+    /// user carried on typing (or clicked) while it waited.
+    generation: u64,
 }
 
 /// The letters of a typed chunk that make it a word ("Hasnat," -> "hasnat").
@@ -187,6 +230,10 @@ impl Core {
             words_path,
             words_stamp: None,
             personal: Vec::new(),
+            run: String::new(),
+            run_ok: true,
+            parked: None,
+            generation: 0,
         };
         core.reset();
         // Build the engine's lazy tables now, off the keyboard hook's thread:
@@ -243,7 +290,73 @@ impl Core {
         std::mem::take(&mut self.notes)
     }
 
+    /// Increases with every key the core sees (see `generation` above).
+    pub fn generation(&self) -> u64 {
+        self.generation
+    }
+
     pub fn on_key(&mut self, key: Key) -> Action {
+        self.generation += 1;
+        if key == Key::Compose {
+            return self.compose();
+        }
+        let action = self.on_key_inner(key.clone());
+        self.track_run(&key, &action);
+        action
+    }
+
+    /// Keep `run` equal to what this field shows since the caret last moved.
+    fn track_run(&mut self, key: &Key, action: &Action) {
+        match (key, action) {
+            (Key::Reset | Key::Toggle, _) => {
+                let run = std::mem::take(&mut self.run);
+                if self.run_ok && !run.trim().is_empty() {
+                    self.parked = Some((run, Instant::now()));
+                }
+                self.run_ok = true;
+            }
+            (_, Action::Replace { backspaces, text }) => {
+                let keep = self.run.chars().count().checked_sub(*backspaces);
+                match keep {
+                    Some(k) => {
+                        self.run = self.run.chars().take(k).collect();
+                        self.run.push_str(text);
+                    }
+                    None => self.run_ok = false,
+                }
+            }
+            (_, Action::Swallow | Action::Compose(_)) => {}
+            (Key::Char(c, _), Action::Pass) => self.run.push(*c),
+            (Key::Space(_), Action::Pass) => self.run.push(' '),
+            // A character we can't read: the run still has the right length.
+            (Key::Unknown, Action::Pass) => self.run.push('\u{FFFD}'),
+            (Key::Backspace, Action::Pass) if self.run.pop().is_none() => self.run_ok = false,
+            _ => {}
+        }
+        if self.run.chars().count() > RUN_MAX {
+            self.run_ok = false;
+        }
+    }
+
+    /// The compose hotkey: what was typed becomes the instruction.
+    fn compose(&mut self) -> Action {
+        let parked = self.parked.take().filter(|(_, at)| at.elapsed() < PARKED_FOR).map(|(t, _)| t);
+        let req = if self.run_ok && !self.run.trim().is_empty() {
+            ComposeReq { instruction: self.run.trim().to_string(), grab: Grab::Typed(self.run.chars().count()) }
+        } else if self.run.is_empty() && parked.is_some() {
+            let text = parked.unwrap();
+            ComposeReq { instruction: text.trim().to_string(), grab: Grab::Earlier(text) }
+        } else {
+            ComposeReq { instruction: String::new(), grab: Grab::Nothing }
+        };
+        // The text on screen is about to change: start afresh.
+        self.reset();
+        self.run.clear();
+        self.run_ok = true;
+        Action::Compose(req)
+    }
+
+    fn on_key_inner(&mut self, key: Key) -> Action {
         if key != Key::NextGuess {
             self.guess = None;
             self.guess_learned = None;
@@ -318,7 +431,7 @@ impl Core {
             }
             Key::Space(_) => self.commit(),
             Key::NextGuess => self.next_guess(),
-            Key::Toggle => unreachable!(),
+            Key::Toggle | Key::Compose => unreachable!(),
         }
     }
 
@@ -458,7 +571,7 @@ mod tests {
                     }
                     screen.push_str(&text);
                 }
-                Action::Swallow => {}
+                Action::Swallow | Action::Compose(_) => {}
             }
         }
         screen
@@ -736,6 +849,82 @@ mod guess {
         k.push(Key::NextGuess);
         simulate(&mut c, &k);
         assert_eq!(c.take_notes(), vec![("wamt".to_string(), "want".to_string()), ("want".to_string(), "wait".to_string())]);
+    }
+
+    fn compose_req(core: &mut Core) -> ComposeReq {
+        match core.on_key(Key::Compose) {
+            Action::Compose(r) => r,
+            a => panic!("expected a compose request, got {a:?}"),
+        }
+    }
+
+    #[test]
+    fn compose_takes_what_was_just_typed() {
+        let mut c = Core::new();
+        let screen = simulate(&mut c, &keys("say thanks and yes to friday "));
+        let r = compose_req(&mut c);
+        assert_eq!(r.instruction, screen.trim());
+        // Deleting exactly what's on screen removes the instruction.
+        assert_eq!(r.grab, Grab::Typed(screen.chars().count()));
+    }
+
+    #[test]
+    fn compose_counts_corrected_text() {
+        let mut c = Core::new();
+        let screen = simulate(&mut c, &keys("tell tehm I wamt to come "));
+        assert_ne!(screen, "tell tehm I wamt to come ", "the typos should have been fixed");
+        let r = compose_req(&mut c);
+        assert_eq!(r.grab, Grab::Typed(screen.chars().count()));
+        assert_eq!(r.instruction, screen.trim());
+    }
+
+    #[test]
+    fn compose_finds_instruction_typed_before_copying() {
+        // Type the instruction, click away to copy the email, click back.
+        let mut c = Core::new();
+        let screen = simulate(&mut c, &keys("reply yes please"));
+        c.on_key(Key::Reset);
+        c.on_key(Key::Reset);
+        let r = compose_req(&mut c);
+        assert_eq!(r.instruction, "reply yes please");
+        assert_eq!(r.grab, Grab::Earlier(screen));
+        // Used once: a second press has nothing to work with.
+        assert_eq!(compose_req(&mut c).grab, Grab::Nothing);
+    }
+
+    #[test]
+    fn compose_prefers_new_typing_over_earlier() {
+        let mut c = Core::new();
+        simulate(&mut c, &keys("old idea"));
+        c.on_key(Key::Reset);
+        let screen = simulate(&mut c, &keys("new idea"));
+        assert_eq!(compose_req(&mut c).grab, Grab::Typed(screen.chars().count()));
+    }
+
+    #[test]
+    fn compose_with_nothing_typed_inserts_at_caret() {
+        let mut c = Core::new();
+        assert_eq!(compose_req(&mut c), ComposeReq { instruction: String::new(), grab: Grab::Nothing });
+    }
+
+    #[test]
+    fn compose_gives_up_on_text_it_cannot_account_for() {
+        // Backspacing into text typed before the caret moved: the run no
+        // longer matches the screen, so nothing may be deleted.
+        let mut c = Core::new();
+        simulate(&mut c, &keys("ab"));
+        c.on_key(Key::Reset);
+        simulate(&mut c, &[Key::Backspace]);
+        simulate(&mut c, &keys("xy"));
+        assert_eq!(compose_req(&mut c).grab, Grab::Nothing);
+    }
+
+    #[test]
+    fn generation_moves_with_every_key() {
+        let mut c = Core::new();
+        let g = c.generation();
+        simulate(&mut c, &keys("a"));
+        assert!(c.generation() > g);
     }
 }
 

@@ -341,3 +341,86 @@ pub fn single_instance() -> bool {
         }
     }
 }
+
+// ---------------------------------------------------------- write it for me
+
+/// A text setting from quipkeys-settings.txt ("name=value").
+fn value(name: &str) -> Option<String> {
+    let text = std::fs::read_to_string(settings_path()).ok()?;
+    text.lines().find_map(|l| l.strip_prefix(&format!("{name}="))).map(|v| v.trim().to_string()).filter(|v| !v.is_empty())
+}
+
+fn set_value(name: &str, v: &str) {
+    let old = std::fs::read_to_string(settings_path()).unwrap_or_default();
+    let mut lines: Vec<String> =
+        old.lines().filter(|l| !l.trim().starts_with(&format!("{name}="))).map(String::from).collect();
+    let v: String = v.chars().filter(|c| !c.is_control()).collect();
+    if !v.trim().is_empty() {
+        lines.push(format!("{name}={}", v.trim()));
+    }
+    let _ = std::fs::write(settings_path(), lines.join("\n") + "\n");
+}
+
+/// The Claude API key lives in its own file (readable only by you on macOS),
+/// never in the settings file. ANTHROPIC_API_KEY in the environment works too.
+fn claude_key_path() -> PathBuf {
+    config_dir().join("quipkeys-claude-key.txt")
+}
+
+pub fn has_claude_key() -> bool {
+    !claude_key().is_empty()
+}
+
+fn claude_key() -> String {
+    std::fs::read_to_string(claude_key_path())
+        .ok()
+        .map(|k| k.trim().to_string())
+        .filter(|k| !k.is_empty())
+        .or_else(|| std::env::var("ANTHROPIC_API_KEY").ok())
+        .unwrap_or_default()
+}
+
+/// Save the key (an empty string removes it).
+pub fn set_claude_key(key: &str) {
+    let key = key.trim();
+    if key.is_empty() {
+        let _ = std::fs::remove_file(claude_key_path());
+        return;
+    }
+    let _ = std::fs::write(claude_key_path(), key);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(claude_key_path(), std::fs::Permissions::from_mode(0o600));
+    }
+}
+
+/// The model "write it for me" uses (off until the user picks one).
+pub fn ai_provider() -> crate::ai::Provider {
+    use crate::ai::{Provider, CLAUDE_MODEL, LOCAL_MODEL, LOCAL_URL};
+    match value("ai").as_deref() {
+        Some("claude") => Provider::Claude { api_key: claude_key(), model: value("ai_claude_model").unwrap_or(CLAUDE_MODEL.into()) },
+        Some("local") => Provider::Local {
+            url: value("ai_local_url").unwrap_or(LOCAL_URL.into()),
+            model: value("ai_local_model").unwrap_or(LOCAL_MODEL.into()),
+        },
+        _ => Provider::Off,
+    }
+}
+
+/// The settings window's fields, as stored (empty = default).
+pub fn ai_fields() -> [String; 4] {
+    [
+        value("ai").unwrap_or_else(|| "off".into()),
+        value("ai_claude_model").unwrap_or_default(),
+        value("ai_local_url").unwrap_or_default(),
+        value("ai_local_model").unwrap_or_default(),
+    ]
+}
+
+pub fn set_ai(kind: &str, claude_model: &str, local_url: &str, local_model: &str) {
+    set_value("ai", if matches!(kind, "claude" | "local") { kind } else { "off" });
+    set_value("ai_claude_model", claude_model);
+    set_value("ai_local_url", local_url);
+    set_value("ai_local_model", local_model);
+}

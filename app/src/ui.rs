@@ -21,6 +21,13 @@ use crate::windows as platform;
 
 const WELCOME: &str = include_str!("welcome.html");
 const WORDS: &str = include_str!("words.html");
+const COMPOSE: &str = include_str!("compose.html");
+#[cfg(windows)]
+const COMPOSE_KEY: &str = "Ctrl+Alt+W";
+#[cfg(target_os = "macos")]
+const COMPOSE_KEY: &str = "Ctrl+Option+W";
+/// How long a "write it for me" notice stays up.
+const NOTICE_FOR: std::time::Duration = std::time::Duration::from_secs(7);
 #[cfg(target_os = "macos")]
 const HOTKEY: &str = "Ctrl+Option+Q";
 #[cfg(windows)]
@@ -45,6 +52,12 @@ pub enum UiEvent {
     Ipc(String),
     /// Words QuipKeys just changed: (what was on screen, what replaced it).
     Fixed(Vec<(String, String)>),
+    /// Progress of a "write it for me" request.
+    Compose(crate::compose::Status),
+    /// Open the "Write it for me" settings (the hotkey was pressed with no model chosen).
+    OpenCompose,
+    /// The answer to "Try it" in the settings window.
+    ComposeTest(Result<String, String>),
 }
 
 /// How long the icon flashes blue after a change.
@@ -74,6 +87,7 @@ struct Items {
     login: CheckMenuItem,
     excluded: MenuItem,
     words: MenuItem,
+    compose: MenuItem,
     welcome: MenuItem,
     quit: MenuItem,
 }
@@ -99,6 +113,12 @@ struct App {
     fixes: std::collections::VecDeque<(String, String)>,
     /// The icon shows the "just fixed" colour until then.
     flash_until: Option<std::time::Instant>,
+    /// The "Write it for me" settings window.
+    compose: Option<Page>,
+    /// A short message about a "write it for me" request, closed at the given time.
+    notice: Option<(Page, std::time::Instant)>,
+    /// A "write it for me" request is waiting for the model.
+    writing: bool,
 }
 
 pub fn run() {
@@ -130,6 +150,7 @@ pub fn run() {
         login: CheckMenuItem::new("Start at login", true, settings::start_at_login(), None),
         excluded: MenuItem::new("Edit excluded apps…", true, None),
         words: MenuItem::new("My words…", true, None),
+        compose: MenuItem::new(format!("Write it for me…\t{COMPOSE_KEY}"), true, None),
         welcome: MenuItem::new("Welcome & privacy…", true, None),
         quit: MenuItem::new("Quit QuipKeys", true, None),
     };
@@ -138,13 +159,14 @@ pub fn run() {
     }
     let _ = items.recent.append(&PredefinedMenuItem::separator());
     let _ = items.recent.append(&MenuItem::new(format!("Wrong word? Press {NEXT_KEY} straight after it"), false, None));
-    let mut app = App { tray: None, items, on: true, running: platform::has_permission(), app: String::new(), welcome: None, words: None, fixes: Default::default(), flash_until: None };
+    let mut app = App { tray: None, items, on: true, running: platform::has_permission(), app: String::new(), welcome: None, words: None, fixes: Default::default(), flash_until: None, compose: None, notice: None, writing: false };
 
     event_loop.run(move |event, target, flow| {
         let now = std::time::Instant::now();
         let window_tick = (app.welcome.is_some() || app.words.is_some()).then(|| now + std::time::Duration::from_millis(700));
-        // Wake for whichever comes first: the open window's refresh, or the end of an icon flash.
-        *flow = match [window_tick, app.flash_until].into_iter().flatten().min() {
+        let notice_end = app.notice.as_ref().map(|n| n.1);
+        // Wake for whichever comes first: the open window's refresh, the end of an icon flash, or a notice closing.
+        *flow = match [window_tick, app.flash_until, notice_end].into_iter().flatten().min() {
             Some(at) => ControlFlow::WaitUntil(at),
             None => ControlFlow::Wait,
         };
@@ -161,6 +183,9 @@ pub fn run() {
                     app.flash_until = None;
                     app.refresh();
                 }
+                if app.notice.as_ref().is_some_and(|n| n.1 <= std::time::Instant::now()) {
+                    app.notice = None;
+                }
                 app.push_state();
                 app.push_words();
             }
@@ -171,6 +196,12 @@ pub fn run() {
                 }
                 if app.words.as_ref().is_some_and(|p| p.window.id() == window_id) {
                     app.words = None;
+                }
+                if app.compose.as_ref().is_some_and(|p| p.window.id() == window_id) {
+                    app.compose = None;
+                }
+                if app.notice.as_ref().is_some_and(|n| n.0.window.id() == window_id) {
+                    app.notice = None;
                 }
             }
             _ => {}
@@ -193,6 +224,7 @@ fn build_tray(items: &Items) -> TrayIcon {
         &PredefinedMenuItem::separator(),
         &items.login,
         &items.words,
+        &items.compose,
         &items.excluded,
         &items.welcome,
         &PredefinedMenuItem::separator(),
@@ -228,6 +260,26 @@ impl App {
                 self.flash_until = Some(std::time::Instant::now() + FLASH);
                 self.refresh();
             }
+            UiEvent::Compose(status) => {
+                use crate::compose::Status;
+                self.writing = status == Status::Writing;
+                match status {
+                    Status::Writing => {}
+                    Status::Done => self.flash_until = Some(std::time::Instant::now() + FLASH),
+                    Status::Failed(msg) | Status::OnClipboard(msg) => self.show_notice(target, &msg),
+                }
+                self.refresh();
+            }
+            UiEvent::OpenCompose => self.open_compose(target),
+            UiEvent::ComposeTest(result) => {
+                if let Some(p) = &self.compose {
+                    let (ok, text) = match result {
+                        Ok(t) => (true, t),
+                        Err(e) => (false, e),
+                    };
+                    let _ = p.webview.evaluate_script(&format!("QKC.result({ok}, {})", js_string(&text)));
+                }
+            }
             UiEvent::Error(msg) => {
                 self.items.status.set_text(&msg);
             }
@@ -252,6 +304,8 @@ impl App {
                     settings::open(&settings::exclude_path().display().to_string());
                 } else if id == *it.words.id() {
                     self.open_words(target);
+                } else if id == *it.compose.id() {
+                    self.open_compose(target);
                 } else if id == *it.welcome.id() {
                     self.open_welcome(target);
                 } else if id == *it.quit.id() {
@@ -267,7 +321,9 @@ impl App {
     fn refresh(&self) {
         let it = &self.items;
         it.enabled.set_checked(self.on);
-        it.status.set_text(if !self.running {
+        it.status.set_text(if self.writing {
+            "Writing…"
+        } else if !self.running {
             "Waiting for permission…"
         } else if !self.on {
             "QuipKeys is paused"
@@ -303,7 +359,7 @@ impl App {
             "Forget what it learned".to_string()
         });
         if let Some(t) = &self.tray {
-            let flashing = self.flash_until.is_some();
+            let flashing = self.flash_until.is_some() || self.writing;
             let _ = t.set_icon(Some(if flashing { icon_flash() } else { icon(self.on && self.running) }));
             // The flash is in colour; the normal menu-bar icon is a tinted template.
             #[cfg(target_os = "macos")]
@@ -327,6 +383,71 @@ impl App {
         }
         settings::write_words_if_missing();
         self.words = open_window(target, "My words", (520.0, 640.0), true, WORDS);
+    }
+
+    fn open_compose(&mut self, target: &EventLoopWindowTarget<UiEvent>) {
+        if let Some(p) = &self.compose {
+            p.window.set_focus();
+            return;
+        }
+        self.compose = open_window(target, "Write it for me", (560.0, 760.0), true, COMPOSE);
+    }
+
+    /// Tell the settings window what's stored (never the key itself).
+    fn push_compose(&self) {
+        let Some(p) = &self.compose else { return };
+        let [kind, cmodel, url, lmodel] = settings::ai_fields();
+        let _ = p.webview.evaluate_script(&format!(
+            "QKC.state({{kind: {}, cmodel: {}, url: {}, lmodel: {}, haskey: {}}})",
+            js_string(&kind),
+            js_string(&cmodel),
+            js_string(&url),
+            js_string(&lmodel),
+            settings::has_claude_key()
+        ));
+    }
+
+    /// A message from the "Write it for me" window.
+    fn compose_ipc(&mut self, msg: &str) {
+        let save = |json: &str| {
+            let v: serde_json::Value = serde_json::from_str(json).unwrap_or_default();
+            let f = |k: &str| v.get(k).and_then(|x| x.as_str()).unwrap_or("").to_string();
+            settings::set_ai(&f("kind"), &f("cmodel"), &f("url"), &f("lmodel"));
+            // An empty key field keeps the saved key.
+            if !f("key").trim().is_empty() {
+                settings::set_claude_key(&f("key"));
+            }
+        };
+        if msg == "ready" {
+            self.push_compose();
+        } else if let Some(json) = msg.strip_prefix("save:") {
+            save(json);
+            self.push_compose();
+            if let Some(p) = &self.compose {
+                let _ = p.webview.evaluate_script("QKC.saved()");
+            }
+        } else if let Some(json) = msg.strip_prefix("test:") {
+            save(json);
+            self.push_compose();
+            std::thread::spawn(|| {
+                let r = crate::ai::write(&settings::ai_provider(), "Say hello in at most six words.", None);
+                notify(UiEvent::ComposeTest(r));
+            });
+        }
+    }
+
+    /// A small message that doesn't take the focus from the app you're typing in.
+    fn show_notice(&mut self, target: &EventLoopWindowTarget<UiEvent>, msg: &str) {
+        self.notice = None;
+        let esc = msg.replace('&', "&amp;").replace('<', "&lt;");
+        let html = format!(
+            "<!doctype html><meta charset=utf-8><style>body{{margin:0;padding:18px 20px;font:15px/1.45 -apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;background:#fff;color:#16181d}}\
+             b{{display:block;margin-bottom:4px}}@media(prefers-color-scheme:dark){{body{{background:#1b1e24;color:#eceef1}}}}</style>\
+             <b>Write it for me</b>{esc}"
+        );
+        if let Some(page) = open_page(target, "QuipKeys", (440.0, 150.0), false, &html, false) {
+            self.notice = Some((page, std::time::Instant::now() + NOTICE_FOR));
+        }
     }
 
     /// Send the saved words to the "My words" window (it redraws only on change).
@@ -376,6 +497,9 @@ impl App {
         if let Some(rest) = msg.strip_prefix("words:") {
             return self.words_ipc(rest);
         }
+        if let Some(rest) = msg.strip_prefix("compose:") {
+            return self.compose_ipc(rest);
+        }
         match msg {
             "ready" => self.push_state(),
             "perm" => platform::request_permission(),
@@ -424,12 +548,27 @@ fn open_window(
     resizable: bool,
     html: &str,
 ) -> Option<Page> {
+    open_page(target, title, size, resizable, html, true)
+}
+
+/// `open_window`; with `focus` false the window appears on top without taking
+/// the keyboard from the app the user is in.
+fn open_page(
+    target: &EventLoopWindowTarget<UiEvent>,
+    title: &str,
+    size: (f64, f64),
+    resizable: bool,
+    html: &str,
+    focus: bool,
+) -> Option<Page> {
     let size = tao::dpi::LogicalSize::new(size.0, size.1);
     let window = WindowBuilder::new()
         .with_title(title)
         .with_inner_size(size)
         .with_resizable(resizable)
         .with_maximizable(false)
+        .with_focused(focus)
+        .with_always_on_top(!focus)
         .build(target)
         .ok()?;
     if let Some(m) = window.current_monitor() {
@@ -451,7 +590,9 @@ fn open_window(
         .with_navigation_handler(|url| url.starts_with("about:") || url.starts_with("data:"))
         .build(&window)
         .ok()?;
-    window.set_focus();
+    if focus {
+        window.set_focus();
+    }
     Some(Page { webview, window })
 }
 

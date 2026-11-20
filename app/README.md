@@ -15,6 +15,10 @@ in, at the moment you press space.
 - **Undo a correction:** press Backspace straight after it. The word goes
   back to what you typed, and QuipKeys leaves that spelling alone until it
   quits. To keep it for good, save it in **My words**.
+- **Write it for me:** Ctrl+Alt+W (Windows) · Ctrl+Option+W (macOS). Type
+  what you want written, copy what it should know (an email), press the key:
+  your instruction turns into the finished text. Off until you choose a
+  model; see below.
 - **Stays out of:** terminals, code editors and password managers (see the
   list below), and password fields.
 
@@ -28,14 +32,19 @@ macOS it also walks you through the one permission it needs.
 
 ## Private by design
 
-- Everything runs on your computer. It works with no internet connection, and
-  QuipKeys never connects to the internet.
+- Typo fixing runs entirely on your computer. It works with no internet
+  connection and never connects to the internet.
+- The one exception is **Write it for me** with Claude chosen, which you have
+  to switch on and give your own API key. Even then, something is sent only
+  when you press its hotkey: your instruction and the text you copied, to
+  Anthropic. Choose a local model instead and nothing leaves your computer.
 - What you type is held in memory only, for the last few words. It's
   forgotten on Enter, a click or an app switch, and never written to disk.
 - The only files it writes are `quipkeys-settings.txt` (whether you've seen
   the welcome screen), `quipkeys-exclude.txt` (apps to skip) and
   `quipkeys-words.txt` (your word list: only words you chose to save), and
-  `quipkeys-profile.txt` (tallies of your kinds of slips: counts, no words). These live
+  `quipkeys-profile.txt` (tallies of your kinds of slips: counts, no words), and
+  `quipkeys-claude-key.txt` (your Claude API key, only if you add one). These live
   next to `quipkeys.exe` on Windows (or in `%APPDATA%\QuipKeys` if that folder
   isn't writable), and in `~/Library/Application Support/QuipKeys` on macOS.
 
@@ -129,6 +138,48 @@ Tested two ways. On one person's recorded typing, learning on one set of runs
 and scoring on another raised words right by 0.4 to 1.4 points. In a
 simulation of seven kinds of typist over five days, it helped every one (by
 up to 1.2 points) and made none worse. Most of the gain came on the first day.
+
+## Write it for me
+
+Turn a quick instruction into finished text, right where you're typing.
+
+1. Type what you want: *"reply saying Friday works, many thanks"*.
+2. Copy whatever it should know, such as the email you're answering. Steps 1
+   and 2 work in either order.
+3. Press **Ctrl+Alt+W** (Windows) or **Ctrl+Option+W** (macOS). The icon
+   shows it's writing; then your instruction is replaced by the text, and your
+   clipboard is put back as it was.
+
+Copy an email and press the key without typing anything, and it writes a
+reply. Set it up under **Write it for me…** in the menu:
+
+- **Claude (online):** best writing. Paste an API key from
+  console.anthropic.com; it's stored in `quipkeys-claude-key.txt` on your
+  computer (or set `ANTHROPIC_API_KEY`). The model is `claude-opus-5-5` unless
+  you name another.
+- **A model on this computer:** nothing leaves your computer. Run a local
+  model server such as [Ollama](https://ollama.com) (`ollama pull llama3.2`)
+  or LM Studio; QuipKeys talks to its chat endpoint
+  (`http://localhost:11434/v1/chat/completions` by default).
+- **Try it** in that window checks the setup with a one-line request.
+
+How it stays safe:
+- It only deletes your instruction when it knows exactly where it is: typed
+  just now, or, if you clicked away to copy something, typed right before
+  the cursor (it selects it and checks before replacing it). Otherwise the
+  text goes on your clipboard and a note tells you to paste it.
+- If you keep typing or click while it's writing, nothing is pasted; the text
+  waits on your clipboard instead.
+- Copied text is used only if you copied it in the last 15 minutes, and never
+  if it looks like a password, key or link (one "word" of up to 100
+  characters). The copied text is treated as material, not orders: the model
+  is told to ignore instructions inside it.
+- It doesn't work in excluded apps or password fields, like the rest of
+  QuipKeys. What you type is held in memory only, as before.
+
+Known limits: Enter starts a new instruction (only the text since the last
+Enter, click or arrow key counts). Pasting uses the clipboard, so apps that
+block pasting won't take the text; it stays on the clipboard.
 
 ## Your words
 
