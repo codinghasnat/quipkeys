@@ -25,6 +25,8 @@ tray-icon = "=0.21.0"
 
 [target.'cfg(windows)'.dependencies]
 arboard = { version = "3.4", default-features = false }
+# UI Automation (reading the text around the cursor for "write it for me").
+windows = { version = "0.58", features = ["Win32_Foundation", "Win32_System_Com", "Win32_UI_Accessibility", "Win32_System_Variant", "Win32_System_Ole"] }
 windows-sys = { version = "0.59", features = [
   "Win32_Foundation",
   "Win32_UI_WindowsAndMessaging",

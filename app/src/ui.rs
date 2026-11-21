@@ -396,13 +396,15 @@ impl App {
     /// Tell the settings window what's stored (never the key itself).
     fn push_compose(&self) {
         let Some(p) = &self.compose else { return };
-        let [kind, cmodel, url, lmodel] = settings::ai_fields();
+        let f = settings::ai_fields();
         let _ = p.webview.evaluate_script(&format!(
-            "QKC.state({{kind: {}, cmodel: {}, url: {}, lmodel: {}, haskey: {}}})",
-            js_string(&kind),
-            js_string(&cmodel),
-            js_string(&url),
-            js_string(&lmodel),
+            "QKC.state({{kind: {}, speed: {}, cmodel: {}, url: {}, lmodel: {}, screen: {}, haskey: {}}})",
+            js_string(&f.kind),
+            js_string(&f.speed),
+            js_string(&f.claude_model),
+            js_string(&f.local_url),
+            js_string(&f.local_model),
+            f.screen,
             settings::has_claude_key()
         ));
     }
@@ -412,11 +414,20 @@ impl App {
         let save = |json: &str| {
             let v: serde_json::Value = serde_json::from_str(json).unwrap_or_default();
             let f = |k: &str| v.get(k).and_then(|x| x.as_str()).unwrap_or("").to_string();
-            settings::set_ai(&f("kind"), &f("cmodel"), &f("url"), &f("lmodel"));
+            settings::set_ai(&settings::AiFields {
+                kind: f("kind"),
+                speed: f("speed"),
+                claude_model: f("cmodel"),
+                local_url: f("url"),
+                local_model: f("lmodel"),
+                screen: v.get("screen").and_then(|x| x.as_bool()).unwrap_or(true),
+            });
             // An empty key field keeps the saved key.
             if !f("key").trim().is_empty() {
                 settings::set_claude_key(&f("key"));
             }
+            // Open the connection now so the first press doesn't wait for it.
+            crate::ai::warm_up(&settings::ai_provider());
         };
         if msg == "ready" {
             self.push_compose();
@@ -430,7 +441,10 @@ impl App {
             save(json);
             self.push_compose();
             std::thread::spawn(|| {
-                let r = crate::ai::write(&settings::ai_provider(), "Say hello in at most six words.", None);
+                let req = crate::ai::Request { instruction: "Say hello in at most six words.".into(), ..Default::default() };
+                let t0 = std::time::Instant::now();
+                let r = crate::ai::write(&settings::ai_provider(), &req, &mut |_| {})
+                    .map(|t| format!("{}” ({:.1} s)", t.trim(), t0.elapsed().as_secs_f64()));
                 notify(UiEvent::ComposeTest(r));
             });
         }

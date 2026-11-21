@@ -472,6 +472,9 @@ impl Ops for WinOps {
             let _ = c.set_text(text.to_string());
         }
     }
+    fn screen(&self) -> Option<crate::ai::Screen> {
+        unsafe { read_screen() }
+    }
     fn backspace(&self, n: usize) {
         modifiers_released();
         type_fix(n, "");
@@ -506,4 +509,96 @@ impl Ops for WinOps {
     fn status(&self, s: Status) {
         notify(UiEvent::Compose(s));
     }
+}
+
+// ------------------------------------------------- reading the screen (UIA)
+
+/// The app, window title, text box around the cursor and window text, read
+/// through UI Automation (no permission needed on Windows).
+unsafe fn read_screen() -> Option<crate::ai::Screen> {
+    use windows::Win32::System::Com::{CoCreateInstance, CoInitializeEx, CLSCTX_INPROC_SERVER, COINIT_MULTITHREADED};
+    use windows::Win32::UI::Accessibility::*;
+    let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
+    let hwnd = GetForegroundWindow();
+    let mut title = [0u16; 512];
+    let n = GetWindowTextW(hwnd, title.as_mut_ptr(), title.len() as i32);
+    let mut s = crate::ai::Screen {
+        app: process_name(hwnd),
+        title: String::from_utf16_lossy(&title[..n.max(0) as usize]),
+        ..Default::default()
+    };
+    let Ok(uia) = CoCreateInstance::<_, IUIAutomation>(&CUIAutomation, None, CLSCTX_INPROC_SERVER) else { return Some(s) };
+    if let Ok(el) = uia.GetFocusedElement() {
+        if el.CurrentIsPassword().map(|b| b.as_bool()).unwrap_or(false) || focus_is_password(hwnd) {
+            return Some(s); // a password field: read nothing
+        }
+        if let Ok(tp) = el.GetCurrentPatternAs::<IUIAutomationTextPattern>(UIA_TextPatternId) {
+            let selection = tp.GetSelection().ok().filter(|a| a.Length().unwrap_or(0) > 0).and_then(|a| a.GetElement(0).ok());
+            if let (Ok(doc), Some(sel)) = (tp.DocumentRange(), selection) {
+                if let Ok(b) = doc.Clone() {
+                    if b.MoveEndpointByRange(TextPatternRangeEndpoint_End, &sel, TextPatternRangeEndpoint_Start).is_ok() {
+                        s.before = b.GetText(-1).map(|t| t.to_string()).unwrap_or_default();
+                    }
+                }
+                s.selected = sel.GetText(5000).map(|t| t.to_string()).unwrap_or_default();
+                if let Ok(a) = doc.Clone() {
+                    if a.MoveEndpointByRange(TextPatternRangeEndpoint_Start, &sel, TextPatternRangeEndpoint_End).is_ok() {
+                        s.after = a.GetText(5000).map(|t| t.to_string()).unwrap_or_default();
+                    }
+                }
+            } else if let Ok(doc) = tp.DocumentRange() {
+                s.before = doc.GetText(-1).map(|t| t.to_string()).unwrap_or_default();
+            }
+        } else if let Ok(vp) = el.GetCurrentPatternAs::<IUIAutomationValuePattern>(UIA_ValuePatternId) {
+            s.before = vp.CurrentValue().map(|t| t.to_string()).unwrap_or_default();
+        }
+    }
+    if let Ok(root) = uia.ElementFromHandle(windows::Win32::Foundation::HWND(hwnd as _)) {
+        s.window = window_text(&uia, &root);
+    }
+    Some(s)
+}
+
+/// The visible text of a window: its text elements, in reading order. Walks
+/// at most a few thousand elements and stops after 300 ms.
+unsafe fn window_text(
+    uia: &windows::Win32::UI::Accessibility::IUIAutomation,
+    root: &windows::Win32::UI::Accessibility::IUIAutomationElement,
+) -> String {
+    use windows::Win32::UI::Accessibility::*;
+    let deadline = std::time::Instant::now() + std::time::Duration::from_millis(300);
+    let mut out = String::new();
+    let Ok(walker) = uia.ControlViewWalker() else { return out };
+    // Depth-first: go down to the first child, else across, else back up.
+    let mut stack: Vec<IUIAutomationElement> = vec![root.clone()];
+    let mut seen = 0;
+    while let Some(el) = stack.pop() {
+        seen += 1;
+        if seen > 4000 || out.len() > 40_000 || std::time::Instant::now() > deadline {
+            break;
+        }
+        let ty = el.CurrentControlType().unwrap_or_default();
+        if el.CurrentIsPassword().map(|b| b.as_bool()).unwrap_or(false) {
+            continue;
+        }
+        if ty == UIA_TextControlTypeId {
+            if let Ok(name) = el.CurrentName() {
+                let t = name.to_string();
+                let t = t.trim();
+                if !t.is_empty() {
+                    out.push_str(t);
+                    out.push('\n');
+                }
+            }
+        }
+        // Children, first child on top of the stack.
+        let mut kids = Vec::new();
+        let mut c = walker.GetFirstChildElement(&el).ok();
+        while let Some(k) = c {
+            c = walker.GetNextSiblingElement(&k).ok();
+            kids.push(k);
+        }
+        stack.extend(kids.into_iter().rev());
+    }
+    out
 }

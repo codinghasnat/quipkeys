@@ -1,25 +1,28 @@
 //! The "write it for me" hotkey, start to finish.
 //!
-//! 1. Type what you want ("reply saying Friday works, many thanks") and copy
-//!    whatever it should know (the email). Either order.
-//! 2. Press the hotkey. QuipKeys reads the clipboard, asks the chosen model
-//!    (ai.rs), removes your instruction and pastes the text in its place,
-//!    then puts your clipboard back.
+//! 1. Type what you want ("reply saying Friday works, many thanks"). Copying
+//!    something it should know is optional: QuipKeys also reads what's around
+//!    the cursor and on screen (if allowed).
+//! 2. Press the hotkey. QuipKeys asks the chosen model (ai.rs) and, as the
+//!    text streams in, removes your instruction and pastes the text in its
+//!    place a sentence at a time, then puts your clipboard back.
 //!
 //! Safety rules:
 //! * The instruction is deleted only when QuipKeys knows exactly where it is:
 //!   typed just now (it counts the characters), or typed before a click, in
 //!   which case it is selected and *checked* before anything is replaced.
-//! * If you carry on typing or click while the model is writing, nothing is
-//!   pasted; the text is left on the clipboard instead.
-//! * Copied text is used as context only if it was copied in the last
-//!   [`CONTEXT_FRESH`], and never if it looks like a password or key.
+//! * If you carry on typing or click while it's writing, nothing more is
+//!   pasted; the rest is left on the clipboard instead.
+//! * Copied text is used only if it was copied in the last [`CONTEXT_FRESH`],
+//!   and never if it looks like a password or key. Screen text is never read
+//!   in password fields (the platform layer) or banking and password apps.
 //!
 //! The platform layers supply [`Ops`]; the sequence itself is here so it can
 //! be tested without a keyboard.
 
 use std::time::Duration;
 
+use crate::ai::{Request, Screen};
 use crate::core::{ComposeReq, Grab};
 
 /// Copied text older than this isn't used as context.
@@ -32,6 +35,9 @@ pub trait Ops {
     /// How long ago the clipboard last changed, if known.
     fn clipboard_age(&self) -> Option<Duration>;
     fn set_clipboard(&self, text: &str);
+    /// What can be read around the cursor and on screen (accessibility APIs).
+    /// None in password fields or when nothing can be read.
+    fn screen(&self) -> Option<Screen>;
     /// Press Backspace `n` times.
     fn backspace(&self, n: usize);
     /// Shift+Left `n` times: select the `n` characters before the caret.
@@ -54,9 +60,9 @@ pub enum Status {
     Writing,
     /// The text is in.
     Done,
-    /// Nothing was changed.
+    /// Nothing was changed (or, if `partial`, it stopped partway).
     Failed(String),
-    /// The text couldn't go in safely; it's on the clipboard.
+    /// The text couldn't (all) go in safely; it's on the clipboard.
     OnClipboard(String),
 }
 
@@ -78,54 +84,185 @@ pub fn context(ops: &dyn Ops, instruction: &str) -> Option<String> {
     Some(text)
 }
 
-/// Asks the model: (instruction, context) -> the text, or why not.
-pub type Writer<'a> = &'a dyn Fn(&str, Option<&str>) -> Result<String, String>;
+/// Apps and pages whose screen text is never read (the app and window name
+/// still set the tone).
+pub fn private_place(app: &str, title: &str) -> bool {
+    let s = format!("{} {}", app.to_lowercase(), title.to_lowercase());
+    ["bank", "paypal", "venmo", "revolut", "monzo", "wise.com", "wallet", "crypto", "coinbase", "1password", "bitwarden", "keychain", "lastpass", "keepass"]
+        .iter()
+        .any(|w| s.contains(w))
+}
 
-/// Run one compose request. `write` asks the model (ai::write in the app).
-pub fn run(req: &ComposeReq, gen0: u64, ops: &dyn Ops, write: Writer) {
-    let ctx = context(ops, &req.instruction);
-    if req.instruction.is_empty() && ctx.is_none() {
-        ops.status(Status::Failed(
-            "Type what you'd like written, and copy anything it should know (like the email), then press the hotkey.".into(),
-        ));
+/// The screen as it may be sent: without the instruction itself (it's in the
+/// text box, just before the cursor) and without private places' text.
+fn screen_for(ops: &dyn Ops, instruction: &str) -> Option<Screen> {
+    let mut s = ops.screen()?;
+    if private_place(&s.app, &s.title) {
+        return Some(Screen { app: s.app, title: s.title, ..Default::default() });
+    }
+    let i = instruction.trim();
+    if !i.is_empty() {
+        let b = s.before.trim_end();
+        if let Some(rest) = b.strip_suffix(i) {
+            s.before = rest.to_string();
+        }
+        if let Some(pos) = s.window.rfind(i) {
+            s.window.replace_range(pos..pos + i.len(), "");
+        }
+    }
+    Some(s)
+}
+
+/// Asks the model, handing each new piece of text to the callback; returns
+/// the whole text or why not.
+pub type Writer<'a> = &'a dyn Fn(&Request, &mut dyn FnMut(&str)) -> Result<String, String>;
+
+/// Where to cut streamed text into pastes: after a sentence or a line, once
+/// there's enough to be worth a paste. None: wait for more.
+fn cut_point(s: &str, min: usize) -> Option<usize> {
+    if s.chars().count() < min {
+        return None;
+    }
+    let b = s.as_bytes();
+    // Cut after a newline, or after the space that follows punctuation.
+    (1..b.len()).rev().find_map(|i| {
+        if b[i - 1] == b'\n' {
+            Some(i)
+        } else if matches!(b[i - 1], b'.' | b'!' | b'?' | b',' | b';' | b':') && b[i] == b' ' {
+            Some(i + 1)
+        } else {
+            None
+        }
+    })
+}
+
+/// Pastes streamed text into the field a piece at a time.
+struct Paster<'a> {
+    ops: &'a dyn Ops,
+    grab: &'a Grab,
+    gen0: u64,
+    pending: String,
+    /// The instruction has been removed and pasting has begun.
+    started: bool,
+    /// Pasting stopped (the user typed, or the instruction couldn't be found):
+    /// everything from here on goes to the clipboard, with this reason.
+    stopped: Option<String>,
+    leftover: String,
+}
+
+impl Paster<'_> {
+    fn feed(&mut self, piece: &str) {
+        self.pending.push_str(piece);
+        // A bigger first piece (one clean paste to start), then sentence by sentence.
+        let min = if self.started { 24 } else { 60 };
+        if let Some(cut) = cut_point(&self.pending, min) {
+            let chunk: String = self.pending.drain(..cut).collect();
+            self.emit(chunk);
+        }
+    }
+
+    fn finish(&mut self) {
+        let rest = std::mem::take(&mut self.pending);
+        let rest = rest.trim_end().to_string();
+        if !rest.is_empty() {
+            self.emit(rest);
+        }
+    }
+
+    fn emit(&mut self, mut chunk: String) {
+        if self.stopped.is_none() && self.ops.generation() != self.gen0 {
+            self.stopped = Some(if self.started {
+                "You carried on typing, so the rest of the text is on your clipboard.".into()
+            } else {
+                "You carried on typing, so the text is on your clipboard instead.".into()
+            });
+        }
+        if self.stopped.is_none() && !self.started {
+            if let Err(why) = self.remove_instruction() {
+                self.stopped = Some(why);
+            }
+            self.started = self.stopped.is_none();
+            chunk = chunk.trim_start().to_string();
+        }
+        if self.stopped.is_some() {
+            self.leftover.push_str(&chunk);
+            return;
+        }
+        if chunk.is_empty() {
+            return;
+        }
+        self.ops.set_clipboard(&chunk);
+        self.ops.wait(40);
+        self.ops.paste();
+        // Let the app read the clipboard before the next piece replaces it.
+        self.ops.wait(150);
+    }
+
+    fn remove_instruction(&self) -> Result<(), String> {
+        match self.grab {
+            Grab::Typed(n) => self.ops.backspace(*n),
+            Grab::Earlier(instruction) => {
+                self.ops.select_left(instruction.chars().count());
+                self.ops.wait(40);
+                self.ops.copy();
+                self.ops.wait(150);
+                if self.ops.clipboard_text().as_deref() != Some(instruction.as_str()) {
+                    self.ops.deselect();
+                    return Err("Your instruction wasn't right before the cursor, so the text is on your clipboard: paste it where you want it.".into());
+                }
+            }
+            Grab::Nothing => {}
+        }
+        Ok(())
+    }
+}
+
+/// Run one compose request. `write` asks the model (ai::write in the app);
+/// `read_screen` allows context from around the cursor and on screen.
+pub fn run(req: &ComposeReq, gen0: u64, ops: &dyn Ops, write: Writer, read_screen: bool) {
+    let copied = context(ops, &req.instruction);
+    let screen = if read_screen { screen_for(ops, &req.instruction) } else { None };
+    let has_context = copied.is_some() || screen.as_ref().is_some_and(Screen::has_text);
+    if req.instruction.is_empty() && !has_context {
+        ops.status(Status::Failed("Type what you'd like written (and copy anything it should know), then press the hotkey.".into()));
         return;
     }
     ops.status(Status::Writing);
-    let text = match write(&req.instruction, ctx.as_deref()) {
-        Ok(t) => t,
-        Err(why) => return ops.status(Status::Failed(why)),
-    };
-    if ops.generation() != gen0 {
-        ops.set_clipboard(&text);
-        return ops.status(Status::OnClipboard("You carried on typing, so the text is on your clipboard instead.".into()));
-    }
     let saved = ops.clipboard_text();
-    match &req.grab {
-        Grab::Typed(n) => ops.backspace(*n),
-        Grab::Earlier(instruction) => {
-            ops.select_left(instruction.chars().count());
-            ops.wait(40);
-            ops.copy();
-            ops.wait(150);
-            if ops.clipboard_text().as_deref() != Some(instruction.as_str()) {
-                ops.deselect();
-                ops.set_clipboard(&text);
-                return ops.status(Status::OnClipboard(
-                    "Your instruction wasn't right before the cursor, so the text is on your clipboard: paste it where you want it.".into(),
-                ));
+    let request = Request { instruction: req.instruction.clone(), copied, screen };
+    let mut paster = Paster { ops, grab: &req.grab, gen0, pending: String::new(), started: false, stopped: None, leftover: String::new() };
+    let result = write(&request, &mut |piece| paster.feed(piece));
+    match result {
+        Err(why) if !paster.started => {
+            // Nothing on screen changed; the clipboard may hold a check copy.
+            if paster.stopped.is_some() {
+                if let Some(s) = &saved {
+                    ops.set_clipboard(s);
+                }
+            }
+            ops.status(Status::Failed(why))
+        }
+        Err(why) => {
+            if let Some(s) = &saved {
+                ops.set_clipboard(s);
+            }
+            ops.status(Status::Failed(format!("It stopped partway: {why}")))
+        }
+        Ok(_) => {
+            paster.finish();
+            if let Some(why) = paster.stopped {
+                ops.set_clipboard(paster.leftover.trim());
+                ops.status(Status::OnClipboard(why));
+            } else {
+                // Give the app time to read the last piece before the clipboard is put back.
+                ops.wait(250);
+                if let Some(s) = &saved {
+                    ops.set_clipboard(s);
+                }
+                ops.status(Status::Done);
             }
         }
-        Grab::Nothing => {}
     }
-    ops.set_clipboard(&text);
-    ops.wait(60);
-    ops.paste();
-    // Give the app time to read the clipboard before it's put back.
-    ops.wait(400);
-    if let Some(s) = saved {
-        ops.set_clipboard(&s);
-    }
-    ops.status(Status::Done);
 }
 
 // ------------------------------------------------- the app's side (not tests)
@@ -172,7 +309,8 @@ pub fn spawn(req: ComposeReq, gen0: u64, ops: Box<dyn Ops + Send>) {
             notify(UiEvent::OpenCompose);
             ops.status(Status::Failed("Choose a model for Write it for me first.".into()));
         } else {
-            run(&req, gen0, ops.as_ref(), &|i, c| crate::ai::write(&provider, i, c));
+            let read_screen = crate::settings::ai_screen();
+            run(&req, gen0, ops.as_ref(), &|r, on| crate::ai::write(&provider, r, on), read_screen);
         }
         BUSY.store(false, Ordering::SeqCst);
     });
@@ -184,7 +322,7 @@ mod tests {
     use std::cell::RefCell;
 
     /// A text field (caret at the end, optional selection of the last n
-    /// characters) and a clipboard.
+    /// characters), a clipboard, and what the screen shows.
     #[derive(Default)]
     struct Fake {
         screen: RefCell<String>,
@@ -192,6 +330,8 @@ mod tests {
         clip: RefCell<Option<String>>,
         age: Option<Duration>,
         gen: RefCell<u64>,
+        pastes: RefCell<usize>,
+        seen: Option<Screen>,
         statuses: RefCell<Vec<Status>>,
     }
 
@@ -207,6 +347,9 @@ mod tests {
             let k = s.chars().count().saturating_sub(n);
             *self.screen.borrow_mut() = s.chars().take(k).collect();
         }
+        fn text(&self) -> String {
+            self.screen.borrow().clone()
+        }
     }
 
     impl Ops for Fake {
@@ -218,6 +361,9 @@ mod tests {
         }
         fn set_clipboard(&self, text: &str) {
             *self.clip.borrow_mut() = Some(text.into());
+        }
+        fn screen(&self) -> Option<Screen> {
+            self.seen.clone()
         }
         fn backspace(&self, n: usize) {
             self.cut(n);
@@ -238,6 +384,7 @@ mod tests {
             self.cut(n);
             let c = self.clip.borrow().clone().unwrap_or_default();
             self.screen.borrow_mut().push_str(&c);
+            *self.pastes.borrow_mut() += 1;
         }
         fn generation(&self) -> u64 {
             *self.gen.borrow()
@@ -249,25 +396,34 @@ mod tests {
     }
 
     const EMAIL: &str = "Hi Hasnat, can you make Friday at 3pm? Thanks, Sam";
-    const REPLY: &str = "Hi Sam,\n\nFriday at 3pm works. Many thanks!\n\nHasnat";
+    const REPLY: &str = "Hi Sam,\n\nFriday at 3pm works for me. Many thanks for moving it, it really helps.\n\nBest,\nHasnat";
 
-    fn writer(seen: &RefCell<Option<(String, Option<String>)>>) -> impl Fn(&str, Option<&str>) -> Result<String, String> + '_ {
-        move |i, c| {
-            *seen.borrow_mut() = Some((i.to_string(), c.map(String::from)));
+    /// A model that streams REPLY in small pieces and records the request.
+    fn writer(seen: &RefCell<Option<Request>>) -> impl Fn(&Request, &mut dyn FnMut(&str)) -> Result<String, String> + '_ {
+        move |r, on| {
+            *seen.borrow_mut() = Some(r.clone());
+            for piece in REPLY.as_bytes().chunks(5) {
+                on(std::str::from_utf8(piece).unwrap());
+            }
             Ok(REPLY.to_string())
         }
     }
 
+    fn req(instruction: &str, grab: Grab) -> ComposeReq {
+        ComposeReq { instruction: instruction.into(), grab }
+    }
+
     #[test]
-    fn typed_instruction_is_replaced_and_clipboard_restored() {
+    fn typed_instruction_is_replaced_piece_by_piece_and_clipboard_restored() {
         let instr = "say friday works, many thanks";
         let f = Fake::new(instr, Some(EMAIL));
         let seen = RefCell::new(None);
-        let req = ComposeReq { instruction: instr.into(), grab: Grab::Typed(instr.len()) };
-        run(&req, 0, &f, &writer(&seen));
-        assert_eq!(*f.screen.borrow(), REPLY);
+        run(&req(instr, Grab::Typed(instr.len())), 0, &f, &writer(&seen), true);
+        assert_eq!(f.text(), REPLY);
+        assert!(*f.pastes.borrow() > 1, "should arrive in pieces as it streams");
         assert_eq!(f.clip.borrow().as_deref(), Some(EMAIL));
-        assert_eq!(seen.borrow().clone().unwrap(), (instr.to_string(), Some(EMAIL.to_string())));
+        let r = seen.borrow().clone().unwrap();
+        assert_eq!((r.instruction.as_str(), r.copied.as_deref()), (instr, Some(EMAIL)));
         assert_eq!(f.last(), Status::Done);
     }
 
@@ -275,53 +431,90 @@ mod tests {
     fn earlier_instruction_is_checked_then_replaced() {
         let f = Fake::new("Dear team,\nsay yes", Some(EMAIL));
         let seen = RefCell::new(None);
-        let req = ComposeReq { instruction: "say yes".into(), grab: Grab::Earlier("say yes".into()) };
-        run(&req, 0, &f, &writer(&seen));
-        assert_eq!(*f.screen.borrow(), format!("Dear team,\n{REPLY}"));
+        run(&req("say yes", Grab::Earlier("say yes".into())), 0, &f, &writer(&seen), true);
+        assert_eq!(f.text(), format!("Dear team,\n{REPLY}"));
         assert_eq!(f.clip.borrow().as_deref(), Some(EMAIL));
     }
 
     #[test]
     fn earlier_instruction_not_at_caret_changes_nothing() {
-        // The user clicked back somewhere else: the selection isn't the instruction.
         let f = Fake::new("say yes\nsomething else", Some(EMAIL));
         let seen = RefCell::new(None);
-        let req = ComposeReq { instruction: "say yes".into(), grab: Grab::Earlier("say yes".into()) };
-        run(&req, 0, &f, &writer(&seen));
-        assert_eq!(*f.screen.borrow(), "say yes\nsomething else");
+        run(&req("say yes", Grab::Earlier("say yes".into())), 0, &f, &writer(&seen), true);
+        assert_eq!(f.text(), "say yes\nsomething else");
         assert_eq!(f.clip.borrow().as_deref(), Some(REPLY));
         assert!(matches!(f.last(), Status::OnClipboard(_)));
     }
 
     #[test]
-    fn typing_while_it_writes_leaves_the_text_on_the_clipboard() {
+    fn typing_while_it_writes_stops_the_pasting() {
+        // Keys arrived (generation 7) after the hotkey (generation 5): nothing is pasted.
         let f = Fake::new("say yes", Some(EMAIL));
-        *f.gen.borrow_mut() = 7; // keys arrived since the hotkey (generation 5)
+        *f.gen.borrow_mut() = 7;
         let seen = RefCell::new(None);
-        run(&ComposeReq { instruction: "say yes".into(), grab: Grab::Typed(7) }, 5, &f, &writer(&seen));
-        assert_eq!(*f.screen.borrow(), "say yes");
+        run(&req("say yes", Grab::Typed(7)), 5, &f, &writer(&seen), true);
+        assert_eq!(f.text(), "say yes");
         assert_eq!(f.clip.borrow().as_deref(), Some(REPLY));
+        // Typing that starts partway: what's pasted stays, the rest goes to the clipboard.
+        let f = Fake::new("say yes", Some(EMAIL));
+        let g = &f.gen;
+        let w = |_: &Request, on: &mut dyn FnMut(&str)| {
+            on("Hi Sam, Friday works for me and I really look forward to seeing you. ");
+            *g.borrow_mut() = 1;
+            on("See you then. Best wishes, Hasnat");
+            Ok(String::new())
+        };
+        run(&req("say yes", Grab::Typed(7)), 0, &f, &w, true);
+        assert_eq!(f.text(), "Hi Sam, Friday works for me and I really look forward to seeing you. ");
+        assert_eq!(f.clip.borrow().as_deref(), Some("See you then. Best wishes, Hasnat"));
+        assert!(matches!(f.last(), Status::OnClipboard(_)));
     }
 
     #[test]
-    fn model_error_changes_nothing() {
+    fn model_error_before_any_text_changes_nothing() {
         let f = Fake::new("say yes", Some(EMAIL));
-        run(&ComposeReq { instruction: "say yes".into(), grab: Grab::Typed(7) }, 0, &f, &|_, _| Err("no key".into()));
-        assert_eq!(*f.screen.borrow(), "say yes");
+        run(&req("say yes", Grab::Typed(7)), 0, &f, &|_, _| Err("no key".into()), true);
+        assert_eq!(f.text(), "say yes");
         assert_eq!(f.clip.borrow().as_deref(), Some(EMAIL));
         assert_eq!(f.last(), Status::Failed("no key".into()));
     }
 
     #[test]
-    fn copied_email_alone_gets_a_reply() {
-        let f = Fake::new("", Some(EMAIL));
+    fn screen_context_replaces_copying() {
+        // Nothing copied, nothing typed: the conversation on screen is enough.
+        let mut f = Fake::new("", None);
+        f.seen = Some(Screen { app: "slack".into(), title: "#design".into(), window: "Priya: ship it Monday?".into(), ..Default::default() });
         let seen = RefCell::new(None);
-        run(&ComposeReq { instruction: String::new(), grab: Grab::Nothing }, 0, &f, &writer(&seen));
-        assert_eq!(*f.screen.borrow(), REPLY);
-        // Nothing typed and nothing copied: nothing to do.
-        let f = Fake::new("", None);
-        run(&ComposeReq { instruction: String::new(), grab: Grab::Nothing }, 0, &f, &writer(&seen));
+        run(&req("", Grab::Nothing), 0, &f, &writer(&seen), true);
+        assert_eq!(f.text(), REPLY);
+        assert_eq!(seen.borrow().as_ref().unwrap().screen.as_ref().unwrap().window, "Priya: ship it Monday?");
+        // Reading the screen switched off: nothing to go on.
+        let mut f = Fake::new("", None);
+        f.seen = Some(Screen { window: "Priya: ship it Monday?".into(), ..Default::default() });
+        run(&req("", Grab::Nothing), 0, &f, &writer(&seen), false);
         assert!(matches!(f.last(), Status::Failed(_)));
+    }
+
+    #[test]
+    fn the_instruction_is_not_sent_twice() {
+        let mut f = Fake::new("Thanks! agree, short", None);
+        f.seen = Some(Screen { app: "slack".into(), before: "Thanks! agree, short".into(), window: "Priya: ok?\nThanks! agree, short".into(), ..Default::default() });
+        let seen = RefCell::new(None);
+        run(&req("agree, short", Grab::Typed(12)), 0, &f, &writer(&seen), true);
+        let s = seen.borrow().clone().unwrap().screen.unwrap();
+        assert_eq!(s.before, "Thanks! ");
+        assert!(!s.window.contains("agree, short"));
+    }
+
+    #[test]
+    fn private_places_send_no_screen_text() {
+        let mut f = Fake::new("", Some(EMAIL));
+        f.seen = Some(Screen { app: "chrome.exe".into(), title: "Accounts - My Bank".into(), window: "Balance £1,234".into(), before: "x".into(), ..Default::default() });
+        let seen = RefCell::new(None);
+        run(&req("say thanks", Grab::Typed(10)), 0, &f, &writer(&seen), true);
+        let s = seen.borrow().clone().unwrap().screen.unwrap();
+        assert!(!s.has_text());
+        assert_eq!(s.title, "Accounts - My Bank");
     }
 
     #[test]
@@ -337,5 +530,12 @@ mod tests {
         assert_eq!(context(&f, "say yes"), None);
         let f = Fake::new("", Some(EMAIL));
         assert_eq!(context(&f, "say yes").as_deref(), Some(EMAIL));
+    }
+
+    #[test]
+    fn pieces_break_at_sentences() {
+        assert_eq!(cut_point("short", 24), None);
+        let s = "Friday at 3pm works for me. Many tha";
+        assert_eq!(&s[..cut_point(s, 24).unwrap()], "Friday at 3pm works for me. ");
     }
 }

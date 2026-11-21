@@ -669,6 +669,9 @@ impl Ops for MacOps {
     fn set_clipboard(&self, text: &str) {
         set_pasteboard_text(text);
     }
+    fn screen(&self) -> Option<crate::ai::Screen> {
+        read_screen()
+    }
     fn backspace(&self, n: usize) {
         modifiers_released();
         type_fix(n, "");
@@ -699,4 +702,179 @@ impl Ops for MacOps {
     fn status(&self, s: Status) {
         notify(UiEvent::Compose(s));
     }
+}
+
+// ------------------------------------------------- reading the screen (AX)
+
+#[repr(C)]
+#[derive(Default, Clone, Copy)]
+struct CFRange {
+    location: isize,
+    length: isize,
+}
+
+#[link(name = "ApplicationServices", kind = "framework")]
+extern "C" {
+    fn AXUIElementCreateSystemWide() -> CFTypeRef;
+    fn AXUIElementCopyAttributeValue(el: CFTypeRef, attr: CFTypeRef, out: *mut CFTypeRef) -> i32;
+    fn AXUIElementSetAttributeValue(el: CFTypeRef, attr: CFTypeRef, value: CFTypeRef) -> i32;
+    fn AXUIElementGetPid(el: CFTypeRef, pid: *mut i32) -> i32;
+    fn AXUIElementSetMessagingTimeout(el: CFTypeRef, secs: f32) -> i32;
+    fn AXValueGetValue(v: CFTypeRef, ty: u32, out: *mut c_void) -> bool;
+}
+
+#[link(name = "CoreFoundation", kind = "framework")]
+extern "C" {
+    fn CFStringCreateWithBytes(alloc: CFTypeRef, bytes: *const u8, len: isize, encoding: u32, external: bool) -> CFTypeRef;
+    fn CFStringGetLength(s: CFTypeRef) -> isize;
+    fn CFStringGetCharacters(s: CFTypeRef, range: CFRange, buf: *mut u16);
+    fn CFGetTypeID(cf: CFTypeRef) -> usize;
+    fn CFStringGetTypeID() -> usize;
+    fn CFArrayGetTypeID() -> usize;
+    fn CFArrayGetCount(a: CFTypeRef) -> isize;
+    fn CFArrayGetValueAtIndex(a: CFTypeRef, i: isize) -> CFTypeRef;
+    fn CFRetain(cf: CFTypeRef) -> CFTypeRef;
+}
+
+const UTF8: u32 = 0x0800_0100;
+const AX_VALUE_CFRANGE: u32 = 4;
+
+/// An owned CF object, released when dropped.
+struct Cf(CFTypeRef);
+
+impl Drop for Cf {
+    fn drop(&mut self) {
+        if !self.0.is_null() {
+            unsafe { CFRelease(self.0) };
+        }
+    }
+}
+
+fn cf_str(s: &str) -> Cf {
+    Cf(unsafe { CFStringCreateWithBytes(std::ptr::null(), s.as_ptr(), s.len() as isize, UTF8, false) })
+}
+
+/// An attribute of an accessibility element (owned), if it has one.
+fn ax(el: CFTypeRef, name: &str) -> Option<Cf> {
+    let key = cf_str(name);
+    let mut out: CFTypeRef = std::ptr::null();
+    let err = unsafe { AXUIElementCopyAttributeValue(el, key.0, &mut out) };
+    (err == 0 && !out.is_null()).then(|| Cf(out))
+}
+
+/// A CFString as UTF-16 (to split at the cursor, which AX counts in UTF-16).
+fn utf16(cf: &Cf) -> Option<Vec<u16>> {
+    unsafe {
+        if CFGetTypeID(cf.0) != CFStringGetTypeID() {
+            return None;
+        }
+        let n = CFStringGetLength(cf.0);
+        let mut buf = vec![0u16; n.max(0) as usize];
+        CFStringGetCharacters(cf.0, CFRange { location: 0, length: n }, buf.as_mut_ptr());
+        Some(buf)
+    }
+}
+
+fn ax_string(el: CFTypeRef, name: &str) -> Option<String> {
+    ax(el, name).and_then(|v| utf16(&v)).map(|u| String::from_utf16_lossy(&u))
+}
+
+/// The app, window title, text box around the cursor and window text, read
+/// through Accessibility (the permission QuipKeys already has).
+fn read_screen() -> Option<crate::ai::Screen> {
+    unsafe {
+        let pool = objc_autoreleasePoolPush();
+        let out = read_screen_inner();
+        objc_autoreleasePoolPop(pool);
+        out
+    }
+}
+
+unsafe fn read_screen_inner() -> Option<crate::ai::Screen> {
+    let sys = Cf(AXUIElementCreateSystemWide());
+    if sys.0.is_null() {
+        return None;
+    }
+    // Never let a slow app hold us up for long.
+    AXUIElementSetMessagingTimeout(sys.0, 0.25);
+    let app = ax(sys.0, "AXFocusedApplication")?;
+    let mut pid = 0i32;
+    AXUIElementGetPid(app.0, &mut pid);
+    // Chromium and Electron apps (Chrome, Slack, Teams, Discord, WhatsApp)
+    // only expose their text once someone asks for it.
+    let manual = cf_str("AXManualAccessibility");
+    AXUIElementSetAttributeValue(app.0, manual.0, kCFBooleanTrue);
+    let window = ax(app.0, "AXFocusedWindow");
+    let mut s = crate::ai::Screen {
+        app: process_name(pid as i64),
+        title: window.as_ref().and_then(|w| ax_string(w.0, "AXTitle")).unwrap_or_default(),
+        ..Default::default()
+    };
+    if let Some(field) = ax(sys.0, "AXFocusedUIElement") {
+        if ax_string(field.0, "AXSubrole").as_deref() == Some("AXSecureTextField") {
+            return Some(s); // a password field: read nothing
+        }
+        if let Some(value) = ax(field.0, "AXValue").and_then(|v| utf16(&v)) {
+            let mut r = CFRange { location: value.len() as isize, length: 0 };
+            if let Some(range) = ax(field.0, "AXSelectedTextRange") {
+                AXValueGetValue(range.0, AX_VALUE_CFRANGE, &mut r as *mut CFRange as *mut c_void);
+            }
+            let start = (r.location.max(0) as usize).min(value.len());
+            let end = (start + r.length.max(0) as usize).min(value.len());
+            s.before = String::from_utf16_lossy(&value[..start]);
+            s.selected = String::from_utf16_lossy(&value[start..end]);
+            s.after = String::from_utf16_lossy(&value[end..]);
+        }
+    }
+    if let Some(w) = &window {
+        s.window = window_text(w.0);
+    }
+    Some(s)
+}
+
+/// The visible text of a window: its static texts, in reading order. Walks
+/// at most a few thousand elements and stops after 300 ms.
+unsafe fn window_text(window: CFTypeRef) -> String {
+    let deadline = Instant::now() + std::time::Duration::from_millis(300);
+    let mut out = String::new();
+    let mut seen = 0;
+    // Depth-first, children in order: (element, owned handle if we copied it).
+    let mut stack: Vec<Cf> = Vec::new();
+    let visit = |el: CFTypeRef, out: &mut String, stack: &mut Vec<Cf>| {
+        let role = ax_string(el, "AXRole").unwrap_or_default();
+        if role == "AXStaticText" {
+            if let Some(t) = ax_string(el, "AXValue") {
+                let t = t.trim();
+                if !t.is_empty() {
+                    out.push_str(t);
+                    out.push('\n');
+                }
+            }
+        }
+        if role == "AXSecureTextField" {
+            return;
+        }
+        if let Some(children) = ax(el, "AXChildren") {
+            if CFGetTypeID(children.0) == CFArrayGetTypeID() {
+                let n = CFArrayGetCount(children.0);
+                // Push in reverse so the first child is visited first.
+                for i in (0..n).rev() {
+                    let c = CFArrayGetValueAtIndex(children.0, i);
+                    if !c.is_null() {
+                        CFRetain(c);
+                        stack.push(Cf(c));
+                    }
+                }
+            }
+        }
+    };
+    visit(window, &mut out, &mut stack);
+    while let Some(el) = stack.pop() {
+        seen += 1;
+        if seen > 4000 || out.len() > 40_000 || Instant::now() > deadline {
+            break;
+        }
+        visit(el.0, &mut out, &mut stack);
+    }
+    out
 }

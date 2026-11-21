@@ -53,6 +53,12 @@
   #msg.bad { color: var(--bad); }
   #msg.good { color: var(--good); }
   .note { font-size: 13px; }
+  .seg { display: grid; gap: 6px; margin-top: 4px; font-weight: 400; }
+  .seg label { display: flex; gap: 8px; align-items: baseline; }
+  .seg span { color: var(--muted); font-size: 13px; }
+  .check { display: flex; gap: 10px; align-items: flex-start; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; font-size: 13px; color: var(--muted); }
+  .check b { color: var(--text); font-size: 15px; }
+  .check input { margin-top: 4px; accent-color: var(--accent); }
   a { color: var(--accent); cursor: pointer; text-decoration: none; }
   a:hover { text-decoration: underline; }
 </style>
@@ -61,8 +67,8 @@
   <h1>Write it for me</h1>
   <ol>
     <li>Type what you want, like <i>“reply saying Friday works, many thanks”</i>.</li>
-    <li>Copy anything it should know, like the email you're answering. Steps 1 and 2 work in either order.</li>
-    <li>Press <kbd id="hotkey">Ctrl+Alt+W</kbd>. Your instruction is replaced with the finished text.</li>
+    <li>Press <kbd id="hotkey">Ctrl+Alt+W</kbd>. The text streams in where your instruction was.</li>
+    <li>It reads what's around your cursor and on screen (the chat, the email, the document) to get the context. You can also copy something for it to use.</li>
   </ol>
 
   <div class="choices" role="radiogroup" aria-label="Which model writes the text">
@@ -76,8 +82,13 @@
   <div class="fields" id="claude" hidden>
     <label class="f">Claude API key <span id="keystate">From console.anthropic.com. Stored only on this computer.</span>
       <input type="password" id="key" autocomplete="off" spellcheck="false" placeholder="sk-ant-…"></label>
-    <label class="f">Model <span>Leave empty for the default (claude-opus-5-5).</span>
-      <input type="text" id="cmodel" spellcheck="false" placeholder="claude-opus-5-5"></label>
+    <div class="f">Speed
+      <div class="seg" role="radiogroup" aria-label="Speed">
+        <label><input type="radio" name="speed" value="fast"> Fast <span>Claude Haiku 5.5: text starts in about a second</span></label>
+        <label><input type="radio" name="speed" value="best"> Best <span>Claude Opus 5.5: stronger writing, a little slower</span></label>
+      </div></div>
+    <label class="f">Model <span>Optional: a specific model ID instead.</span>
+      <input type="text" id="cmodel" spellcheck="false" placeholder="claude-haiku-5-5"></label>
   </div>
   <div class="fields" id="local" hidden>
     <label class="f">Server address <span>Leave empty for Ollama's default.</span>
@@ -86,11 +97,14 @@
       <input type="text" id="lmodel" spellcheck="false" placeholder="llama3.2"></label>
   </div>
 
+  <label class="check"><input type="checkbox" id="screen"> <span><b>Use what's on screen as context</b><br>
+    When you press the hotkey: the app's name, the text box you're in, and the text visible in that window (like the chat or the email you're answering). Never in password fields, banking or password apps.</span></label>
+
   <div class="row">
     <div id="msg" role="status"></div>
     <div class="row"><button id="test">Try it</button><button class="primary" id="save">Save</button></div>
   </div>
-  <p class="note">Typo fixing never uses any of this and stays fully offline. Copied text is only used if you copied it in the last 15 minutes, and never if it looks like a password or a link.</p>
+  <p class="note">Typo fixing never uses any of this and stays fully offline. Nothing is read or sent until you press the hotkey. Copied text is only used if you copied it in the last 15 minutes, and never if it looks like a password or a link.</p>
 
 <script>
   const send = (m) => window.ipc && window.ipc.postMessage(m);
@@ -104,7 +118,8 @@
   document.querySelectorAll('input[name=kind]').forEach((r) => r.addEventListener('change', show));
   function say(text, cls) { $('msg').textContent = text; $('msg').className = cls || ''; }
   function fields() {
-    return JSON.stringify({ kind: kind(), key: $('key').value, cmodel: $('cmodel').value, url: $('url').value, lmodel: $('lmodel').value });
+    const speed = (document.querySelector('input[name=speed]:checked') || {}).value || 'fast';
+    return JSON.stringify({ kind: kind(), speed, key: $('key').value, cmodel: $('cmodel').value, url: $('url').value, lmodel: $('lmodel').value, screen: $('screen').checked });
   }
   $('save').addEventListener('click', () => { send('compose:save:' + fields()); $('key').value = ''; });
   $('test').addEventListener('click', () => { say('Asking the model…'); send('compose:test:' + fields()); $('key').value = ''; });
@@ -112,12 +127,14 @@
     state(s) {
       const r = document.querySelector(`input[name=kind][value=${s.kind}]`);
       if (r) r.checked = true;
-      $('cmodel').value = s.cmodel; $('url').value = s.url; $('lmodel').value = s.lmodel;
+      $('cmodel').value = s.cmodel; $('url').value = s.url; $('lmodel').value = s.lmodel; $('screen').checked = s.screen;
+      const sp = document.querySelector(`input[name=speed][value=${s.speed}]`);
+      if (sp) sp.checked = true;
       $('keystate').textContent = s.haskey ? 'A key is saved. Type a new one to replace it.' : 'From console.anthropic.com. Stored only on this computer.';
       show();
     },
     saved() { say('Saved.', 'good'); },
-    result(ok, text) { say(ok ? 'It works: “' + text + '”' : text, ok ? 'good' : 'bad'); },
+    result(ok, text) { say(ok ? 'It works: “' + text : text, ok ? 'good' : 'bad'); },
   };
   send('compose:ready');
 </script>

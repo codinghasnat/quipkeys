@@ -141,45 +141,69 @@ up to 1.2 points) and made none worse. Most of the gain came on the first day.
 
 ## Write it for me
 
-Turn a quick instruction into finished text, right where you're typing.
+Turn a quick instruction into finished text, right where you're typing:
+an email reply, a Slack message, the next paragraph of a document, a
+LinkedIn comment, a support answer.
 
-1. Type what you want: *"reply saying Friday works, many thanks"*.
-2. Copy whatever it should know, such as the email you're answering. Steps 1
-   and 2 work in either order.
-3. Press **Ctrl+Alt+W** (Windows) or **Ctrl+Option+W** (macOS). The icon
-   shows it's writing; then your instruction is replaced by the text, and your
-   clipboard is put back as it was.
+1. Type what you want: *"agree, but ask if Monday works instead"*.
+2. Press **Ctrl+Alt+W** (Windows) or **Ctrl+Option+W** (macOS).
+3. The text streams in where your instruction was, a sentence at a time, and
+   your clipboard is left as it was.
 
-Copy an email and press the key without typing anything, and it writes a
-reply. Set it up under **Write it for me…** in the menu:
+**Context, without copying.** When you press the key, QuipKeys looks at:
+- which app and window you're in, so it knows if it's a chat, an email, a
+  document, a social post, a ticket or a form, and writes to fit;
+- the text box you're in: what's before and after your cursor (it writes
+  only what belongs at the cursor and never repeats what's there);
+- the text visible in that window: the conversation, the email you're
+  answering, the page you're on;
+- anything you copied in the last 15 minutes, if you want to point it at
+  something specific.
 
-- **Claude (online):** best writing. Paste an API key from
-  console.anthropic.com; it's stored in `quipkeys-claude-key.txt` on your
-  computer (or set `ANTHROPIC_API_KEY`). The model is `claude-opus-5-5` unless
-  you name another.
+Press the key with nothing typed and it writes what fits: a reply in a
+conversation, otherwise the natural next text.
+
+Set it up under **Write it for me…** in the menu:
+- **Claude (online):** paste an API key from console.anthropic.com (stored in
+  `quipkeys-claude-key.txt` on your computer, or set `ANTHROPIC_API_KEY`).
+  **Fast** uses Claude Haiku 5.5 with thinking off, so text starts in about a
+  second; **Best** uses Claude Opus 5.5 for stronger writing. You can also
+  name any model ID.
 - **A model on this computer:** nothing leaves your computer. Run a local
   model server such as [Ollama](https://ollama.com) (`ollama pull llama3.2`)
   or LM Studio; QuipKeys talks to its chat endpoint
   (`http://localhost:11434/v1/chat/completions` by default).
-- **Try it** in that window checks the setup with a one-line request.
+- **Use what's on screen as context:** on by default; switch it off to use
+  only what you type and copy.
+- **Try it** checks the setup and shows how long the answer took.
+
+Speed: the answer is streamed and pasted a sentence at a time, the
+connection to the model is opened when you save the settings and then
+reused, and replies are kept as short as the instruction allows.
 
 How it stays safe:
+- Nothing is read or sent until you press the key. Screen text is read
+  through the operating system's accessibility features (on macOS, the
+  Accessibility permission QuipKeys already has; on Windows, UI Automation)
+  and held in memory for that one request.
+- Never read: password fields, and the screen text of banking, payment and
+  password-manager apps and pages (their app and window name still set the
+  tone). Excluded apps can't use the key at all.
 - It only deletes your instruction when it knows exactly where it is: typed
-  just now, or, if you clicked away to copy something, typed right before
-  the cursor (it selects it and checks before replacing it). Otherwise the
-  text goes on your clipboard and a note tells you to paste it.
-- If you keep typing or click while it's writing, nothing is pasted; the text
-  waits on your clipboard instead.
-- Copied text is used only if you copied it in the last 15 minutes, and never
-  if it looks like a password, key or link (one "word" of up to 100
-  characters). The copied text is treated as material, not orders: the model
-  is told to ignore instructions inside it.
-- It doesn't work in excluded apps or password fields, like the rest of
-  QuipKeys. What you type is held in memory only, as before.
+  just now, or, if you clicked away, typed right before the cursor (it
+  selects it and checks before replacing it). Otherwise the text goes on
+  your clipboard and a note tells you to paste it.
+- If you keep typing or click while it's writing, it stops pasting; the
+  rest waits on your clipboard.
+- Copied text that looks like a password, key or link (one "word" of up to
+  100 characters) is never used. Everything it reads is treated as material,
+  not orders: the model is told to ignore instructions inside it.
 
 Known limits: Enter starts a new instruction (only the text since the last
-Enter, click or arrow key counts). Pasting uses the clipboard, so apps that
-block pasting won't take the text; it stays on the clipboard.
+Enter, click or arrow key counts). Some apps expose little text to
+accessibility tools, and Chromium/Electron apps (Chrome, Slack, Teams,
+Discord) may only start sharing it from the second press. Apps that block
+pasting won't take the text; it stays on the clipboard.
 
 ## Your words
 

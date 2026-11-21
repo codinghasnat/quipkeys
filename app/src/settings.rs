@@ -397,9 +397,12 @@ pub fn set_claude_key(key: &str) {
 
 /// The model "write it for me" uses (off until the user picks one).
 pub fn ai_provider() -> crate::ai::Provider {
-    use crate::ai::{Provider, CLAUDE_MODEL, LOCAL_MODEL, LOCAL_URL};
+    use crate::ai::{Provider, CLAUDE_BEST, CLAUDE_FAST, LOCAL_MODEL, LOCAL_URL};
     match value("ai").as_deref() {
-        Some("claude") => Provider::Claude { api_key: claude_key(), model: value("ai_claude_model").unwrap_or(CLAUDE_MODEL.into()) },
+        Some("claude") => {
+            let default = if value("ai_speed").as_deref() == Some("best") { CLAUDE_BEST } else { CLAUDE_FAST };
+            Provider::Claude { api_key: claude_key(), model: value("ai_claude_model").unwrap_or(default.into()) }
+        }
         Some("local") => Provider::Local {
             url: value("ai_local_url").unwrap_or(LOCAL_URL.into()),
             model: value("ai_local_model").unwrap_or(LOCAL_MODEL.into()),
@@ -408,19 +411,37 @@ pub fn ai_provider() -> crate::ai::Provider {
     }
 }
 
-/// The settings window's fields, as stored (empty = default).
-pub fn ai_fields() -> [String; 4] {
-    [
-        value("ai").unwrap_or_else(|| "off".into()),
-        value("ai_claude_model").unwrap_or_default(),
-        value("ai_local_url").unwrap_or_default(),
-        value("ai_local_model").unwrap_or_default(),
-    ]
+/// Use the text around the cursor and on screen as context (on unless switched off).
+pub fn ai_screen() -> bool {
+    !flag("ai_no_screen")
 }
 
-pub fn set_ai(kind: &str, claude_model: &str, local_url: &str, local_model: &str) {
-    set_value("ai", if matches!(kind, "claude" | "local") { kind } else { "off" });
-    set_value("ai_claude_model", claude_model);
-    set_value("ai_local_url", local_url);
-    set_value("ai_local_model", local_model);
+/// The settings window's fields, as stored (empty = default).
+pub struct AiFields {
+    pub kind: String,
+    pub speed: String,
+    pub claude_model: String,
+    pub local_url: String,
+    pub local_model: String,
+    pub screen: bool,
+}
+
+pub fn ai_fields() -> AiFields {
+    AiFields {
+        kind: value("ai").unwrap_or_else(|| "off".into()),
+        speed: value("ai_speed").unwrap_or_else(|| "fast".into()),
+        claude_model: value("ai_claude_model").unwrap_or_default(),
+        local_url: value("ai_local_url").unwrap_or_default(),
+        local_model: value("ai_local_model").unwrap_or_default(),
+        screen: ai_screen(),
+    }
+}
+
+pub fn set_ai(f: &AiFields) {
+    set_value("ai", if matches!(f.kind.as_str(), "claude" | "local") { &f.kind } else { "off" });
+    set_value("ai_speed", if f.speed == "best" { "best" } else { "fast" });
+    set_value("ai_claude_model", &f.claude_model);
+    set_value("ai_local_url", &f.local_url);
+    set_value("ai_local_model", &f.local_model);
+    set_flag("ai_no_screen", !f.screen);
 }
