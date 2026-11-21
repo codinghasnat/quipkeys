@@ -166,8 +166,8 @@ conversation, otherwise the natural next text.
 Set it up under **Write it for me…** in the menu:
 - **Claude (online):** paste an API key from console.anthropic.com (stored in
   `quipkeys-claude-key.txt` on your computer, or set `ANTHROPIC_API_KEY`).
-  **Fast** uses Claude Haiku 5.5 with thinking off, so text starts in about a
-  second; **Best** uses Claude Opus 5.5 for stronger writing. You can also
+  **Fast** uses Claude Haiku 5.5 with thinking off, the quickest option;
+  **Best** uses Claude Opus 5.5 for stronger writing. You can also
   name any model ID.
 - **A model on this computer:** nothing leaves your computer. Run a local
   model server such as [Ollama](https://ollama.com) (`ollama pull llama3.2`)

@@ -1,0 +1,148 @@
+<!doctype html><html><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&family=Atkinson+Hyperlegible:wght@400;700&family=IBM+Plex+Mono:wght@400;600&display=block" rel="stylesheet">
+<link rel="stylesheet" href="../style.css"><script src="../lib.js"></script></head><body><div id="stage"></div>
+<script>
+// 25 — What's new: "Write it for me" (the acc branch), one overview.
+// Chapters: it reads the room · fits the place · streams in, your model ·
+// safe by default · end card. Reply wording is illustrative.
+const LOGO = `<svg viewBox="0 0 64 64" width="100%" height="100%"><rect x="4" y="8" width="56" height="52" rx="13" fill="#17140a"/><rect x="8" y="4" width="48" height="46" rx="10" fill="#fffbea"/><circle cx="30" cy="25.5" r="11" fill="none" stroke="#17140a" stroke-width="6"/><path d="M32.5 28l11.5 11.5" stroke="#17140a" stroke-width="6.5"/><circle cx="44" cy="39.5" r="3.25" fill="#17140a"/></svg>`;
+const CH = [[0, 3.6], [3.6, 15.4], [15.4, 26.4], [26.4, 36.8], [36.8, 46], [46, 52]];
+const chapters = CH.map(() => { const d = el("div", "abs"); d.style.cssText = "left:0;top:0;width:1920px;height:1080px"; return d; });
+const fadeOf = (i, t) => { const [a, b] = CH[i]; return Math.min(lerp(t, [a, a + 0.35], [0, 1]), i === CH.length - 1 ? 1 : lerp(t, [b - 0.35, b], [1, 0])); };
+const at = (e, x, y) => { e.style.left = x + "px"; e.style.top = y + "px"; };
+const div = (parent, css, html = "") => { const d = el("div", "abs", parent, html); d.style.cssText += css; return d; };
+const chapterTag = (i, text) => { const d = el("div", "tag abs", chapters[i], `${i} / 4 · ${text}`); d.style.cssText += "left:120px;top:56px;font-size:28px"; };
+const keys = (parent, x, y, k = 110) => {
+  const mk = (txt, w) => { const c = el("div", "cap abs", parent, txt); c.style.cssText += `width:${w}px;height:${k}px;font:700 ${Math.round(k * 0.36)}px/1 var(--body);border-radius:20px`; return c; };
+  const C = mk("Ctrl", k * 1.7), A = mk("Alt", k * 1.7), W = mk("W", k * 1.15);
+  const p1 = div(parent, "font:900 50px/1 var(--display);color:var(--ink-soft)", "+"), p2 = div(parent, "font:900 50px/1 var(--display);color:var(--ink-soft)", "+");
+  // Keys are positioned with left/top: press() owns their transform.
+  at(C, x, y); place(p1, x + k * 1.7 + 14, y + k * 0.25); at(A, x + k * 1.7 + 60, y); place(p2, x + k * 3.4 + 74, y + k * 0.25); at(W, x + k * 3.4 + 120, y);
+  return (t, when) => { const hold = t > when - 0.2 && t < when + 0.35 ? 1 : 0; press(C, hold, hold ? "#fff3b0" : ""); press(A, hold, hold ? "#fff3b0" : ""); const w = tap(t, when - 0.05, 0.3); press(W, w, w ? "#cfe0ff" : ""); };
+};
+const windowBox = (parent, x, y, w, h, title) => {
+  const s = div(parent, `left:${x}px;top:${y}px;width:${w}px;height:${h}px;overflow:hidden`); s.className = "sheet abs";
+  div(s, `left:0;top:0;width:${w}px;height:54px;display:flex;align-items:center;gap:9px;padding:0 20px;border-bottom:2px solid rgba(23,20,10,.08)`,
+    `<i style="width:13px;height:13px;border-radius:50%;background:#e8a29a"></i><i style="width:13px;height:13px;border-radius:50%;background:#ecd27e"></i><i style="width:13px;height:13px;border-radius:50%;background:#a8d49a"></i><b style="margin-left:12px;font:700 24px/1 var(--body);color:var(--ink-soft)">${title}</b>`);
+  return s;
+};
+const caption = (parent, y, big, small) => {
+  const a = div(parent, `left:120px;top:${y}px;font:900 60px/1.05 var(--display);font-variation-settings:'wdth' 118;white-space:nowrap`, big);
+  const b = small ? div(parent, `left:120px;top:${y + 88}px;font:700 32px/1 var(--body);color:var(--ink-soft);white-space:nowrap`, small) : null;
+  return (u, t0) => { show(a, lerp(u, [t0, t0 + 0.4], [0, 1])); place(a, 0, lerp(u, [t0, t0 + 0.5], [20, 0])); if (b) show(b, lerp(u, [t0 + 0.4, t0 + 0.8], [0, 1])); };
+};
+// sentences appearing one by one, each with a fading highlight
+const streamHTML = (sentences, u, starts) => sentences.map((s, i) => {
+  if (u < starts[i]) return "";
+  const a = 0.25 * lerp(u, [starts[i], starts[i] + 1.1], [1, 0], ease.linear);
+  return `<span class="fix" style="background:rgba(26,86,214,${a});border-radius:6px">${esc(s)}</span>`;
+}).join("");
+
+// ---- 0: title
+const c0 = chapters[0];
+div(c0, "left:120px;top:250px;font:700 40px/1 var(--body);color:var(--ink-soft)", "New in QuipKeys");
+div(c0, "left:120px;top:310px;font:900 150px/1 var(--display);font-variation-settings:'wdth' 125;letter-spacing:-.02em", "Write it for me.");
+div(c0, "left:120px;top:500px;font:700 40px/1.3 var(--body);color:var(--ink-soft);width:1500px", "Type a few words. Press one key. Get the finished text, right where you're typing.");
+const k0 = keys(c0, 120, 640);
+
+// ---- 1: it reads the room
+const c1 = chapters[1]; chapterTag(1, "It reads the room");
+const chat = windowBox(c1, 120, 130, 1080, 650, "Chat · #design");
+div(chat, "left:36px;top:90px;width:1000px;font:400 32px/1.5 var(--body)",
+  `<b>Priya</b><br>Can we ship the new logo on Monday?<br><br><b>Tom</b><br>The files look close to done.`);
+const composer = div(chat, "left:30px;top:430px;width:1020px;height:190px;border:3px solid rgba(23,20,10,.14);border-radius:14px;padding:18px 22px;font:400 32px/1.45 var(--mono);white-space:pre-wrap");
+const k1 = keys(c1, 1290, 150, 90);
+const sees = div(c1, "left:1290px;top:300px;width:520px;font:700 30px/1.25 var(--body)");
+const SEES = [["✓", "The app: a chat in #design"], ["✓", "The conversation on screen"], ["✓", "Your text box"], ["–", "Nothing copied"]];
+const cap1 = caption(c1, 830, "No copying. It reads what's around your cursor.", "Then it writes what fits, and streams it in where you typed.");
+const INSTR1 = "yes but need until tuesday afternoon";
+const R1 = ["Yes, mostly! ", "Could we make it Tuesday afternoon instead? ", "I need a bit more time on the final files."];
+
+// ---- 2: fits the place
+const c2 = chapters[2]; chapterTag(2, "It fits the place");
+div(c2, "left:120px;top:130px;font:700 36px/1 var(--body);color:var(--ink-soft)", "Same instruction, three places:");
+div(c2, "left:720px;top:122px;font:600 44px/1 var(--mono)", "“say thanks, friday works”");
+const places = [
+  ["Chat", "Thanks! Friday works for me."],
+  ["Email", "Hi Sam,\n\nThanks for sorting this out. Friday works well for me.\n\nBest,\nHasnat"],
+  ["Ticket", "Thanks, Friday is confirmed. I'll pick this up then."],
+].map(([name, text], i) => { const w = windowBox(c2, 120 + i * 570, 220, 540, 470, name); const b = div(w, "left:28px;top:86px;width:484px;font:400 31px/1.45 var(--mono);white-space:pre-wrap"); return { b, text }; });
+const cap2 = caption(c2, 760, "Same instruction. Written for where you are.", "Chats stay short. Emails get a greeting. Documents keep their voice. Forms get just the answer.");
+const foot2 = div(c2, "left:120px;top:990px;font:400 24px/1 var(--body);color:var(--ink-soft)", "Illustration: example wording.");
+
+// ---- 3: streams in, your model
+const c3 = chapters[3]; chapterTag(3, "Fast, and your choice of model");
+const lane = (y, label) => { div(c3, `left:120px;top:${y + 20}px;width:260px;font:900 40px/1.1 var(--display);font-variation-settings:'wdth' 112`, label); const b = div(c3, `left:400px;top:${y}px;width:1400px;height:150px;padding:22px 26px;font:400 32px/1.45 var(--mono)`); b.className = "sheet abs"; return b; };
+const before = lane(150, "Before:<br><span style='font-size:28px;color:var(--ink-soft)'>all at the end</span>"), now = lane(340, "Now:<br><span style='font-size:28px;color:var(--fix)'>as it's written</span>");
+const work = div(c3, "left:400px;top:520px;height:10px;border-radius:5px;background:var(--fix)");
+const workL = div(c3, "left:400px;top:540px;font:600 24px/1 var(--mono);color:var(--ink-soft)", "the model writing…");
+const S3 = ["Thanks for the update. ", "The new numbers look right to me. ", "Let's lock the plan on Friday."];
+const models = [["Fast", "Claude Haiku 5.5"], ["Best", "Claude Opus 5.5"], ["On your computer", "Ollama, LM Studio: nothing leaves"]].map(([a, b], i) => {
+  const d = div(c3, `left:${120 + i * 570}px;top:620px;width:540px;padding:20px 24px;border-radius:14px;background:${i === 2 ? "var(--ink)" : "#fff3b0"};color:${i === 2 ? "var(--paper)" : "var(--ink)"}`,
+    `<div style="font:900 38px/1 var(--display);font-variation-settings:'wdth' 112">${a}</div><div style="font:700 26px/1.3 var(--body);margin-top:8px;opacity:.8">${b}</div>`);
+  return d; });
+const cap3 = caption(c3, 830, "It streams in as it's written. You pick the brain.", "One open connection, reused, so there's no wait to reconnect each time.");
+
+// ---- 4: safe by default
+const c4 = chapters[4]; chapterTag(4, "Safe by default");
+const box4 = windowBox(c4, 120, 130, 820, 560, "Email");
+const t4 = div(box4, "left:30px;top:86px;width:760px;font:400 32px/1.45 var(--mono);white-space:pre-wrap");
+const key4 = el("div", "cap abs", c4, "k"); key4.style.cssText += "width:96px;height:96px;font-size:36px"; at(key4, 140, 720);
+const typedNote = div(c4, "left:260px;top:745px;font:700 30px/1 var(--body)", "You start typing…");
+const clipNote = el("div", "tag abs", c4, "The rest is on your clipboard"); clipNote.style.cssText += "left:140px;top:840px;font-size:28px;background:var(--fix);color:#fff";
+const S4 = ["Hi Sam, ", "thanks for sending the draft. ", "I'll read it tonight and reply tomorrow. ", "Best, Hasnat"];
+const RULES = ["Off until you switch it on", "Nothing is read until you press the key", "Never reads password fields, banking or password apps", "Keep typing and it stops; the rest waits on your clipboard", "Typo fixing stays offline, always"];
+const rules = RULES.map((r, i) => div(c4, `left:1010px;top:${150 + i * 104}px;width:800px;font:700 32px/1.25 var(--body);display:flex;gap:16px;align-items:flex-start`,
+  `<span style="flex:none;width:46px;height:46px;border-radius:50%;background:var(--fix);color:#fff;display:grid;place-items:center;font:900 26px/1 var(--display)">✓</span><span>${r}</span>`));
+const cap4 = caption(c4, 920, "It writes when you ask, and never fights you.");
+
+// ---- 5: end card
+const c5 = chapters[5];
+div(c5, "left:0;width:1920px;top:200px;text-align:center;font:900 150px/1 var(--display);font-variation-settings:'wdth' 125;letter-spacing:-.02em", "Write it for me.");
+const k5 = keys(c5, 640, 420, 110);
+div(c5, "left:0;width:1920px;top:570px;text-align:center;font:700 34px/1 var(--body);color:var(--ink-soft)", "Ctrl + Option + W on a Mac");
+div(c5, "left:0;width:1920px;top:740px;display:flex;justify-content:center;align-items:center;gap:24px;font:900 80px/1 var(--display);font-variation-settings:'wdth' 125", `<span style="width:96px;height:96px;display:inline-block">${LOGO}</span><span>QuipKeys</span>`);
+
+window.scene = { duration: 52, render(t) {
+  chapters.forEach((c, i) => show(c, fadeOf(i, t)));
+  // 0
+  k0(t, 2.2);
+  // 1
+  let u = t - CH[1][0];
+  if (u >= 0 && u < 12) {
+    const T_KEY = 3.2, T_S = [4.6, 5.5, 6.3];
+    composer.innerHTML = u < T_S[0] ? `<span style="opacity:${u > T_KEY ? 0.45 + 0.3 * Math.sin(u * 9) : 1}">${esc(typed(INSTR1, u, 0.5, 16))}</span>${u < T_KEY && Math.floor(u * 2.2) % 2 ? "▌" : ""}` : streamHTML(R1, u, T_S);
+    k1(u, T_KEY);
+    sees.innerHTML = SEES.map(([m, s], i) => `<div style="opacity:${lerp(u, [T_KEY + 0.2 + i * 0.3, T_KEY + 0.5 + i * 0.3], [0, 1])};margin-bottom:18px;display:flex;gap:14px"><span style="color:${m === "✓" ? "var(--fix)" : "var(--ink-soft)"};width:30px">${m}</span><span style="color:${m === "✓" ? "var(--ink)" : "var(--ink-soft)"}">${s}</span></div>`).join("");
+    cap1(u, 7.6);
+  }
+  // 2
+  u = t - CH[2][0];
+  if (u >= 0 && u < 12) {
+    places.forEach((p, i) => { p.b.innerHTML = `<span class="fix">${esc(typed(p.text, u, 1.2 + i * 1.1, 34))}</span>`; });
+    cap2(u, 5.6); show(foot2, lerp(u, [6.4, 6.8], [0, 1]));
+  }
+  // 3
+  u = t - CH[3][0];
+  if (u >= 0 && u < 12) {
+    const W0 = 0.6, W1 = 5.0;
+    work.style.width = 1400 * lerp(u, [W0, W1], [0, 1], ease.linear) + "px"; show(work, u > W0 ? 1 : 0); show(workL, u > W0 && u < W1 ? 1 : 0);
+    now.innerHTML = streamHTML(S3, u, [W0 + 1.2, W0 + 2.6, W0 + 4.0]);
+    before.innerHTML = u >= W1 ? `<span class="fix">${esc(S3.join(""))}</span>` : `<span style="color:var(--ink-soft)">${u > W0 ? "waiting…" : ""}</span>`;
+    models.forEach((m, i) => { show(m, lerp(u, [5.4 + i * 0.35, 5.7 + i * 0.35], [0, 1])); });
+    cap3(u, 6.6);
+  }
+  // 4
+  u = t - CH[4][0];
+  if (u >= 0 && u < 10) {
+    const T_TYPE = 2.6;
+    t4.innerHTML = streamHTML(S4.slice(0, 2), u, [0.6, 1.5]) + (u > T_TYPE + 0.1 ? "k" : "");
+    press(key4, tap(u, T_TYPE, 0.3), tap(u, T_TYPE, 0.3) ? "#fff3b0" : "");
+    show(typedNote, lerp(u, [T_TYPE, T_TYPE + 0.3], [0, 1])); show(clipNote, lerp(u, [T_TYPE + 0.6, T_TYPE + 0.9], [0, 1]));
+    rules.forEach((r, i) => show(r, lerp(u, [0.4 + i * 0.5, 0.7 + i * 0.5], [0, 1])));
+    cap4(u, 4.6);
+  }
+  // 5
+  k5(t - CH[5][0], 1.2);
+}};
+</script></body></html>

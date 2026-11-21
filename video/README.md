@@ -1,6 +1,6 @@
 # Pitch-video animations
 
-Twenty-four short clips to cut between demo footage. Each is 1920×1080, 30 fps, H.264,
+Twenty-four short clips and one overview to cut between demo footage. Each is 1920×1080, 30 fps, H.264,
 with no audio. They use the same look as the website: yellow paper, keycaps,
 red squiggles for typos and blue for fixes. The finished files are in `out/`.
 
@@ -30,6 +30,7 @@ red squiggles for typos and blue for fixes. The finished files are in `out/`.
 | `22-either-order` | 10 s | Two lanes, "Copy, then type" and "Type, then copy", reach the same reply | "Copy first or type first. Same reply." |
 | `23-no-tab-hopping` | 10 s | The usual way (7 steps, 2 window switches through an AI chat tab) vs QuipKeys (3 steps, 0 switches) | "No tab-hopping. It writes where you are." |
 | `24-your-model-your-call` | 9 s | Claude (online, your own key, sends only when you press the key) vs a model on your computer (nothing leaves), plus the safety rules | "Pick the brain. QuipKeys does the rest." |
+| `25-whats-new-write-it-for-me` | 52 s | **Overview of the new feature**, in four chapters: it reads the room (a chat, nothing copied, the reply streams in); it fits the place (one instruction written for chat, email and a ticket); fast, and your choice of model (streaming vs all at the end; Fast, Best, on your computer); safe by default (the rules, and typing stops the pasting). Ends on the hotkey and logo | Reply wording is labelled as an illustration; no speed numbers are claimed |
 
 Suggested five for a short cut: 01, 02, 03, 04, 05. For a value-focused cut: 03, 12, 14, 11, 05. The full intro video's script, with a clip for each line, is in [SCRIPT.md](SCRIPT.md).
 
