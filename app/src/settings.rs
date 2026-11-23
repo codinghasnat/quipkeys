@@ -361,54 +361,103 @@ fn set_value(name: &str, v: &str) {
     let _ = std::fs::write(settings_path(), lines.join("\n") + "\n");
 }
 
-/// The Claude API key lives in its own file (readable only by you on macOS),
-/// never in the settings file. ANTHROPIC_API_KEY in the environment works too.
-fn claude_key_path() -> PathBuf {
-    config_dir().join("quipkeys-claude-key.txt")
+/// API keys, one per provider ("openai=sk-..."), in their own file (readable
+/// only by you on macOS), never in the settings file. Environment variables
+/// (ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY, XAI_API_KEY,
+/// DEEPSEEK_API_KEY) work too.
+fn keys_path() -> PathBuf {
+    config_dir().join("quipkeys-api-keys.txt")
 }
 
-pub fn has_claude_key() -> bool {
-    !claude_key().is_empty()
-}
-
-fn claude_key() -> String {
-    std::fs::read_to_string(claude_key_path())
-        .ok()
-        .map(|k| k.trim().to_string())
-        .filter(|k| !k.is_empty())
-        .or_else(|| std::env::var("ANTHROPIC_API_KEY").ok())
+fn read_keys() -> Vec<(String, String)> {
+    let mut keys: Vec<(String, String)> = std::fs::read_to_string(keys_path())
         .unwrap_or_default()
+        .lines()
+        .filter(|l| !l.starts_with('#'))
+        .filter_map(|l| l.split_once('=').map(|(a, b)| (a.trim().to_string(), b.trim().to_string())))
+        .filter(|(_, k)| !k.is_empty())
+        .collect();
+    // A Claude key saved by an earlier version.
+    if !keys.iter().any(|(v, _)| v == "claude") {
+        if let Ok(k) = std::fs::read_to_string(config_dir().join("quipkeys-claude-key.txt")) {
+            if !k.trim().is_empty() {
+                keys.push(("claude".into(), k.trim().to_string()));
+            }
+        }
+    }
+    keys
 }
 
-/// Save the key (an empty string removes it).
-pub fn set_claude_key(key: &str) {
-    let key = key.trim();
-    if key.is_empty() {
-        let _ = std::fs::remove_file(claude_key_path());
-        return;
+pub fn api_key(vendor: &str) -> String {
+    if let Some((_, k)) = read_keys().into_iter().find(|(v, _)| v == vendor) {
+        return k;
     }
-    let _ = std::fs::write(claude_key_path(), key);
+    let env = match vendor {
+        "claude" => "ANTHROPIC_API_KEY",
+        "openai" => "OPENAI_API_KEY",
+        "gemini" => "GEMINI_API_KEY",
+        "grok" => "XAI_API_KEY",
+        "deepseek" => "DEEPSEEK_API_KEY",
+        _ => return String::new(),
+    };
+    std::env::var(env).unwrap_or_default()
+}
+
+pub fn has_api_key(vendor: &str) -> bool {
+    !api_key(vendor).trim().is_empty()
+}
+
+/// Save a provider's key (an empty string removes it).
+pub fn set_api_key(vendor: &str, key: &str) {
+    let key: String = key.trim().chars().filter(|c| !c.is_control() && !c.is_whitespace()).collect();
+    let mut keys: Vec<(String, String)> = read_keys().into_iter().filter(|(v, _)| v != vendor).collect();
+    if !key.is_empty() {
+        keys.push((vendor.to_string(), key));
+    }
+    let mut text = String::from("# Your API keys for Write it for me: one per line, provider=key. Keep this file private.\n");
+    for (v, k) in &keys {
+        text.push_str(&format!("{v}={k}\n"));
+    }
+    let _ = std::fs::write(keys_path(), text);
+    let _ = std::fs::remove_file(config_dir().join("quipkeys-claude-key.txt"));
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        let _ = std::fs::set_permissions(claude_key_path(), std::fs::Permissions::from_mode(0o600));
+        let _ = std::fs::set_permissions(keys_path(), std::fs::Permissions::from_mode(0o600));
     }
+}
+
+/// The chosen provider ("off" until the user picks one).
+pub fn ai_kind() -> String {
+    value("ai").filter(|k| crate::ai::vendor(k).is_some()).unwrap_or_else(|| "off".into())
+}
+
+/// The model chosen for a provider ("" = not chosen yet).
+pub fn ai_model(vendor: &str) -> String {
+    value(&format!("ai_model_{vendor}")).unwrap_or_default()
+}
+
+/// The address for a custom or local service ("" = the default).
+pub fn ai_url(vendor: &str) -> String {
+    value(&format!("ai_url_{vendor}")).unwrap_or_default()
 }
 
 /// The model "write it for me" uses (off until the user picks one).
 pub fn ai_provider() -> crate::ai::Provider {
-    use crate::ai::{Provider, CLAUDE_BEST, CLAUDE_FAST, LOCAL_MODEL, LOCAL_URL};
-    match value("ai").as_deref() {
-        Some("claude") => {
-            let default = if value("ai_speed").as_deref() == Some("best") { CLAUDE_BEST } else { CLAUDE_FAST };
-            Provider::Claude { api_key: claude_key(), model: value("ai_claude_model").unwrap_or(default.into()) }
-        }
-        Some("local") => Provider::Local {
-            url: value("ai_local_url").unwrap_or(LOCAL_URL.into()),
-            model: value("ai_local_model").unwrap_or(LOCAL_MODEL.into()),
-        },
-        _ => Provider::Off,
+    use crate::ai::{vendor, Provider};
+    let kind = ai_kind();
+    let Some(v) = vendor(&kind) else { return Provider::Off };
+    let model = Some(ai_model(&kind)).filter(|m| !m.is_empty()).or_else(|| v.defaults.first().map(|d| d.to_string())).unwrap_or_default();
+    if kind == "claude" {
+        return Provider::Claude { api_key: api_key("claude"), model };
     }
+    let url = Some(ai_url(&kind)).filter(|u| !u.is_empty()).unwrap_or_else(|| v.chat_url.to_string());
+    let who = match kind.as_str() {
+        "local" => "the local model".to_string(),
+        "custom" => "the custom service".to_string(),
+        _ => v.name.to_string(),
+    };
+    Provider::Chat { who, url, api_key: api_key(&kind), model }
 }
 
 /// Use the text around the cursor and on screen as context (on unless switched off).
@@ -416,32 +465,15 @@ pub fn ai_screen() -> bool {
     !flag("ai_no_screen")
 }
 
-/// The settings window's fields, as stored (empty = default).
-pub struct AiFields {
-    pub kind: String,
-    pub speed: String,
-    pub claude_model: String,
-    pub local_url: String,
-    pub local_model: String,
-    pub screen: bool,
-}
-
-pub fn ai_fields() -> AiFields {
-    AiFields {
-        kind: value("ai").unwrap_or_else(|| "off".into()),
-        speed: value("ai_speed").unwrap_or_else(|| "fast".into()),
-        claude_model: value("ai_claude_model").unwrap_or_default(),
-        local_url: value("ai_local_url").unwrap_or_default(),
-        local_model: value("ai_local_model").unwrap_or_default(),
-        screen: ai_screen(),
+/// Save the settings window's choices for one provider.
+pub fn set_ai(kind: &str, model: &str, url: &str, screen: bool) {
+    let kind = if crate::ai::vendor(kind).is_some() { kind } else { "off" };
+    set_value("ai", kind);
+    if kind != "off" {
+        set_value(&format!("ai_model_{kind}"), model);
+        if matches!(kind, "custom" | "local") {
+            set_value(&format!("ai_url_{kind}"), url);
+        }
     }
-}
-
-pub fn set_ai(f: &AiFields) {
-    set_value("ai", if matches!(f.kind.as_str(), "claude" | "local") { &f.kind } else { "off" });
-    set_value("ai_speed", if f.speed == "best" { "best" } else { "fast" });
-    set_value("ai_claude_model", &f.claude_model);
-    set_value("ai_local_url", &f.local_url);
-    set_value("ai_local_model", &f.local_model);
-    set_flag("ai_no_screen", !f.screen);
+    set_flag("ai_no_screen", !screen);
 }

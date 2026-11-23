@@ -59,6 +59,12 @@ pub enum UiEvent {
     OpenCompose,
     /// The answer to "Try it" in the settings window.
     ComposeTest(Result<String, String>),
+    /// The models a provider's key can use, and the cheapest of them: (provider, result).
+    ComposeModels(String, Result<(Vec<String>, Option<String>), String>),
+    /// Ollama's version (None: not running), and the models it has.
+    ComposeOllama(Option<String>, Vec<String>),
+    /// A model download: (model, status, bytes done, bytes in all, finished?).
+    ComposePull(String, String, u64, u64, Option<Result<(), String>>),
 }
 
 /// How long the icon flashes blue after a change.
@@ -286,6 +292,29 @@ impl App {
                 self.refresh();
             }
             UiEvent::OpenCompose => self.open_compose(target),
+            UiEvent::ComposeModels(kind, result) => {
+                let js = match result {
+                    Ok((list, pick)) => format!(
+                        "QKC.models({}, true, {}, {})",
+                        js_string(&kind),
+                        serde_json::json!(list),
+                        serde_json::json!(pick)
+                    ),
+                    Err(e) => format!("QKC.models({}, false, {}, null)", js_string(&kind), js_string(&e)),
+                };
+                self.compose_js(&js);
+            }
+            UiEvent::ComposeOllama(version, models) => {
+                self.compose_js(&format!("QKC.ollama({}, {})", serde_json::json!(version), serde_json::json!(models)));
+            }
+            UiEvent::ComposePull(model, status, done, total, finished) => {
+                let fin = match finished {
+                    None => "null".to_string(),
+                    Some(Ok(())) => "true".to_string(),
+                    Some(Err(e)) => js_string(&e),
+                };
+                self.compose_js(&format!("QKC.pull({}, {}, {done}, {total}, {fin})", js_string(&model), js_string(&status)));
+            }
             UiEvent::ComposeTest(result) => {
                 if let Some(p) = &self.compose {
                     let (ok, text) = match result {
@@ -460,38 +489,40 @@ impl App {
         self.compose = open_window(target, "Write it for me", (560.0, 760.0), true, COMPOSE);
     }
 
-    /// Tell the settings window what's stored (never the key itself).
+    /// Run a script in the "Write it for me" window, if it's open.
+    fn compose_js(&self, js: &str) {
+        if let Some(p) = &self.compose {
+            let _ = p.webview.evaluate_script(js);
+        }
+    }
+
+    /// Tell the settings window what's stored (never the keys themselves).
     fn push_compose(&self) {
-        let Some(p) = &self.compose else { return };
-        let f = settings::ai_fields();
-        let _ = p.webview.evaluate_script(&format!(
-            "QKC.state({{kind: {}, speed: {}, cmodel: {}, url: {}, lmodel: {}, screen: {}, haskey: {}}})",
-            js_string(&f.kind),
-            js_string(&f.speed),
-            js_string(&f.claude_model),
-            js_string(&f.local_url),
-            js_string(&f.local_model),
-            f.screen,
-            settings::has_claude_key()
-        ));
+        use serde_json::json;
+        let providers: Vec<_> = crate::ai::VENDORS
+            .iter()
+            .map(|v| {
+                json!({ "id": v.id, "name": v.name, "keyPage": v.key_page, "needsKey": v.needs_key,
+                        "hasKey": settings::has_api_key(v.id), "model": settings::ai_model(v.id),
+                        "url": settings::ai_url(v.id), "defaultUrl": v.chat_url, "default": v.defaults.first() })
+            })
+            .collect();
+        let downloads: Vec<_> = crate::ai::LOCAL_DOWNLOADS.iter().map(|(m, about)| json!({ "model": m, "about": about })).collect();
+        let state = json!({ "kind": settings::ai_kind(), "screen": settings::ai_screen(), "providers": providers, "downloads": downloads });
+        self.compose_js(&format!("QKC.state({state})"));
     }
 
     /// A message from the "Write it for me" window.
     fn compose_ipc(&mut self, msg: &str) {
-        let save = |json: &str| {
-            let v: serde_json::Value = serde_json::from_str(json).unwrap_or_default();
-            let f = |k: &str| v.get(k).and_then(|x| x.as_str()).unwrap_or("").to_string();
-            settings::set_ai(&settings::AiFields {
-                kind: f("kind"),
-                speed: f("speed"),
-                claude_model: f("cmodel"),
-                local_url: f("url"),
-                local_model: f("lmodel"),
-                screen: v.get("screen").and_then(|x| x.as_bool()).unwrap_or(true),
-            });
+        use serde_json::Value;
+        let parse = |json: &str| serde_json::from_str::<Value>(json).unwrap_or_default();
+        let field = |v: &Value, k: &str| v.get(k).and_then(|x| x.as_str()).unwrap_or("").trim().to_string();
+        let save = |v: &Value| {
+            let kind = field(v, "kind");
+            settings::set_ai(&kind, &field(v, "model"), &field(v, "url"), v.get("screen").and_then(Value::as_bool).unwrap_or(true));
             // An empty key field keeps the saved key.
-            if !f("key").trim().is_empty() {
-                settings::set_claude_key(&f("key"));
+            if !field(v, "key").is_empty() {
+                settings::set_api_key(&kind, &field(v, "key"));
             }
             // Open the connection now so the first press doesn't wait for it.
             crate::ai::warm_up(&settings::ai_provider());
@@ -499,13 +530,25 @@ impl App {
         if msg == "ready" {
             self.push_compose();
         } else if let Some(json) = msg.strip_prefix("save:") {
-            save(json);
+            save(&parse(json));
             self.push_compose();
-            if let Some(p) = &self.compose {
-                let _ = p.webview.evaluate_script("QKC.saved()");
-            }
+            self.compose_js("QKC.saved()");
+        } else if let Some(json) = msg.strip_prefix("check:") {
+            // Check the key by listing the models it can use; pick the cheapest.
+            let v = parse(json);
+            save(&v);
+            self.push_compose();
+            let kind = field(&v, "kind");
+            let url = settings::ai_url(&kind);
+            std::thread::spawn(move || {
+                let r = crate::ai::list_models(&kind, &url, &settings::api_key(&kind)).map(|list| {
+                    let pick = crate::ai::pick_model(&kind, &list);
+                    (list, pick)
+                });
+                notify(UiEvent::ComposeModels(kind, r));
+            });
         } else if let Some(json) = msg.strip_prefix("test:") {
-            save(json);
+            save(&parse(json));
             self.push_compose();
             std::thread::spawn(|| {
                 let req = crate::ai::Request { instruction: "Say hello in at most six words.".into(), ..Default::default() };
@@ -514,6 +557,31 @@ impl App {
                     .map(|t| format!("{}” ({:.1} s)", t.trim(), t0.elapsed().as_secs_f64()));
                 notify(UiEvent::ComposeTest(r));
             });
+        } else if msg == "ollama" {
+            std::thread::spawn(|| {
+                let version = crate::ai::ollama_version();
+                let models = if version.is_some() {
+                    crate::ai::list_models("local", &settings::ai_url("local"), "").unwrap_or_default()
+                } else {
+                    Vec::new()
+                };
+                notify(UiEvent::ComposeOllama(version, models));
+            });
+        } else if let Some(model) = msg.strip_prefix("pull:") {
+            let model = model.trim().to_string();
+            if crate::ai::LOCAL_DOWNLOADS.iter().any(|(m, _)| *m == model) {
+                std::thread::spawn(move || {
+                    let mut last = std::time::Instant::now() - std::time::Duration::from_secs(1);
+                    let r = crate::ai::ollama_pull(&model, &mut |status, done, total| {
+                        // A few updates a second is plenty.
+                        if last.elapsed().as_millis() >= 250 {
+                            last = std::time::Instant::now();
+                            notify(UiEvent::ComposePull(model.clone(), status.to_string(), done, total, None));
+                        }
+                    });
+                    notify(UiEvent::ComposePull(model, String::new(), 0, 0, Some(r)));
+                });
+            }
         }
     }
 

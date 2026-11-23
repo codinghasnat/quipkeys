@@ -1,12 +1,14 @@
 //! "Write it for me": turn an instruction plus context into finished text,
 //! using the model the user chose, streamed so it can appear as it's written.
 //!
-//! * **Claude** (cloud): the Claude Messages API with the user's own API key.
-//!   The instruction and context leave the computer, and only when the
-//!   hotkey is pressed. "Fast" is Claude Haiku 5.5 with thinking off; "Best"
-//!   is Claude Opus 5.5 at low effort.
-//! * **Local**: any model served on the user's own computer through the chat
-//!   endpoint that Ollama, LM Studio and llama.cpp's server all offer. Nothing
+//! * **An online provider** with the user's own API key: Claude (its own
+//!   Messages API), or OpenAI, Gemini, Grok, DeepSeek or any custom service
+//!   through the OpenAI-style chat endpoint they all offer. The instruction and
+//!   context leave the computer, and only when the hotkey is pressed. Each
+//!   defaults to its cheapest model; the user can pick any model their key
+//!   can use (listed live from the provider).
+//! * **Free, on this computer**: a model served by Ollama, LM Studio or
+//!   llama.cpp's server. QuipKeys can download one through Ollama. Nothing
 //!   leaves the computer.
 //!
 //! Context is whatever the platform layer could see when the key was pressed:
@@ -23,17 +25,114 @@ use serde_json::{json, Value};
 #[derive(Clone, Debug, PartialEq)]
 pub enum Provider {
     Off,
+    /// The Claude Messages API.
     Claude { api_key: String, model: String },
-    Local { url: String, model: String },
+    /// An OpenAI-style chat endpoint (OpenAI, Gemini, Grok, DeepSeek, a
+    /// custom service, or a local server). `who` names it in messages.
+    Chat { who: String, url: String, api_key: String, model: String },
 }
 
 pub const CLAUDE_URL: &str = "https://api.anthropic.com/v1/messages";
-/// "Fast": the quickest Claude model, for short writing.
-pub const CLAUDE_FAST: &str = "claude-haiku-5-5";
-/// "Best": the strongest writing.
-pub const CLAUDE_BEST: &str = "claude-opus-5-5";
-pub const LOCAL_URL: &str = "http://localhost:11434/v1/chat/completions";
-pub const LOCAL_MODEL: &str = "llama3.2";
+/// Where Ollama listens: for checking it's running and downloading models.
+pub const OLLAMA: &str = "http://localhost:11434";
+
+/// A provider the user can pick, and how to reach it.
+pub struct Vendor {
+    pub id: &'static str,
+    pub name: &'static str,
+    /// Chat endpoint ("" = the user gives one).
+    pub chat_url: &'static str,
+    /// Model list endpoint ("" = derived from the chat endpoint).
+    pub models_url: &'static str,
+    /// Where to get a key (or, for local, the software).
+    pub key_page: &'static str,
+    /// Cheapest first. The first one the user's account offers is the default;
+    /// several are listed because providers rename and retire models often.
+    pub defaults: &'static [&'static str],
+    pub needs_key: bool,
+}
+
+pub const VENDORS: &[Vendor] = &[
+    Vendor {
+        id: "claude",
+        name: "Claude",
+        chat_url: CLAUDE_URL,
+        models_url: "https://api.anthropic.com/v1/models?limit=100",
+        key_page: "https://console.anthropic.com/settings/keys",
+        defaults: &["claude-haiku-5-5", "claude-haiku-4-5"],
+        needs_key: true,
+    },
+    Vendor {
+        id: "openai",
+        name: "OpenAI",
+        chat_url: "https://api.openai.com/v1/chat/completions",
+        models_url: "https://api.openai.com/v1/models",
+        key_page: "https://platform.openai.com/api-keys",
+        defaults: &["gpt-5-nano", "gpt-4.1-nano", "gpt-5.4-nano", "gpt-5.5-nano", "gpt-5-mini", "gpt-4o-mini"],
+        needs_key: true,
+    },
+    Vendor {
+        id: "gemini",
+        name: "Gemini",
+        chat_url: "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+        models_url: "https://generativelanguage.googleapis.com/v1beta/openai/models",
+        key_page: "https://aistudio.google.com/apikey",
+        defaults: &["gemini-2.5-flash-lite", "gemini-3.1-flash-lite", "gemini-3.5-flash-lite", "gemini-2.5-flash"],
+        needs_key: true,
+    },
+    Vendor {
+        id: "grok",
+        name: "Grok",
+        chat_url: "https://api.x.ai/v1/chat/completions",
+        models_url: "https://api.x.ai/v1/models",
+        key_page: "https://console.x.ai",
+        defaults: &["grok-4-1-fast-non-reasoning", "grok-4-1-fast", "grok-4-fast-non-reasoning", "grok-3-mini"],
+        needs_key: true,
+    },
+    Vendor {
+        id: "deepseek",
+        name: "DeepSeek",
+        chat_url: "https://api.deepseek.com/chat/completions",
+        models_url: "https://api.deepseek.com/models",
+        key_page: "https://platform.deepseek.com/api_keys",
+        defaults: &["deepseek-v4-flash", "deepseek-flash", "deepseek-chat"],
+        needs_key: true,
+    },
+    Vendor {
+        id: "custom",
+        name: "Custom",
+        chat_url: "",
+        models_url: "",
+        key_page: "",
+        defaults: &[],
+        needs_key: false,
+    },
+    Vendor {
+        id: "local",
+        name: "On this computer",
+        chat_url: "http://localhost:11434/v1/chat/completions",
+        models_url: "",
+        key_page: "https://ollama.com/download",
+        defaults: &["llama3.2", "gemma3:4b"],
+        needs_key: false,
+    },
+];
+
+pub fn vendor(id: &str) -> Option<&'static Vendor> {
+    VENDORS.iter().find(|v| v.id == id)
+}
+
+/// Models offered for download through Ollama: (name, what to say about it).
+pub const LOCAL_DOWNLOADS: &[(&str, &str)] =
+    &[("llama3.2", "Small and quick, about 2 GB"), ("gemma3:4b", "Better writing, about 3.3 GB, best with 16 GB of memory")];
+
+/// The model list endpoint for a chat endpoint: ".../chat/completions" -> ".../models".
+pub fn models_url_for(chat_url: &str) -> String {
+    match chat_url.strip_suffix("/chat/completions") {
+        Some(base) => format!("{base}/models"),
+        None => format!("{}/models", chat_url.trim_end_matches('/')),
+    }
+}
 
 /// Limits on each kind of context (characters). Less to read is a faster answer.
 const COPIED_MAX: usize = 30_000;
@@ -165,6 +264,11 @@ pub fn user_message(r: &Request) -> String {
     m
 }
 
+/// Claude models that take the server-side refusal fallback.
+fn claude_has_fallbacks(model: &str) -> bool {
+    ["claude-opus-5", "claude-sonnet-5-5", "claude-fable-5"].iter().any(|p| model.starts_with(p))
+}
+
 /// The Claude Messages API request body (streamed).
 pub fn claude_body(model: &str, r: &Request) -> Value {
     let mut body = json!({
@@ -174,21 +278,25 @@ pub fn claude_body(model: &str, r: &Request) -> Value {
         "system": SYSTEM,
         "messages": [{ "role": "user", "content": user_message(r) }],
     });
-    if model.starts_with("claude-haiku") {
+    if model.starts_with("claude-haiku-5") {
         // Fastest start: no thinking for a short piece of writing.
         body["thinking"] = json!({ "type": "disabled" });
         body["output_config"] = json!({ "effort": "low" });
+    } else if model.starts_with("claude-haiku") || model.starts_with("claude-3") {
+        // Older models: no effort setting.
     } else {
-        // Opus/Sonnet always think a little; keep it brief. If Claude
-        // declines, let the API retry on a model that can answer.
+        // Opus/Sonnet/Fable think a little; keep it brief.
         body["output_config"] = json!({ "effort": "low" });
-        body["fallbacks"] = json!("default");
+        if claude_has_fallbacks(model) {
+            // If Claude declines, let the API retry on a model that can answer.
+            body["fallbacks"] = json!("default");
+        }
     }
     body
 }
 
-/// The OpenAI-style chat request body that local model servers take (streamed).
-pub fn local_body(model: &str, r: &Request) -> Value {
+/// The OpenAI-style chat request body (streamed).
+pub fn chat_body(model: &str, r: &Request) -> Value {
     json!({
         "model": model,
         "stream": true,
@@ -303,7 +411,7 @@ fn agent() -> &'static ureq::Agent {
 pub fn warm_up(p: &Provider) {
     let url = match p {
         Provider::Claude { .. } => CLAUDE_URL.to_string(),
-        Provider::Local { url, .. } => url.clone(),
+        Provider::Chat { url, .. } => url.clone(),
         Provider::Off => return,
     };
     std::thread::spawn(move || {
@@ -334,13 +442,20 @@ pub fn write_at(p: &Provider, claude_url: &str, r: &Request, on_text: &mut dyn F
                 .set("x-api-key", api_key.trim())
                 .set("anthropic-version", "2026-10-21")
                 .set("content-type", "application/json");
-            if !model.starts_with("claude-haiku") {
+            if claude_has_fallbacks(model) {
                 req = req.set("anthropic-beta", "server-side-fallback-2026-07-01");
             }
             (req.send_json(claude_body(model, r)), "Claude", claude_event)
         }
-        Provider::Local { url, model } => {
-            (agent().post(url).set("content-type", "application/json").send_json(local_body(model, r)), "the local model", local_event)
+        Provider::Chat { who, url, api_key, model } => {
+            if url.trim().is_empty() {
+                return Err("Add the service's address first: QuipKeys menu › Write it for me…".into());
+            }
+            let mut req = agent().post(url.trim()).set("content-type", "application/json");
+            if !api_key.trim().is_empty() {
+                req = req.set("authorization", &format!("Bearer {}", api_key.trim()));
+            }
+            (req.send_json(chat_body(model, r)), who.as_str(), local_event)
         }
     };
     let resp = check(resp, who)?;
@@ -362,9 +477,110 @@ pub fn write_at(p: &Provider, claude_url: &str, r: &Request, on_text: &mut dyn F
     let rest = unthink.finish();
     give(&rest, &mut all);
     if all.trim().is_empty() {
-        return Err(format!("{} sent back an empty reply.", if who == "Claude" { "Claude" } else { "The local model" }));
+        return Err(format!("{} sent back an empty reply.", capitalise(who)));
     }
     Ok(all)
+}
+
+fn capitalise(s: &str) -> String {
+    let mut c = s.chars();
+    c.next().map(|f| f.to_uppercase().collect::<String>() + c.as_str()).unwrap_or_default()
+}
+
+/// Models a key can use, from the provider's model list. `url` is the chat
+/// endpoint for custom and local services.
+pub fn list_models(vendor_id: &str, url: &str, api_key: &str) -> Result<Vec<String>, String> {
+    let v = vendor(vendor_id).ok_or("Unknown provider.")?;
+    let models_url = if !v.models_url.is_empty() { v.models_url.to_string() } else { models_url_for(if url.is_empty() { v.chat_url } else { url }) };
+    if models_url.starts_with("/") || models_url.is_empty() {
+        return Err("Add the service's address first.".into());
+    }
+    if v.needs_key && api_key.trim().is_empty() {
+        return Err("Paste your API key first.".into());
+    }
+    let mut req = agent().get(&models_url);
+    if vendor_id == "claude" {
+        req = req.set("x-api-key", api_key.trim()).set("anthropic-version", "2026-10-21");
+    } else if !api_key.trim().is_empty() {
+        req = req.set("authorization", &format!("Bearer {}", api_key.trim()));
+    }
+    let who = if vendor_id == "local" { "the local model server" } else { v.name };
+    let body: Value = check(req.call(), who)?.into_json().map_err(|_| format!("Couldn't read the model list from {who}."))?;
+    Ok(model_ids(&body))
+}
+
+/// Model names from a model list (OpenAI/Anthropic "data", Ollama "models"),
+/// leaving out ones that can't write text (embeddings, speech, images...).
+pub fn model_ids(body: &Value) -> Vec<String> {
+    let items = body.get("data").or_else(|| body.get("models")).and_then(Value::as_array).cloned().unwrap_or_default();
+    let mut out: Vec<String> = items
+        .iter()
+        .filter_map(|m| m.get("id").or_else(|| m.get("name")).or_else(|| m.get("model")).and_then(Value::as_str))
+        .map(|id| id.trim_start_matches("models/").to_string())
+        .filter(|id| {
+            let l = id.to_lowercase();
+            !["embed", "tts", "whisper", "dall-e", "image", "audio", "realtime", "moderation", "transcribe", "search", "aqa", "veo", "imagen", "speech", "computer-use", "codex"]
+                .iter()
+                .any(|w| l.contains(w))
+        })
+        .collect();
+    out.sort();
+    out.dedup();
+    out
+}
+
+/// The default model: the cheapest of the provider's defaults that the key
+/// can use; otherwise one whose name says it's a small fast model; otherwise
+/// the first.
+pub fn pick_model(vendor_id: &str, available: &[String]) -> Option<String> {
+    let base = |m: &str| m.strip_suffix(":latest").unwrap_or(m).to_string();
+    if let Some(v) = vendor(vendor_id) {
+        for d in v.defaults {
+            if let Some(m) = available.iter().find(|m| base(m) == *d) {
+                return Some(m.clone());
+            }
+        }
+    }
+    for hint in ["nano", "lite", "haiku", "flash", "mini", "fast", "small"] {
+        if let Some(m) = available.iter().find(|m| m.to_lowercase().contains(hint)) {
+            return Some(m.clone());
+        }
+    }
+    available.first().cloned()
+}
+
+/// Is Ollama running? Its version if so.
+pub fn ollama_version() -> Option<String> {
+    let body: Value = agent().get(&format!("{OLLAMA}/api/version")).timeout(Duration::from_secs(2)).call().ok()?.into_json().ok()?;
+    body.get("version").and_then(Value::as_str).map(String::from)
+}
+
+/// Download a model through Ollama, reporting (what it's doing, bytes done,
+/// bytes in all) as it goes.
+pub fn ollama_pull(model: &str, progress: &mut dyn FnMut(&str, u64, u64)) -> Result<(), String> {
+    ollama_pull_at(OLLAMA, model, progress)
+}
+
+pub fn ollama_pull_at(base: &str, model: &str, progress: &mut dyn FnMut(&str, u64, u64)) -> Result<(), String> {
+    let resp = agent()
+        .post(&format!("{base}/api/pull"))
+        .timeout(Duration::from_secs(6 * 3600))
+        .send_json(json!({ "model": model, "stream": true }));
+    let resp = check(resp, "Ollama")?;
+    for line in BufReader::new(resp.into_reader()).lines() {
+        let line = line.map_err(|_| "The download was interrupted.".to_string())?;
+        let Ok(v) = serde_json::from_str::<Value>(&line) else { continue };
+        if let Some(e) = v.get("error").and_then(Value::as_str) {
+            return Err(format!("Ollama: {e}"));
+        }
+        let status = v.get("status").and_then(Value::as_str).unwrap_or("");
+        let n = |k: &str| v.get(k).and_then(Value::as_u64).unwrap_or(0);
+        progress(status, n("completed"), n("total"));
+        if status == "success" {
+            return Ok(());
+        }
+    }
+    Err("The download stopped before it finished.".into())
 }
 
 /// The response, or a plain-English error.
@@ -386,8 +602,8 @@ fn check(resp: Result<ureq::Response, ureq::Error>, who: &str) -> Result<ureq::R
                 _ => format!("{who} answered with error {code}."),
             })
         }
-        Err(_) if who == "Claude" => Err("Couldn't reach Claude. Check your internet connection.".into()),
-        Err(_) => Err(format!("Couldn't reach {who}. Is it running?")),
+        Err(_) if who.contains("local") || who == "Ollama" => Err(format!("Couldn't reach {who}. Is it running?")),
+        Err(_) => Err(format!("Couldn't reach {who}. Check your internet connection.")),
     }
 }
 
@@ -445,7 +661,7 @@ event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n";
     #[test]
     fn claude_streams_pieces() {
         let (url, h) = serve(200, CLAUDE_STREAM);
-        let p = Provider::Claude { api_key: "sk-test".into(), model: CLAUDE_FAST.into() };
+        let p = Provider::Claude { api_key: "sk-test".into(), model: "claude-haiku-5-5".into() };
         let mut pieces = vec![];
         let out = write_at(&p, &url, &req("say friday works, many thanks", Some("Can we meet Friday?")), &mut |t| pieces.push(t.to_string()));
         assert_eq!(out.unwrap(), "Many thanks, Sam. Friday works.");
@@ -454,7 +670,7 @@ event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n";
         assert!(head.contains("x-api-key: sk-test"));
         assert!(!head.contains("anthropic-beta"), "Haiku has no server-side fallback");
         let v: Value = serde_json::from_str(&body).unwrap();
-        assert_eq!(v["model"], CLAUDE_FAST);
+        assert_eq!(v["model"], "claude-haiku-5-5");
         assert_eq!(v["stream"], true);
         assert_eq!(v["thinking"]["type"], "disabled");
         let msg = v["messages"][0]["content"].as_str().unwrap();
@@ -464,7 +680,7 @@ event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n";
 
     #[test]
     fn best_model_uses_low_effort_and_fallbacks() {
-        let v = claude_body(CLAUDE_BEST, &req("hi", None));
+        let v = claude_body("claude-opus-5-5", &req("hi", None));
         assert_eq!(v["output_config"]["effort"], "low");
         assert_eq!(v["fallbacks"], "default");
         assert!(v.get("thinking").is_none());
@@ -474,7 +690,7 @@ event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n";
     fn claude_refusal_mid_stream_is_an_error() {
         let stream = "data: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"refusal\"}}\n\n";
         let (url, _h) = serve(200, stream);
-        let p = Provider::Claude { api_key: "k".into(), model: CLAUDE_BEST.into() };
+        let p = Provider::Claude { api_key: "k".into(), model: "claude-opus-5-5".into() };
         assert!(write_at(&p, &url, &req("hi", None), &mut |_| {}).unwrap_err().contains("declined"));
     }
 
@@ -485,7 +701,7 @@ data: {\"choices\":[{\"delta\":{\"content\":\"nk>hmm</think>\\nSounds \"}}]}\n\n
 data: {\"choices\":[{\"delta\":{\"content\":\"good!\"}}]}\n\n\
 data: [DONE]\n\n";
         let (url, h) = serve(200, stream);
-        let p = Provider::Local { url, model: "llama3.2".into() };
+        let p = Provider::Chat { who: "the local model".into(), url, api_key: String::new(), model: "llama3.2".into() };
         let mut shown = String::new();
         let out = write(&p, &req("say sounds good", None), &mut |t| shown.push_str(t)).unwrap();
         assert_eq!(out.trim(), "Sounds good!");
@@ -498,12 +714,12 @@ data: [DONE]\n\n";
     #[test]
     fn errors_are_plain_english() {
         let (url, _h) = serve(401, r#"{"type":"error","error":{"type":"authentication_error","message":"invalid x-api-key"}}"#);
-        let p = Provider::Claude { api_key: "bad".into(), model: CLAUDE_FAST.into() };
+        let p = Provider::Claude { api_key: "bad".into(), model: "claude-haiku-5-5".into() };
         assert!(write_at(&p, &url, &req("hi", None), &mut |_| {}).unwrap_err().contains("rejected the API key"));
         assert!(write(&Provider::Off, &req("hi", None), &mut |_| {}).is_err());
-        let p = Provider::Claude { api_key: " ".into(), model: CLAUDE_FAST.into() };
+        let p = Provider::Claude { api_key: " ".into(), model: "claude-haiku-5-5".into() };
         assert!(write(&p, &req("hi", None), &mut |_| {}).unwrap_err().contains("API key"));
-        let p = Provider::Local { url: "http://127.0.0.1:9/v1/chat/completions".into(), model: "x".into() };
+        let p = Provider::Chat { who: "the local model".into(), url: "http://127.0.0.1:9/v1/chat/completions".into(), api_key: String::new(), model: "x".into() };
         assert!(write(&p, &req("hi", None), &mut |_| {}).unwrap_err().contains("Is it running"));
     }
 
@@ -552,5 +768,81 @@ data: [DONE]\n\n";
         }
         out.push_str(&u.finish());
         assert_eq!(out, "Hi  there <t");
+    }
+
+    #[test]
+    fn online_chat_providers_send_the_key() {
+        let stream = "data: {\"choices\":[{\"delta\":{\"content\":\"Sure, Friday works.\"}}]}\n\ndata: [DONE]\n\n";
+        let (url, h) = serve(200, stream);
+        let p = Provider::Chat { who: "Gemini".into(), url, api_key: "AIza-test".into(), model: "gemini-2.5-flash-lite".into() };
+        assert_eq!(write(&p, &req("say friday works", None), &mut |_| {}).unwrap(), "Sure, Friday works.");
+        let (head, body) = h.join().unwrap();
+        assert!(head.to_lowercase().contains("authorization: bearer aiza-test"));
+        assert_eq!(serde_json::from_str::<Value>(&body).unwrap()["model"], "gemini-2.5-flash-lite");
+        // An online provider that can't be reached: check the connection (not "is it running").
+        let p = Provider::Chat { who: "OpenAI".into(), url: "http://127.0.0.1:9/v1/chat/completions".into(), api_key: "k".into(), model: "x".into() };
+        assert!(write(&p, &req("hi", None), &mut |_| {}).unwrap_err().contains("internet"));
+    }
+
+    #[test]
+    fn model_lists_are_read_and_filtered() {
+        let openai = json!({"data": [{"id": "gpt-5-nano"}, {"id": "text-embedding-3-small"}, {"id": "gpt-5"}, {"id": "whisper-1"}, {"id": "gpt-4o-mini-tts"}]});
+        assert_eq!(model_ids(&openai), ["gpt-5", "gpt-5-nano"]);
+        let gemini = json!({"data": [{"id": "models/gemini-2.5-flash-lite"}, {"id": "models/text-embedding-004"}]});
+        assert_eq!(model_ids(&gemini), ["gemini-2.5-flash-lite"]);
+        let ollama = json!({"models": [{"name": "llama3.2:latest"}, {"name": "nomic-embed-text:latest"}]});
+        assert_eq!(model_ids(&ollama), ["llama3.2:latest"]);
+    }
+
+    #[test]
+    fn the_cheapest_available_model_is_the_default() {
+        let v = |a: &[&str]| a.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        assert_eq!(pick_model("claude", &v(&["claude-opus-5-5", "claude-haiku-5-5", "claude-sonnet-5-5"])).unwrap(), "claude-haiku-5-5");
+        // The first default is gone (renamed or retired): the next one.
+        assert_eq!(pick_model("openai", &v(&["gpt-5", "gpt-4.1-nano", "gpt-5-mini"])).unwrap(), "gpt-4.1-nano");
+        // None of the defaults: a name that says small and fast.
+        assert_eq!(pick_model("grok", &v(&["grok-9", "grok-9-mini"])).unwrap(), "grok-9-mini");
+        assert_eq!(pick_model("local", &v(&["gemma3:4b", "llama3.2:latest"])).unwrap(), "llama3.2:latest");
+        assert_eq!(pick_model("custom", &v(&["a", "b"])).unwrap(), "a");
+        assert_eq!(pick_model("openai", &[]), None);
+    }
+
+    #[test]
+    fn list_models_asks_the_right_way() {
+        let (url, h) = serve(200, r#"{"data":[{"id":"deepseek-v4-flash"},{"id":"deepseek-v4-pro"}]}"#);
+        // A custom service: the model list sits next to the chat endpoint.
+        let chat = url.replace("/v1/test", "/v1/chat/completions");
+        let models = list_models("custom", &chat, "sk-x").unwrap();
+        assert_eq!(models, ["deepseek-v4-flash", "deepseek-v4-pro"]);
+        let (head, _) = h.join().unwrap();
+        assert!(head.starts_with("GET /v1/models"));
+        assert!(head.to_lowercase().contains("authorization: bearer sk-x"));
+        assert!(list_models("openai", "", " ").unwrap_err().contains("API key"));
+        assert_eq!(models_url_for("https://api.deepseek.com/chat/completions"), "https://api.deepseek.com/models");
+    }
+
+    #[test]
+    fn ollama_downloads_report_progress() {
+        let lines = "{\"status\":\"pulling manifest\"}\n{\"status\":\"pulling abc\",\"total\":2000,\"completed\":500}\n{\"status\":\"pulling abc\",\"total\":2000,\"completed\":2000}\n{\"status\":\"success\"}\n";
+        let (url, h) = serve(200, lines);
+        let base = url.trim_end_matches("/v1/test").to_string();
+        let mut seen = vec![];
+        ollama_pull_at(&base, "llama3.2", &mut |s, d, t| seen.push((s.to_string(), d, t))).unwrap();
+        assert_eq!(seen[1], ("pulling abc".to_string(), 500, 2000));
+        assert_eq!(seen.last().unwrap().0, "success");
+        let (head, body) = h.join().unwrap();
+        assert!(head.starts_with("POST /api/pull"));
+        assert_eq!(serde_json::from_str::<Value>(&body).unwrap()["model"], "llama3.2");
+        let (url, _h) = serve(200, "{\"error\":\"pull model manifest: file does not exist\"}\n");
+        assert!(ollama_pull_at(url.trim_end_matches("/v1/test"), "nope", &mut |_, _, _| {}).unwrap_err().contains("does not exist"));
+    }
+
+    #[test]
+    fn claude_options_fit_the_model() {
+        let b = claude_body("claude-haiku-4-5", &req("hi", None));
+        assert!(b.get("output_config").is_none() && b.get("thinking").is_none());
+        let b = claude_body("claude-sonnet-4-6", &req("hi", None));
+        assert_eq!(b["output_config"]["effort"], "low");
+        assert!(b.get("fallbacks").is_none());
     }
 }

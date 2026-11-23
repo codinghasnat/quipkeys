@@ -16,122 +16,223 @@
     }
   }
   * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
   html, body { margin: 0; }
   body {
     background: var(--bg); color: var(--text);
     font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
-    padding: 26px 28px 22px; display: flex; flex-direction: column; gap: 16px;
+    padding: 24px 26px 20px; display: flex; flex-direction: column; gap: 14px;
   }
   h1 { font-size: 22px; line-height: 1.2; margin: 0; letter-spacing: -0.01em; }
+  h2 { font-size: 15px; margin: 2px 0 0; }
   p { margin: 0; color: var(--muted); }
   kbd { font: 600 13px/1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; background: var(--card); border: 1px solid var(--line);
         border-bottom-width: 2px; border-radius: 6px; padding: 2px 6px; color: var(--text); }
-  ol { margin: 0; padding-left: 20px; color: var(--muted); }
-  ol li { margin: 2px 0; }
-  .choices { display: grid; gap: 8px; }
-  .choice { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; align-items: start; background: var(--card); border: 1px solid var(--line);
-            border-radius: 12px; padding: 12px 14px; cursor: pointer; }
-  .choice:has(input:checked) { border-color: var(--accent); background: var(--soft); }
-  .choice input { margin: 4px 0 0; accent-color: var(--accent); }
-  .choice b { font-weight: 600; }
-  .choice small { grid-column: 2; color: var(--muted); font-size: 13px; line-height: 1.4; }
-  .fields { display: grid; gap: 10px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px; }
-  .fields[hidden] { display: none; }
-  label.f { display: grid; gap: 4px; font-size: 13px; font-weight: 600; }
-  label.f span { font-weight: 400; color: var(--muted); }
-  input[type=text], input[type=password] {
+  .lead { font-size: 14px; }
+  .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+  .pick { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-height: 58px; text-align: center;
+          background: var(--card); border: 1px solid var(--line); border-radius: 11px; padding: 8px 6px; cursor: pointer; font-weight: 600; font-size: 14px; }
+  .pick small { font-weight: 400; font-size: 11.5px; color: var(--muted); }
+  .pick input { position: absolute; opacity: 0; pointer-events: none; }
+  .pick:has(input:checked) { border-color: var(--accent); background: var(--soft); box-shadow: inset 0 0 0 1px var(--accent); }
+  .pick:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .panel { display: grid; gap: 12px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
+  .panel[hidden] { display: none; }
+  .step { display: grid; grid-template-columns: 26px 1fr; gap: 4px 10px; align-items: start; }
+  .num { width: 24px; height: 24px; border-radius: 50%; background: var(--text); color: var(--bg); font: 700 13px/24px inherit; font-family: inherit; text-align: center; }
+  .step .body { display: grid; gap: 6px; }
+  .row { display: flex; gap: 8px; align-items: center; }
+  .row > input, .row > select { flex: 1; min-width: 0; }
+  input[type=text], input[type=password], select {
     font: 15px/1.3 inherit; font-family: inherit; padding: 9px 11px; border-radius: 9px; width: 100%;
     border: 1px solid var(--line); background: var(--bg); color: var(--text); outline: none;
   }
-  input:focus { border-color: var(--accent); }
-  .row { display: flex; gap: 8px; align-items: center; justify-content: space-between; }
-  button { font: 600 14px/1 inherit; font-family: inherit; border-radius: 9px; padding: 11px 16px; border: 1px solid var(--line);
-           background: var(--card); color: var(--text); cursor: pointer; }
+  input:focus, select:focus { border-color: var(--accent); }
+  button, .btn { font: 600 14px/1 inherit; font-family: inherit; border-radius: 9px; padding: 10px 14px; border: 1px solid var(--line);
+           background: var(--card); color: var(--text); cursor: pointer; white-space: nowrap; text-decoration: none; display: inline-block; }
   button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
-  button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-  #msg { min-height: 1.5em; font-size: 14px; color: var(--muted); }
-  #msg.bad { color: var(--bad); }
-  #msg.good { color: var(--good); }
-  .note { font-size: 13px; }
-  .seg { display: grid; gap: 6px; margin-top: 4px; font-weight: 400; }
-  .seg label { display: flex; gap: 8px; align-items: baseline; }
-  .seg span { color: var(--muted); font-size: 13px; }
+  button:disabled { opacity: .5; cursor: default; }
+  button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .hint { font-size: 13px; color: var(--muted); }
+  .hint.good { color: var(--good); }
+  .hint.bad { color: var(--bad); }
+  .dl { display: grid; gap: 8px; }
+  .dlrow { display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; align-items: center; border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+  .dlrow b { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 14px; }
+  .bar { grid-column: 1 / -1; height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; }
+  .bar i { display: block; height: 100%; width: 0; background: var(--accent); border-radius: 3px; }
+  .bar[hidden] { display: none; }
+  details summary { cursor: pointer; font-size: 13px; color: var(--muted); }
   .check { display: flex; gap: 10px; align-items: flex-start; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; font-size: 13px; color: var(--muted); }
   .check b { color: var(--text); font-size: 15px; }
   .check input { margin-top: 4px; accent-color: var(--accent); }
-  a { color: var(--accent); cursor: pointer; text-decoration: none; }
-  a:hover { text-decoration: underline; }
+  .foot { display: flex; gap: 8px; align-items: center; justify-content: space-between; }
+  #msg { min-height: 1.5em; font-size: 14px; color: var(--muted); flex: 1; }
+  #msg.bad { color: var(--bad); }
+  #msg.good { color: var(--good); }
+  .note { font-size: 12.5px; }
 </style>
 </head>
 <body>
   <h1>Write it for me</h1>
-  <ol>
-    <li>Type what you want, like <i>“reply saying Friday works, many thanks”</i>.</li>
-    <li>Press <kbd id="hotkey">Ctrl+Alt+W</kbd>. The text streams in where your instruction was.</li>
-    <li>It reads what's around your cursor and on screen (the chat, the email, the document) to get the context. You can also copy something for it to use.</li>
-  </ol>
+  <p class="lead">Type what you want, then press <kbd id="hotkey">Ctrl+Alt+W</kbd>. The text streams in where you typed, using what's on screen as context.</p>
 
-  <div class="choices" role="radiogroup" aria-label="Which model writes the text">
-    <label class="choice"><input type="radio" name="kind" value="off"><b>Off</b><small>The hotkey does nothing.</small></label>
-    <label class="choice"><input type="radio" name="kind" value="claude"><b>Claude (online)</b>
-      <small>Best writing. When you press the hotkey, your instruction and the copied text are sent to Anthropic using your own API key. Nothing is sent at any other time.</small></label>
-    <label class="choice"><input type="radio" name="kind" value="local"><b>A model on this computer</b>
-      <small>Nothing leaves your computer. Needs a local model server such as Ollama or LM Studio running. Slower, and plainer writing.</small></label>
+  <h2>Who writes the text?</h2>
+  <div class="grid" role="radiogroup" aria-label="Who writes the text" id="picks"></div>
+
+  <!-- An online provider with your own key -->
+  <div class="panel" id="keyed" hidden>
+    <div class="step"><span class="num">1</span><div class="body">
+      <b>Get an API key from <span class="pname"></span></b>
+      <div class="row"><a class="btn" id="keypage" href="#">Open <span class="pname"></span>'s key page</a></div>
+      <span class="hint">You pay <span class="pname"></span> directly for what you use. QuipKeys starts you on their cheapest model.</span>
+    </div></div>
+    <div class="step" id="urlstep" hidden><span class="num">·</span><div class="body">
+      <b>The service's address</b>
+      <input type="text" id="url" spellcheck="false" placeholder="https://…/v1/chat/completions">
+      <span class="hint">Any OpenAI-style service: OpenRouter, Groq, Mistral, Together… Paste its chat completions address.</span>
+    </div></div>
+    <div class="step"><span class="num">2</span><div class="body">
+      <b>Paste it here</b>
+      <div class="row"><input type="password" id="key" autocomplete="off" spellcheck="false" placeholder="Paste your API key"><button id="check" class="primary">Check key</button></div>
+      <span class="hint" id="keystate"></span>
+    </div></div>
+    <div class="step"><span class="num">3</span><div class="body">
+      <b>Model</b>
+      <select id="model" aria-label="Model"></select>
+      <span class="hint" id="modelhint">Check your key to see every model it can use.</span>
+    </div></div>
   </div>
 
-  <div class="fields" id="claude" hidden>
-    <label class="f">Claude API key <span id="keystate">From console.anthropic.com. Stored only on this computer.</span>
-      <input type="password" id="key" autocomplete="off" spellcheck="false" placeholder="sk-ant-…"></label>
-    <div class="f">Speed
-      <div class="seg" role="radiogroup" aria-label="Speed">
-        <label><input type="radio" name="speed" value="fast"> Fast <span>Claude Haiku 5.5: the quickest</span></label>
-        <label><input type="radio" name="speed" value="best"> Best <span>Claude Opus 5.5: stronger writing, a little slower</span></label>
-      </div></div>
-    <label class="f">Model <span>Optional: a specific model ID instead.</span>
-      <input type="text" id="cmodel" spellcheck="false" placeholder="claude-haiku-5-5"></label>
-  </div>
-  <div class="fields" id="local" hidden>
-    <label class="f">Server address <span>Leave empty for Ollama's default.</span>
-      <input type="text" id="url" spellcheck="false" placeholder="http://localhost:11434/v1/chat/completions"></label>
-    <label class="f">Model <span>The name your server uses, for example llama3.2 (run <kbd>ollama pull llama3.2</kbd> first).</span>
-      <input type="text" id="lmodel" spellcheck="false" placeholder="llama3.2"></label>
+  <!-- Free, on this computer -->
+  <div class="panel" id="local" hidden>
+    <div class="step"><span class="num">1</span><div class="body">
+      <b>Ollama: free, runs on your computer</b>
+      <span class="hint" id="ollamastate">Checking for Ollama…</span>
+      <div class="row" id="getollama" hidden><a class="btn" id="ollamapage" href="#">Get Ollama (free)</a><button id="recheck">Check again</button></div>
+    </div></div>
+    <div class="step"><span class="num">2</span><div class="body">
+      <b>Download a model</b>
+      <div class="dl" id="downloads"></div>
+      <span class="hint">Nothing you write leaves your computer. Slower than online models, and plainer writing.</span>
+    </div></div>
+    <div class="step"><span class="num">3</span><div class="body">
+      <b>Model</b>
+      <select id="lmodel" aria-label="Local model"></select>
+    </div></div>
+    <details><summary>Using LM Studio or another local server?</summary>
+      <div style="margin-top:8px"><input type="text" id="lurl" spellcheck="false" placeholder="http://localhost:11434/v1/chat/completions">
+      <span class="hint">Its chat completions address, for example http://localhost:1234/v1/chat/completions for LM Studio.</span></div>
+    </details>
   </div>
 
   <label class="check"><input type="checkbox" id="screen"> <span><b>Use what's on screen as context</b><br>
-    When you press the hotkey: the app's name, the text box you're in, and the text visible in that window (like the chat or the email you're answering). Never in password fields, banking or password apps.</span></label>
+    When you press the hotkey: the app's name, the text box you're in, and the text in that window. Never in password fields, banking or password apps.</span></label>
 
-  <div class="row">
+  <div class="foot">
     <div id="msg" role="status"></div>
-    <div class="row"><button id="test">Try it</button><button class="primary" id="save">Save</button></div>
+    <button id="test">Try it</button><button class="primary" id="save">Save</button>
   </div>
-  <p class="note">Typo fixing never uses any of this and stays fully offline. Nothing is read or sent until you press the hotkey. Copied text is only used if you copied it in the last 15 minutes, and never if it looks like a password or a link.</p>
+  <p class="note">Typo fixing never uses any of this and stays fully offline. Nothing is read or sent until you press the hotkey. Your keys are stored only on this computer.</p>
 
 <script>
   const send = (m) => window.ipc && window.ipc.postMessage(m);
   const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
   if (window.QK_PLATFORM === 'mac') $('hotkey').textContent = 'Ctrl+Option+W';
-  const kind = () => (document.querySelector('input[name=kind]:checked') || {}).value || 'off';
+  let S = null, kind = 'off';
+  const ORDER = ['off', 'claude', 'openai', 'gemini', 'grok', 'deepseek', 'local', 'custom'];
+  const BLURB = { off: 'Not using it', claude: 'Anthropic', openai: 'ChatGPT', gemini: 'Google', grok: 'xAI', deepseek: 'DeepSeek', local: 'Free, private', custom: 'Any other' };
+  const prov = (id) => S && S.providers.find((p) => p.id === id);
+  const say = (text, cls) => { $('msg').textContent = text; $('msg').className = cls || ''; };
+  function setOptions(sel, list, chosen, pick, label = 'cheapest') {
+    const all = list.slice();
+    if (chosen && !all.includes(chosen)) all.unshift(chosen);
+    sel.innerHTML = all.map((m) => `<option value="${esc(m)}">${esc(m)}${m === pick && label ? `  (${label})` : ''}</option>`).join('') || '<option value="">(none yet)</option>';
+    sel.value = chosen || pick || all[0] || '';
+  }
   function show() {
-    $('claude').hidden = kind() !== 'claude';
-    $('local').hidden = kind() !== 'local';
+    document.querySelectorAll('.pname').forEach((e) => (e.textContent = (prov(kind) || {}).name || ''));
+    const keyed = !['off', 'local'].includes(kind);
+    $('keyed').hidden = !keyed; $('local').hidden = kind !== 'local';
+    if (keyed) {
+      const p = prov(kind);
+      $('urlstep').hidden = kind !== 'custom';
+      $('keypage').parentElement.parentElement.parentElement.hidden = kind === 'custom';
+      $('url').value = p.url || '';
+      $('keystate').textContent = p.hasKey ? 'A key is saved. Paste a new one to replace it.' : (kind === 'custom' ? 'Leave empty if the service needs no key.' : '');
+      setOptions($('model'), [], p.model, p.default);
+      $('modelhint').textContent = 'Check your key to see every model it can use.';
+    }
+    if (kind === 'local') {
+      const p = prov('local');
+      $('lurl').value = p.url || '';
+      setOptions($('lmodel'), [], p.model, null, '');
+      send('compose:ollama');
+    }
   }
-  document.querySelectorAll('input[name=kind]').forEach((r) => r.addEventListener('change', show));
-  function say(text, cls) { $('msg').textContent = text; $('msg').className = cls || ''; }
   function fields() {
-    const speed = (document.querySelector('input[name=speed]:checked') || {}).value || 'fast';
-    return JSON.stringify({ kind: kind(), speed, key: $('key').value, cmodel: $('cmodel').value, url: $('url').value, lmodel: $('lmodel').value, screen: $('screen').checked });
+    const local = kind === 'local';
+    return JSON.stringify({ kind, key: $('key').value, model: local ? $('lmodel').value : $('model').value,
+                            url: local ? $('lurl').value : $('url').value, screen: $('screen').checked });
   }
+  $('check').addEventListener('click', () => { say(''); $('modelhint').textContent = 'Checking…'; $('modelhint').className = 'hint'; send('compose:check:' + fields()); $('key').value = ''; });
   $('save').addEventListener('click', () => { send('compose:save:' + fields()); $('key').value = ''; });
   $('test').addEventListener('click', () => { say('Asking the model…'); send('compose:test:' + fields()); $('key').value = ''; });
+  $('keypage').addEventListener('click', (e) => { e.preventDefault(); const p = prov(kind); if (p && p.keyPage) send('open:' + p.keyPage); });
+  $('ollamapage').addEventListener('click', (e) => { e.preventDefault(); send('open:https://ollama.com/download'); });
+  $('recheck').addEventListener('click', () => { $('ollamastate').textContent = 'Checking for Ollama…'; send('compose:ollama'); });
   window.QKC = {
     state(s) {
-      const r = document.querySelector(`input[name=kind][value=${s.kind}]`);
-      if (r) r.checked = true;
-      $('cmodel').value = s.cmodel; $('url').value = s.url; $('lmodel').value = s.lmodel; $('screen').checked = s.screen;
-      const sp = document.querySelector(`input[name=speed][value=${s.speed}]`);
-      if (sp) sp.checked = true;
-      $('keystate').textContent = s.haskey ? 'A key is saved. Type a new one to replace it.' : 'From console.anthropic.com. Stored only on this computer.';
-      show();
+      const first = !S; S = s;
+      if (first) {
+        kind = s.kind;
+        $('picks').innerHTML = ORDER.map((id) => { const p = prov(id); const name = id === 'off' ? 'Off' : p.name;
+          return `<label class="pick"><input type="radio" name="kind" value="${id}"${id === kind ? ' checked' : ''}>${esc(name)}<small>${BLURB[id]}</small></label>`; }).join('');
+        document.querySelectorAll('input[name=kind]').forEach((r) => r.addEventListener('change', () => { kind = r.value; say(''); show(); }));
+        $('screen').checked = s.screen;
+        show();
+      } else if (!['off', 'local'].includes(kind)) {
+        const p = prov(kind);
+        $('keystate').textContent = p.hasKey ? 'A key is saved. Paste a new one to replace it.' : '';
+      }
+    },
+    models(k, ok, list, pick) {
+      if (k !== kind) return;
+      if (!ok) { $('modelhint').textContent = list; $('modelhint').className = 'hint bad'; return; }
+      const p = prov(k);
+      setOptions($('model'), list, p.model && list.includes(p.model) ? p.model : null, pick);
+      $('modelhint').textContent = `Your key works: ${list.length} models. The cheapest is picked; choose another if you like, then Save.`;
+      $('modelhint').className = 'hint good';
+    },
+    ollama(version, models) {
+      if (kind !== 'local') return;
+      $('getollama').hidden = !!version;
+      $('ollamastate').textContent = version ? `Ollama ${version} is running.` : "Ollama isn't installed or isn't running. Install it, open it, then check again.";
+      $('ollamastate').className = version ? 'hint good' : 'hint bad';
+      const p = prov('local');
+      setOptions($('lmodel'), models, p.model && models.includes(p.model) ? p.model : null, models.find((m) => m.startsWith('llama3.2')) || models[0], '');
+      $('downloads').innerHTML = S.downloads.map((d) => {
+        const have = models.some((m) => m === d.model || m === d.model + ':latest');
+        return `<div class="dlrow" data-m="${esc(d.model)}"><div><b>${esc(d.model)}</b><div class="hint">${esc(d.about)}</div></div>` +
+          `<button ${have || !version ? 'disabled' : ''}>${have ? 'Downloaded' : 'Download'}</button><div class="bar" hidden><i></i></div><span class="hint st"></span></div>`; }).join('');
+      document.querySelectorAll('.dlrow button').forEach((b) => b.addEventListener('click', () => {
+        const row = b.closest('.dlrow'); b.disabled = true; b.textContent = 'Downloading…';
+        row.querySelector('.bar').hidden = false; send('compose:pull:' + row.dataset.m); }));
+    },
+    pull(model, status, done, total, fin) {
+      const row = document.querySelector(`.dlrow[data-m="${CSS.escape(model)}"]`);
+      if (!row) return;
+      const st = row.querySelector('.st'), bar = row.querySelector('.bar i'), btn = row.querySelector('button');
+      if (fin === null) {
+        if (total) bar.style.width = (100 * done / total).toFixed(1) + '%';
+        st.textContent = total ? `${(done / 1e9).toFixed(2)} of ${(total / 1e9).toFixed(2)} GB` : status;
+      } else if (fin === true) {
+        bar.style.width = '100%'; st.textContent = 'Ready.'; btn.textContent = 'Downloaded';
+        send('compose:ollama');
+      } else {
+        st.textContent = fin; st.className = 'hint bad st'; btn.disabled = false; btn.textContent = 'Try again';
+      }
     },
     saved() { say('Saved.', 'good'); },
     result(ok, text) { say(ok ? 'It works: “' + text : text, ok ? 'good' : 'bad'); },

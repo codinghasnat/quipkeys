@@ -34,10 +34,11 @@ macOS it also walks you through the one permission it needs.
 
 - Typo fixing runs entirely on your computer. It works with no internet
   connection and never connects to the internet.
-- The one exception is **Write it for me** with Claude chosen, which you have
-  to switch on and give your own API key. Even then, something is sent only
-  when you press its hotkey: your instruction and the text you copied, to
-  Anthropic. Choose a local model instead and nothing leaves your computer.
+- The one exception is **Write it for me** with an online model chosen, which
+  you have to switch on and give your own API key. Even then, something is
+  sent only when you press its hotkey: your instruction and its context, to
+  the provider you picked. Choose a model on your computer instead and
+  nothing leaves it.
 - What you type is held in memory only, for the last few words. It's
   forgotten on Enter, a click or an app switch, and never written to disk.
 - The only files it writes are `quipkeys-settings.txt` (whether you've seen
@@ -45,7 +46,7 @@ macOS it also walks you through the one permission it needs.
   `quipkeys-words.txt` (your word list: only words you chose to save), and
   `quipkeys-profile.txt` (tallies of your kinds of slips: counts, no words),
   `quipkeys-stats.txt` (your stats: counts per day, no words), and
-  `quipkeys-claude-key.txt` (your Claude API key, only if you add one). These live
+  `quipkeys-api-keys.txt` (your API keys, only if you add any). These live
   next to `quipkeys.exe` on Windows (or in `%APPDATA%\QuipKeys` if that folder
   isn't writable), and in `~/Library/Application Support/QuipKeys` on macOS.
 
@@ -164,19 +165,35 @@ LinkedIn comment, a support answer.
 Press the key with nothing typed and it writes what fits: a reply in a
 conversation, otherwise the natural next text.
 
-Set it up under **Write it for me…** in the menu:
-- **Claude (online):** paste an API key from console.anthropic.com (stored in
-  `quipkeys-claude-key.txt` on your computer, or set `ANTHROPIC_API_KEY`).
-  **Fast** uses Claude Haiku 5.5 with thinking off, the quickest option;
-  **Best** uses Claude Opus 5.5 for stronger writing. You can also
-  name any model ID.
-- **A model on this computer:** nothing leaves your computer. Run a local
-  model server such as [Ollama](https://ollama.com) (`ollama pull llama3.2`)
-  or LM Studio; QuipKeys talks to its chat endpoint
-  (`http://localhost:11434/v1/chat/completions` by default).
-- **Use what's on screen as context:** on by default; switch it off to use
-  only what you type and copy.
-- **Try it** checks the setup and shows how long the answer took.
+Set it up under **Write it for me…** in the menu. Pick who writes the text:
+
+- **An online model, with your own API key:** Claude, OpenAI, Gemini, Grok
+  or DeepSeek. The window walks you through it:
+  1. **Open the provider's key page** (one click) and create a key;
+  2. **paste it** and press **Check key**: QuipKeys asks the provider which
+     models your key can use;
+  3. **pick a model**. It starts on the provider's cheapest one: Claude Haiku
+     5.5 for Claude, and for the others the cheapest of a short list
+     (`gpt-5-nano`, `gemini-2.5-flash-lite`, `grok-4-1-fast-non-reasoning`,
+     `deepseek-v4-flash`…). Providers rename models often, so if none of
+     those is offered it picks one whose name says small and fast ("nano",
+     "lite", "flash", "mini"). You pay the provider directly for what you use.
+- **Custom:** any service with an OpenAI-style chat endpoint (OpenRouter,
+  Groq, Mistral, Together…): paste its address and key.
+- **On this computer, free:** nothing leaves your computer. QuipKeys checks
+  for [Ollama](https://ollama.com) (a free app that runs models locally),
+  links to its download page if it isn't there, and downloads a model with
+  one click: `llama3.2` (small and quick, about 2 GB) or `gemma3:4b` (better
+  writing, about 3.3 GB). LM Studio and other local servers work too: give
+  their address.
+
+Keys are stored only on your computer, one per provider, in
+`quipkeys-api-keys.txt` (readable only by you on macOS); the usual
+environment variables (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`,
+`GEMINI_API_KEY`, `XAI_API_KEY`, `DEEPSEEK_API_KEY`) work too. **Use what's on
+screen as context** is on by default; switch it off to use only what you
+type and copy. **Try it** checks the setup and shows how long the answer
+took.
 
 Speed: the answer is streamed and pasted a sentence at a time, the
 connection to the model is opened when you save the settings and then
