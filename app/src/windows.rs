@@ -90,6 +90,18 @@ pub fn start(core: Core) {
     });
 }
 
+/// Seconds east of UTC for local time now (so the stats' "today" is the user's day).
+pub fn utc_offset_seconds() -> i64 {
+    use windows_sys::Win32::System::Time::{GetTimeZoneInformation, TIME_ZONE_INFORMATION};
+    unsafe {
+        let mut tz: TIME_ZONE_INFORMATION = std::mem::zeroed();
+        let r = GetTimeZoneInformation(&mut tz);
+        // 2 = TIME_ZONE_ID_DAYLIGHT. Bias: UTC = local time + bias (minutes).
+        let bias = tz.Bias + if r == 2 { tz.DaylightBias } else { tz.StandardBias };
+        -(bias as i64) * 60
+    }
+}
+
 /// Windows needs no extra permission for a keyboard hook.
 pub fn has_permission() -> bool {
     true

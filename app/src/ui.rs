@@ -22,6 +22,7 @@ use crate::windows as platform;
 const WELCOME: &str = include_str!("welcome.html");
 const WORDS: &str = include_str!("words.html");
 const COMPOSE: &str = include_str!("compose.html");
+const STATS: &str = include_str!("stats.html");
 #[cfg(windows)]
 const COMPOSE_KEY: &str = "Ctrl+Alt+W";
 #[cfg(target_os = "macos")]
@@ -76,6 +77,9 @@ pub fn notify(e: UiEvent) {
 
 struct Items {
     status: MenuItem,
+    /// "Fixed 1,234 typos · saved about 42 min"
+    stats_line: MenuItem,
+    stats: MenuItem,
     /// "Recent fixes" and its fixed rows (newest first), so you can see what changed.
     recent: Submenu,
     recent_rows: Vec<MenuItem>,
@@ -119,6 +123,8 @@ struct App {
     notice: Option<(Page, std::time::Instant)>,
     /// A "write it for me" request is waiting for the model.
     writing: bool,
+    /// The "Your stats" window.
+    stats: Option<Page>,
 }
 
 pub fn run() {
@@ -140,6 +146,8 @@ pub fn run() {
 
     let items = Items {
         status: MenuItem::new("QuipKeys is correcting", false, None),
+        stats_line: MenuItem::new("", false, None),
+        stats: MenuItem::new("Your stats…", true, None),
         recent: Submenu::new("Recent fixes", true),
         recent_rows: (0..RECENT).map(|_| MenuItem::new("", false, None)).collect(),
         enabled: CheckMenuItem::new(format!("Correct my typing\t{HOTKEY}"), true, true, None),
@@ -159,11 +167,12 @@ pub fn run() {
     }
     let _ = items.recent.append(&PredefinedMenuItem::separator());
     let _ = items.recent.append(&MenuItem::new(format!("Wrong word? Press {NEXT_KEY} straight after it"), false, None));
-    let mut app = App { tray: None, items, on: true, running: platform::has_permission(), app: String::new(), welcome: None, words: None, fixes: Default::default(), flash_until: None, compose: None, notice: None, writing: false };
+    let mut app = App { tray: None, items, on: true, running: platform::has_permission(), app: String::new(), welcome: None, words: None, fixes: Default::default(), flash_until: None, compose: None, notice: None, writing: false, stats: None };
 
     event_loop.run(move |event, target, flow| {
         let now = std::time::Instant::now();
-        let window_tick = (app.welcome.is_some() || app.words.is_some()).then(|| now + std::time::Duration::from_millis(700));
+        let window_tick =
+            (app.welcome.is_some() || app.words.is_some() || app.stats.is_some()).then(|| now + std::time::Duration::from_millis(700));
         let notice_end = app.notice.as_ref().map(|n| n.1);
         // Wake for whichever comes first: the open window's refresh, the end of an icon flash, or a notice closing.
         *flow = match [window_tick, app.flash_until, notice_end].into_iter().flatten().min() {
@@ -188,6 +197,7 @@ pub fn run() {
                 }
                 app.push_state();
                 app.push_words();
+                app.push_stats();
             }
             Event::UserEvent(e) => app.handle(e, target, flow),
             Event::WindowEvent { window_id, event: WindowEvent::CloseRequested, .. } => {
@@ -199,6 +209,9 @@ pub fn run() {
                 }
                 if app.compose.as_ref().is_some_and(|p| p.window.id() == window_id) {
                     app.compose = None;
+                }
+                if app.stats.as_ref().is_some_and(|p| p.window.id() == window_id) {
+                    app.stats = None;
                 }
                 if app.notice.as_ref().is_some_and(|n| n.0.window.id() == window_id) {
                     app.notice = None;
@@ -213,6 +226,8 @@ fn build_tray(items: &Items) -> TrayIcon {
     let menu = Menu::new();
     let _ = menu.append_items(&[
         &items.status,
+        &items.stats_line,
+        &items.stats,
         &items.recent,
         &PredefinedMenuItem::separator(),
         &items.enabled,
@@ -308,7 +323,10 @@ impl App {
                     self.open_compose(target);
                 } else if id == *it.welcome.id() {
                     self.open_welcome(target);
+                } else if id == *it.stats.id() {
+                    self.open_stats(target);
                 } else if id == *it.quit.id() {
+                    crate::stats::save();
                     *flow = ControlFlow::Exit;
                 }
                 self.refresh();
@@ -338,6 +356,17 @@ impl App {
             it.skip.set_enabled(true);
             it.skip.set_checked(settings::is_excluded(&self.app));
         }
+        let total = crate::stats::with(|s| s.all_time()).unwrap_or_default();
+        it.stats_line.set_text(if total.fixes > 0 || total.writes > 0 {
+            format!(
+                "Fixed {} typo{} · saved {}",
+                crate::stats::thousands(total.fixes),
+                if total.fixes == 1 { "" } else { "s" },
+                crate::stats::duration(total.saved_ms)
+            )
+        } else {
+            "No typos fixed yet".to_string()
+        });
         it.login.set_checked(settings::start_at_login());
         it.sound.set_checked(settings::sound_mode());
         it.learn.set_checked(settings::learning());
@@ -383,6 +412,44 @@ impl App {
         }
         settings::write_words_if_missing();
         self.words = open_window(target, "My words", (520.0, 640.0), true, WORDS);
+    }
+
+    fn open_stats(&mut self, target: &EventLoopWindowTarget<UiEvent>) {
+        if let Some(p) = &self.stats {
+            p.window.set_focus();
+            return;
+        }
+        self.stats = open_window(target, "Your stats", (560.0, 780.0), true, STATS);
+    }
+
+    /// Send the counts to the stats window (it redraws only on change).
+    fn push_stats(&self) {
+        use crate::stats::{self, civil, Day, MONTHS, WEEKDAYS};
+        use serde_json::json;
+        let Some(page) = &self.stats else { return };
+        let today = stats::today();
+        let period = |d: Day| {
+            json!({ "saved_ms": d.saved_ms, "fixes": d.fixes, "undos": d.undos, "words": d.words,
+                    "guesses": d.guesses, "writes": d.writes, "written": d.written_chars })
+        };
+        let data = stats::with(|s| {
+            let days: Vec<_> = (0..14u32)
+                .rev()
+                .map(|k| {
+                    let day = today.saturating_sub(k);
+                    let d = s.total(day, day);
+                    let (_, month, date) = civil(day);
+                    let wd = WEEKDAYS[((day + 4) % 7) as usize];
+                    json!({ "short": &wd[..1], "long": format!("{wd} {date} {}", MONTHS[month as usize - 1]),
+                            "saved_ms": d.saved_ms, "fixes": d.fixes })
+                })
+                .collect();
+            json!({ "today": period(s.total(today, today)), "week": period(s.total(today.saturating_sub(6), today)),
+                    "all": period(s.all_time()), "wpm": s.wpm(), "days": days })
+        });
+        if let Some(d) = data {
+            let _ = page.webview.evaluate_script(&format!("window.QKS && QKS.update({d})"));
+        }
     }
 
     fn open_compose(&mut self, target: &EventLoopWindowTarget<UiEvent>) {
@@ -513,6 +580,15 @@ impl App {
         }
         if let Some(rest) = msg.strip_prefix("compose:") {
             return self.compose_ipc(rest);
+        }
+        match msg {
+            "stats:ready" => return self.push_stats(),
+            "stats:reset" => {
+                crate::stats::reset();
+                self.push_stats();
+                return self.refresh();
+            }
+            _ => {}
         }
         match msg {
             "ready" => self.push_state(),

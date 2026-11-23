@@ -180,6 +180,16 @@ pub fn start(core: Core) {
     });
 }
 
+/// Seconds east of UTC for local time now (so the stats' "today" is the user's day).
+pub fn utc_offset_seconds() -> i64 {
+    unsafe {
+        let now = libc::time(std::ptr::null_mut());
+        let mut tm: libc::tm = std::mem::zeroed();
+        libc::localtime_r(&now, &mut tm);
+        tm.tm_gmtoff as i64
+    }
+}
+
 /// Is QuipKeys allowed to watch and type (Accessibility), and running?
 pub fn has_permission() -> bool {
     RUNNING.load(Ordering::Relaxed) || unsafe { AXIsProcessTrusted() }

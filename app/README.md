@@ -43,7 +43,8 @@ macOS it also walks you through the one permission it needs.
 - The only files it writes are `quipkeys-settings.txt` (whether you've seen
   the welcome screen), `quipkeys-exclude.txt` (apps to skip) and
   `quipkeys-words.txt` (your word list: only words you chose to save), and
-  `quipkeys-profile.txt` (tallies of your kinds of slips: counts, no words), and
+  `quipkeys-profile.txt` (tallies of your kinds of slips: counts, no words),
+  `quipkeys-stats.txt` (your stats: counts per day, no words), and
   `quipkeys-claude-key.txt` (your Claude API key, only if you add one). These live
   next to `quipkeys.exe` on Windows (or in `%APPDATA%\QuipKeys` if that folder
   isn't writable), and in `~/Library/Application Support/QuipKeys` on macOS.
@@ -204,6 +205,24 @@ Enter, click or arrow key counts). Some apps expose little text to
 accessibility tools, and Chromium/Electron apps (Chrome, Slack, Teams,
 Discord) may only start sharing it from the second press. Apps that block
 pasting won't take the text; it stays on the clipboard.
+
+## Your stats
+
+The menu shows a running total ("Fixed 1,234 typos · saved about 42 min"),
+and **Your stats…** opens the full picture for today, the last 7 days or all
+time:
+- **Time saved**, and a chart of it over the last 14 days;
+- **Typos fixed** (fixes you undid don't count) and **words checked**;
+- **Next guesses used** and texts **written for you**;
+- **your typing speed**, measured from your own typing.
+
+Time saved is an estimate, using the same model as the speed simulation in
+the main RESULTS.md: without QuipKeys, a wrong word costs about half a second
+to notice, then backspacing over it and typing it again, at your measured
+speed (80 words a minute until it has measured yours). A Write it for me text
+counts the time you'd have spent typing it, minus typing your instruction and
+waiting for it. Only counts are stored, never words, and **Reset stats**
+starts again from zero.
 
 ## Your words
 

@@ -228,10 +228,12 @@ pub fn run(req: &ComposeReq, gen0: u64, ops: &dyn Ops, write: Writer, read_scree
         return;
     }
     ops.status(Status::Writing);
+    let started_at = std::time::Instant::now();
     let saved = ops.clipboard_text();
     let request = Request { instruction: req.instruction.clone(), copied, screen };
     let mut paster = Paster { ops, grab: &req.grab, gen0, pending: String::new(), started: false, stopped: None, leftover: String::new() };
     let result = write(&request, &mut |piece| paster.feed(piece));
+    let written = result.as_ref().map(|t| t.trim().chars().count()).unwrap_or(0);
     match result {
         Err(why) if !paster.started => {
             // Nothing on screen changed; the clipboard may hold a check copy.
@@ -259,6 +261,8 @@ pub fn run(req: &ComposeReq, gen0: u64, ops: &dyn Ops, write: Writer, read_scree
                 if let Some(s) = &saved {
                     ops.set_clipboard(s);
                 }
+                let waited = started_at.elapsed().as_millis() as u64;
+                crate::stats::with(|s| s.wrote(crate::stats::today(), written, req.instruction.chars().count(), waited));
                 ops.status(Status::Done);
             }
         }

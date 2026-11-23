@@ -9,6 +9,7 @@
 use std::path::PathBuf;
 use std::time::{Duration, Instant, SystemTime};
 
+use crate::stats;
 use quipkeys::profile::Tallies;
 use quipkeys::{Config, Engine, Stream};
 
@@ -138,6 +139,11 @@ pub struct Core {
     /// Bumped on every key, so a slow compose request can tell whether the
     /// user carried on typing (or clicked) while it waited.
     generation: u64,
+    /// Time of the last typed key (ms), to measure typing speed for the stats.
+    last_key_t: Option<f64>,
+    /// The last fix as counted in the stats (words, ms credited), so an undo
+    /// can take it back.
+    last_saving: Option<(usize, u64)>,
 }
 
 /// The letters of a typed chunk that make it a word ("Hasnat," -> "hasnat").
@@ -234,6 +240,8 @@ impl Core {
             run_ok: true,
             parked: None,
             generation: 0,
+            last_key_t: None,
+            last_saving: None,
         };
         core.reset();
         // Build the engine's lazy tables now, off the keyboard hook's thread:
@@ -283,6 +291,7 @@ impl Core {
         self.cur_times.clear();
         self.t0 = None;
         self.last = None;
+        self.last_key_t = None;
     }
 
     /// Changes made since the last call: (what was on screen, what replaced it).
@@ -338,6 +347,14 @@ impl Core {
         }
     }
 
+    /// Time since the last typed key, for the typing-speed measurement.
+    fn typing_gap(&mut self, t: f64) {
+        if let Some(prev) = self.last_key_t {
+            stats::with(|s| s.key(t - prev));
+        }
+        self.last_key_t = Some(t);
+    }
+
     /// The compose hotkey: what was typed becomes the instruction.
     fn compose(&mut self) -> Action {
         let parked = self.parked.take().filter(|(_, at)| at.elapsed() < PARKED_FOR).map(|(t, _)| t);
@@ -385,6 +402,7 @@ impl Core {
                 Action::Pass
             }
             Key::Char(c, t) => {
+                self.typing_gap(t);
                 self.last = None;
                 self.cur.push(c);
                 let t0 = *self.t0.get_or_insert(t);
@@ -394,6 +412,9 @@ impl Core {
             Key::Backspace => {
                 // Backspace straight after a correction undoes it.
                 if let Some((idxs, before, after)) = self.last.take() {
+                    if let Some((n, ms)) = self.last_saving.take() {
+                        stats::with(|s| s.undone(stats::today(), n, ms));
+                    }
                     for &i in &idxs {
                         self.stream.reject(i);
                     }
@@ -429,7 +450,10 @@ impl Core {
                 }
                 Action::Pass
             }
-            Key::Space(_) => self.commit(),
+            Key::Space(t) => {
+                self.typing_gap(t);
+                self.commit()
+            }
             Key::NextGuess => self.next_guess(),
             Key::Toggle | Key::Compose => unreachable!(),
         }
@@ -449,6 +473,7 @@ impl Core {
             return Action::Pass;
         }
         let word = std::mem::take(&mut self.cur);
+        stats::with(|s| s.word(stats::today()));
         let times = std::mem::take(&mut self.cur_times);
         let times = (times.len() == word.len()).then_some(times);
         let before_all: Vec<String> = self.shown.clone();
@@ -490,6 +515,11 @@ impl Core {
         let backspaces = before.chars().count();
         let text = format!("{after} ");
         let idxs: Vec<usize> = edits.iter().map(|e| e.index).collect();
+        // For the stats: the characters a fix by hand would delete and retype.
+        let typed: usize = idxs.iter().filter_map(|&i| old_shown.get(i)).map(|w| w.chars().count()).sum();
+        let meant: usize = idxs.iter().filter_map(|&i| self.shown.get(i)).map(|w| w.chars().count()).sum();
+        let ms = stats::with(|s| s.fixed(stats::today(), typed, meant, idxs.len())).unwrap_or(0);
+        self.last_saving = Some((idxs.len(), ms));
         self.notes.push((before.clone(), after.clone()));
         self.last = Some((idxs, before, text.clone()));
         Action::Replace { backspaces, text }
@@ -537,6 +567,7 @@ impl Core {
                 self.guess_learned = Some((typed, meant));
             }
         }
+        stats::with(|s| s.guessed(stats::today(), from.chars().count(), to.chars().count()));
         self.notes.push((from.clone(), to.clone()));
         Action::Replace { backspaces: from.chars().count() + 1, text: format!("{to} ") }
     }

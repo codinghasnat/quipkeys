@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Your stats</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --card: #ffffff; --text: #16181d; --muted: #5d6470; --faint: #8a919c; --line: #e3e6ea;
+    --accent: #3b6cf6; --accent-text: #ffffff; --soft: #eef2fe; --bar: #3b6cf6; --bad: #c62828;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #121418; --card: #1b1e24; --text: #eceef1; --muted: #9aa2ad; --faint: #6f7682; --line: #2c3038;
+      --accent: #6b8ffa; --accent-text: #0d1020; --soft: #222a3d; --bar: #6b8ffa; --bad: #ff8a80;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background: var(--bg); color: var(--text);
+    font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    padding: 26px 28px 20px; display: flex; flex-direction: column; gap: 16px;
+  }
+  header { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+  h1 { font-size: 22px; line-height: 1.2; margin: 0; letter-spacing: -0.01em; }
+  .seg { display: inline-flex; background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 3px; }
+  .seg button { font: 600 13px/1 inherit; font-family: inherit; border: 0; background: none; color: var(--muted); padding: 8px 12px; border-radius: 7px; cursor: pointer; }
+  .seg button[aria-pressed=true] { background: var(--soft); color: var(--text); }
+  .tiles { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+  .tile { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; }
+  .tile .label { font-size: 13px; color: var(--muted); }
+  .tile .value { font-size: 30px; font-weight: 700; letter-spacing: -0.02em; line-height: 1.2; font-variant-numeric: tabular-nums; }
+  .tile .sub { font-size: 12.5px; color: var(--muted); }
+  .tile.hero { grid-column: span 2; display: flex; justify-content: space-between; align-items: end; gap: 16px; }
+  .tile.hero .value { font-size: 40px; }
+  .chart { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px 10px; position: relative; }
+  .chart h2 { font-size: 14px; margin: 0 0 10px; font-weight: 600; }
+  .plot { display: grid; grid-template-columns: repeat(14, 1fr); gap: 2px; align-items: end; height: 120px; border-bottom: 1px solid var(--line); }
+  .col { height: 100%; display: flex; align-items: end; justify-content: center; position: relative; cursor: default; }
+  .col .bar { width: 62%; min-height: 0; background: var(--bar); border-radius: 4px 4px 0 0; }
+  .col:hover .bar, .col:focus .bar { filter: brightness(1.15); }
+  .col:focus { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+  .days { display: grid; grid-template-columns: repeat(14, 1fr); gap: 2px; font-size: 11px; color: var(--faint); text-align: center; margin-top: 4px; }
+  .tip { position: absolute; pointer-events: none; background: var(--text); color: var(--bg); font-size: 12.5px; padding: 6px 9px; border-radius: 7px; white-space: nowrap; transform: translate(-50%, -100%); opacity: 0; }
+  .empty { position: absolute; inset: 40px 16px 30px; display: grid; place-items: center; color: var(--muted); font-size: 13px; text-align: center; }
+  .empty[hidden] { display: none; }
+  details { font-size: 13px; color: var(--muted); }
+  summary { cursor: pointer; color: var(--text); }
+  details p { margin: 6px 0 0; }
+  footer { display: flex; justify-content: space-between; align-items: center; gap: 10px; font-size: 12.5px; color: var(--muted); }
+  footer button { font: 600 13px/1 inherit; font-family: inherit; border-radius: 8px; padding: 8px 12px; border: 1px solid var(--line); background: var(--card); color: var(--muted); cursor: pointer; }
+  footer button:hover { color: var(--bad); border-color: var(--bad); }
+</style>
+</head>
+<body>
+  <header>
+    <h1>Your stats</h1>
+    <div class="seg" role="group" aria-label="Period">
+      <button data-p="today" aria-pressed="false">Today</button>
+      <button data-p="week" aria-pressed="false">Last 7 days</button>
+      <button data-p="all" aria-pressed="true">All time</button>
+    </div>
+  </header>
+
+  <div class="tiles">
+    <div class="tile hero">
+      <div><div class="label">Time saved</div><div class="value" id="saved">0 s</div></div>
+      <div class="sub" id="savedsub"></div>
+    </div>
+    <div class="tile"><div class="label">Typos fixed</div><div class="value" id="fixes">0</div><div class="sub" id="fixsub"></div></div>
+    <div class="tile"><div class="label">Words checked</div><div class="value" id="words">0</div><div class="sub" id="wordsub"></div></div>
+    <div class="tile"><div class="label">Next guesses used</div><div class="value" id="guesses">0</div><div class="sub">Real-word slips you swapped with the hotkey</div></div>
+    <div class="tile"><div class="label">Written for you</div><div class="value" id="writes">0</div><div class="sub" id="writesub">With Write it for me</div></div>
+  </div>
+
+  <div class="chart">
+    <h2>Time saved per day, last 14 days</h2>
+    <div class="plot" id="plot"></div>
+    <div class="days" id="days"></div>
+    <div class="tip" id="tip" role="tooltip"></div>
+    <div class="empty" id="empty" hidden>Start typing: every typo QuipKeys fixes shows up here.</div>
+  </div>
+
+  <details>
+    <summary>How is time saved worked out?</summary>
+    <p>It's an estimate. Without QuipKeys, a wrong word costs you about half a second to notice, then backspacing over it and typing it again. QuipKeys times that at <b id="speed">your typing speed</b>. An undone fix doesn't count. For Write it for me, it's the time you'd have spent typing the text yourself, minus typing your instruction and waiting for it.</p>
+    <p>Only counts are kept, in <code>quipkeys-stats.txt</code> on this computer: never any words.</p>
+  </details>
+
+  <footer>
+    <span id="speedline"></span>
+    <button id="reset">Reset stats</button>
+  </footer>
+
+<script>
+  const send = (m) => window.ipc && window.ipc.postMessage(m);
+  const $ = (id) => document.getElementById(id);
+  let data = null, period = 'all';
+  const n = (x) => x.toLocaleString('en-GB');
+  const dur = (ms) => {
+    const s = Math.round(ms / 1000);
+    if (s < 60) return s + ' s';
+    const m = Math.round(s / 60);
+    return m < 60 ? m + ' min' : Math.floor(m / 60) + ' h ' + (m % 60) + ' min';
+  };
+  document.querySelectorAll('.seg button').forEach((b) => b.addEventListener('click', () => {
+    period = b.dataset.p;
+    document.querySelectorAll('.seg button').forEach((x) => x.setAttribute('aria-pressed', x === b));
+    draw();
+  }));
+  $('reset').addEventListener('click', () => {
+    if (confirm('Reset all your stats to zero? This cannot be undone.')) send('stats:reset');
+  });
+  function draw() {
+    if (!data) return;
+    const p = data[period];
+    $('saved').textContent = dur(p.saved_ms);
+    $('savedsub').textContent = period === 'today' ? 'today' : period === 'week' ? 'in the last 7 days' : 'since you started';
+    $('fixes').textContent = n(p.fixes);
+    $('fixsub').textContent = p.undos ? n(p.undos) + ' undone (not counted)' : 'Kept fixes only';
+    $('words').textContent = n(p.words);
+    $('wordsub').textContent = p.words ? (100 * p.fixes / p.words).toFixed(1) + '% needed fixing' : '';
+    $('guesses').textContent = n(p.guesses);
+    $('writes').textContent = n(p.writes);
+    $('writesub').textContent = p.writes ? n(Math.round(p.written / 5)) + ' words, with Write it for me' : 'With Write it for me';
+    const speed = data.wpm ? Math.round(data.wpm) + ' words a minute, measured from your typing' : 'about 80 words a minute until it has measured yours';
+    $('speed').textContent = speed;
+    $('speedline').textContent = data.wpm ? 'Your typing speed: ' + Math.round(data.wpm) + ' words a minute' : 'Measuring your typing speed…';
+    // chart
+    const max = Math.max(...data.days.map((d) => d.saved_ms), 1);
+    $('plot').innerHTML = data.days.map((d, i) =>
+      `<div class="col" tabindex="0" data-i="${i}" aria-label="${d.long}: ${dur(d.saved_ms)} saved, ${n(d.fixes)} typos fixed">` +
+      `<div class="bar" style="height:${d.saved_ms ? Math.max(2, 100 * d.saved_ms / max) : 0}%"></div></div>`).join('');
+    $('days').innerHTML = data.days.map((d) => `<span>${d.short}</span>`).join('');
+    $('empty').hidden = data.days.some((d) => d.saved_ms > 0);
+    document.querySelectorAll('.col').forEach((c) => {
+      const show = () => {
+        const d = data.days[+c.dataset.i];
+        const tip = $('tip'), box = c.getBoundingClientRect(), host = c.closest('.chart').getBoundingClientRect();
+        tip.innerHTML = `<b>${d.long}</b><br>${dur(d.saved_ms)} saved · ${n(d.fixes)} typos fixed`;
+        // Keep the tooltip inside the chart.
+        const half = tip.offsetWidth / 2, x = box.left - host.left + box.width / 2;
+        tip.style.left = Math.min(Math.max(x, half + 4), host.width - half - 4) + 'px';
+        tip.style.top = (box.top - host.top + box.height - c.querySelector('.bar').offsetHeight - 6) + 'px';
+        tip.style.opacity = 1;
+      };
+      const hide = () => ($('tip').style.opacity = 0);
+      c.addEventListener('mouseenter', show); c.addEventListener('focus', show);
+      c.addEventListener('mouseleave', hide); c.addEventListener('blur', hide);
+    });
+  }
+  let last = '';
+  window.QKS = { update(d) { const s = JSON.stringify(d); if (s !== last) { last = s; data = d; draw(); } } };
+  send('stats:ready');
+</script>
+</body>
+</html>
