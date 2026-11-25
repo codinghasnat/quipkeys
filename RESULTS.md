@@ -261,3 +261,50 @@ by the same typist. Word accuracy, with the share of correctly typed words chang
   very short ambiguous words (`wnt` = want/went), and words with 3+ slips.
 * **Latency:** p99 is about 4 ms, mostly from space repair. That's fine for typing, and the search can be made faster.
 * **The typist is simulated.** The trainer's keystroke export is how we get real data to tune against.
+
+## Real-word slips: a trained scorer with context on both sides
+
+"Can you meat me at the cafe?", "a letter form the bank", "I am to tired": the typed
+word is a real word, so spell-check can't flag it. The old engine looked one word either
+side and changed a real word only at 98% confidence; it fixed none of these.
+
+**What was built.** A small network (`src/rwscorer.rs`, trained by `scripts/nn/rw_train.py`,
+4.7 MB, about 0.6 ms per word) reads the 5 tokens before and after a typed real word and
+gives each of its look-alikes a probability of being what was meant. Look-alikes come from
+a hand-made confusion list (`data/en_confusions.txt`: their/there/they're, to/too/two,
+form/from, meat/meet, sea/see, your/you're...) plus every real word one keyboard slip away.
+It was trained on 20M windows of Wikipedia and conversational text (Brown, the test text,
+excluded), with the word swapped for a slip half the time and left alone the other half,
+and with the right context often cut short, as it is while a sentence is being typed. It
+judges a real word two and four words later, and at the end of the sentence.
+
+**What it may change by itself.** The first version changed every kind of slip and was a net
+loss on the typing benchmark: real-word fixes doubled (22% to 42%) but correct words changed
+went from 0.09% to 1.1% (word accuracy 96.78% to 96.20%). The wrong changes were mostly words
+one letter longer ("other" to "mother", "very" to "every", "order" to "border"), plurals
+("letter" to "letters") and US/UK spellings ("color" to "colour"). Those are now never
+offered, and on the development text only one setting was no worse overall: changing words
+automatically only for the hand-listed confusions, at probability 0.9 with a keep bonus of 2.
+The next-guess key (Ctrl+Alt+N) uses the scorer for every kind of slip, most likely first.
+
+Held-out test split (1,500 sentences per level; this benchmark simulates keyboard slips, not
+sound-alikes, so it mainly checks for harm):
+
+| Level | Real-word slips fixed, before / now | Correct words changed, before / now | Word accuracy, before / now |
+|---|---|---|---|
+| light | 16.3% / 18.6% | 0.104% / 0.126% | 98.22% / 98.21% |
+| moderate | 20.9% / 23.6% | 0.123% / 0.137% | 96.55% / 96.57% |
+| blind | 21.4% / 23.1% | 0.105% / 0.119% | 88.96% / 89.01% |
+
+Hand-written real-word set (`data/eval/realword.txt`, 32 slips in 70 sentences, 442 correct
+words; not used for any choice; `cargo run --release --example rw_eval`):
+
+| | Slips fixed | Correct words changed | Sentences exactly right |
+|---|---|---|---|
+| Before | 3 / 32 | 0 / 442 | 41 / 70 |
+| Now | **17 / 32** | **0 / 442** | 55 / 70 |
+
+Fixed now, among others: meat → meet, form → from, Their → There, to → too, sea → see,
+there → their, your → you're, were → where, weather → whether, loose → lose. Still missed
+automatically (the next-guess key offers most first): then/than, here/hear, it's/its,
+peace/piece, let's, advise/advice, "for you help". Turning the scorer off: `QK_RW=0`.

@@ -18,6 +18,45 @@ pub fn english() -> Option<&'static RwScorer> {
     S.get_or_init(|| RwScorer::load(MODEL)).as_ref()
 }
 
+/// Relation code for pairs from the hand-made list (rw_data.py REL_LIST).
+const REL_LIST: u8 = 1;
+
+/// US/UK spelling pairs ("color", "colour"): never a slip.
+fn variants() -> &'static std::collections::HashSet<(String, String)> {
+    static V: std::sync::OnceLock<std::collections::HashSet<(String, String)>> = std::sync::OnceLock::new();
+    V.get_or_init(|| {
+        let mut set = std::collections::HashSet::new();
+        for line in include_str!("../data/en_variants.txt").lines().filter(|l| !l.starts_with('#')) {
+            let mut it = line.split_whitespace();
+            if let (Some(a), Some(b)) = (it.next(), it.next()) {
+                set.insert((a.to_string(), b.to_string()));
+                set.insert((b.to_string(), a.to_string()));
+            }
+        }
+        set
+    })
+}
+
+/// The words differ in their first letter only by one being added or
+/// dropped ("other"/"mother", "at"/"sat"): rare as a slip, common as two
+/// different words, so never offered.
+fn first_letter_edit(a: &str, b: &str) -> bool {
+    let (short, long) = if a.len() < b.len() { (a, b) } else { (b, a) };
+    long.len() == short.len() + 1 && long[1..] == *short
+}
+
+/// Relation codes (rw_data.py): which kind of slip turns the meant word into the typed one.
+pub const REL_SUB: u8 = 2;
+pub const REL_DROP: u8 = 3;
+pub const REL_EXTRA: u8 = 4;
+pub const REL_SWAP: u8 = 5;
+
+/// One word is the other plus a final "s" or "d".
+fn inflection(a: &str, b: &str) -> bool {
+    let (short, long) = if a.len() < b.len() { (a, b) } else { (b, a) };
+    long.len() == short.len() + 1 && long.starts_with(short) && (long.ends_with('s') || long.ends_with('d'))
+}
+
 pub const PAD: u16 = 0;
 pub const UNK: u16 = 1;
 
@@ -155,7 +194,8 @@ impl RwScorer {
     /// look-alike with its probability, the typed word first. `keep_bonus`
     /// is added to the typed word's score (more = changes words less often).
     /// None if the word isn't one the scorer knows look-alikes for.
-    pub fn judge(&self, left: &[String], typed: &str, right: &[String], keep_bonus: f32) -> Option<Vec<(String, f32)>> {
+    /// `rels` is a bit mask of the relations (slip kinds) offered: bit r for code r.
+    pub fn judge(&self, left: &[String], typed: &str, right: &[String], keep_bonus: f32, rels: u8) -> Option<Vec<(String, f32)>> {
         let t = *self.index.get(typed)?;
         let n = self.count[t as usize] as usize;
         if n < 2 {
@@ -177,7 +217,21 @@ impl RwScorer {
         let h: Vec<f32> =
             (0..self.d).map(|r| self.w2[r * self.hidden..(r + 1) * self.hidden].iter().zip(&hid).map(|(a, b)| a * b).sum::<f32>() + self.b2[r]).collect();
         let row = t as usize * self.k;
+        let typed_word = &self.vocab[t as usize];
         let mut scored: Vec<(String, f32)> = (0..n)
+            // A plural "s" or past-tense "d" added or dropped ("letter" ->
+            // "letters", "use" -> "used") is a real slip, but context rarely
+            // settles it and a wrong change reads badly: never offered
+            // (unless the pair is on the hand-made list).
+            .filter(|&j| {
+                let (r, c) = (self.trel[row + j], &self.vocab[self.table[row + j] as usize]);
+                j == 0
+                    || r == REL_LIST
+                    || (rels >> r) & 1 == 1
+                        && !inflection(typed_word, c)
+                        && !first_letter_edit(typed_word, c)
+                        && !variants().contains(&(typed_word.clone(), c.clone()))
+            })
             .map(|j| {
                 let c = self.table[row + j];
                 let mut s = self.emb(c).zip(&h).map(|(a, b)| a * b).sum::<f32>() + self.bias[c as usize] + self.rel[self.trel[row + j] as usize];
@@ -205,6 +259,17 @@ mod tests {
         assert_eq!(tokens("I got a letter form the bank. Their is"), ["i", "got", "a", "letter", "form", "the", "bank", ".", "their", "is"]);
         assert_eq!(tokens("You\u{2019}re \"done\", aren't-you?"), ["you're", "done", ",", "aren't", "you", "?"]);
         assert_eq!(tokens("rock'n'roll 3pm"), ["rock'n", "roll", "pm"]);
+    }
+
+    #[test]
+    fn inflections_are_spotted() {
+        assert!(inflection("letter", "letters") && inflection("used", "use"));
+        assert!(!inflection("the", "they") && !inflection("form", "from"));
+        // "an"/"and" counts too, but it's on the hand-made list, which is exempt.
+        assert!(inflection("an", "and"));
+        assert!(first_letter_edit("other", "mother") && first_letter_edit("sat", "at"));
+        assert!(!first_letter_edit("form", "from") && !first_letter_edit("the", "them"));
+        assert!(variants().contains(&("color".into(), "colour".into())));
     }
 
     #[test]

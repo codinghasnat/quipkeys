@@ -940,7 +940,7 @@ impl<'e> Stream<'e> {
         if self.engine.cfg.rw && w.typed == w.output {
             if let Some(sc) = crate::rwscorer::english() {
                 let (left, typed, right) = self.rw_context(index, self.words.len() - 1);
-                if let Some(mut probs) = sc.judge(&left, &typed, &right, self.engine.cfg.rw_keep_bonus) {
+                if let Some(mut probs) = sc.judge(&left, &typed, &right, 0.0, 0b11_1110) {
                     probs.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
                     for (word, p) in probs {
                         if p < 0.02 {

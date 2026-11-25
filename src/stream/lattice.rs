@@ -472,7 +472,7 @@ impl<'e> Stream<'e> {
         if right.is_empty() || !sc.judges(&typed) {
             return None;
         }
-        let probs = sc.judge(&left, &typed, &right, e.cfg.rw_keep_bonus)?;
+        let probs = sc.judge(&left, &typed, &right, e.cfg.rw_keep_bonus, e.cfg.rw_rels)?;
         let (best, p) = probs.iter().skip(1).max_by(|a, b| a.1.partial_cmp(&b.1).unwrap())?.clone();
         if p < e.cfg.rw_tau {
             return None;

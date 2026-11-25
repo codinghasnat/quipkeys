@@ -66,6 +66,12 @@ pub struct Config {
     pub rw_tau: f32,
     /// Added to the typed word's score: more = changes real words less often.
     pub rw_keep_bonus: f32,
+    /// Which slip kinds the scorer may change a word for by itself (bit mask
+    /// of rwscorer relation codes; hand-listed confusions always count). Off
+    /// by default: on simulated typing, letting one-key slips through fixed
+    /// more real-word slips but changed more correct words, for no net gain.
+    /// The next-guess key always offers every kind.
+    pub rw_rels: u8,
     /// Learned decision gate (None = fixed confidence thresholds).
     pub gate: Option<Gate>,
     /// Load the built-in learned gate (data/gate.txt) when constructing the engine.
@@ -195,7 +201,8 @@ impl Default for Config {
             nn_look_max_channel: 6.5,
             rw: std::env::var("QK_RW").map(|v| v != "0").unwrap_or(true),
             rw_tau: std::env::var("QK_RW_TAU").ok().and_then(|v| v.parse().ok()).unwrap_or(0.9),
-            rw_keep_bonus: std::env::var("QK_RW_KEEP").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0),
+            rw_keep_bonus: std::env::var("QK_RW_KEEP").ok().and_then(|v| v.parse().ok()).unwrap_or(2.0),
+            rw_rels: std::env::var("QK_RW_RELS").ok().and_then(|v| u8::from_str_radix(&v, 2).ok()).unwrap_or(0),
             gate: None,
             use_gate: true,
             lattice: true,
