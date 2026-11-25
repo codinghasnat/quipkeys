@@ -308,3 +308,18 @@ Fixed now, among others: meat → meet, form → from, Their → There, to → t
 there → their, your → you're, were → where, weather → whether, loose → lose. Still missed
 automatically (the next-guess key offers most first): then/than, here/hear, it's/its,
 peace/piece, let's, advise/advice, "for you help". Turning the scorer off: `QK_RW=0`.
+
+**Full regression, scorer off vs on** (held-out test split unless noted):
+
+| Check | Off | On |
+|---|---|---|
+| Word accuracy: light / moderate / messy | 98.22 / 96.55 / 93.28% | 98.21 / 96.57 / 93.30% |
+| Word accuracy: blind / rough / smash | 88.86 / 87.75 / 74.65% | 88.90 / 87.78 / 74.67% |
+| Real-word slips fixed, moderate / smash | 20.9 / 34.7% | 23.6 / 35.0% |
+| Spell by sound: swapped sound-alikes restored | 82.2% | **86.0%** |
+| Spell by sound: clean words changed | 0.142% | 0.154% |
+| Sound spellings in sentences | 80.7% right | 80.7% right (identical) |
+| Learning simulation, 6 typists, day 5 | e.g. accurate 98.98%, extra-keys 96.12% | accurate 98.94%, extra-keys 96.17% (each within 0.05 points) |
+| Real typing (50 recorded runs, 1,500 words) | 91.3% / 89.0% | 91.3% / 89.0%: 2 words differ, both wrong either way |
+| Pitch-video examples, screenshot examples | all as shown | all as shown; "form the station" (clip 08) now also fixed |
+| Time per word, median (moderate) | 0.48 ms | 1.0 ms |
