@@ -138,6 +138,10 @@ pub struct Config {
     pub shift_margin: f32,
     /// Confidence needed to move word boundaries.
     pub tau_reseg: f32,
+    /// `space_cost` when both chunks are gibberish and the typing is mashed
+    /// ("gsop uvotygssu" -> "happy birthday"): moving the space is cheap next
+    /// to a whole word of slipped letters.
+    pub space_cost_mashed: f32,
     /// A hand-shifted word must be at least this common (LM cost, nats).
     pub hand_shift_max_cost: f32,
     /// Shortest typed word we will touch.
@@ -234,6 +238,7 @@ impl Default for Config {
             split_cost: 6.0,
             space_cost: 5.0,
             tau_reseg: 0.9,
+            space_cost_mashed: std::env::var("QK_SPACE_MASHED").ok().and_then(|v| v.parse().ok()).unwrap_or(2.0),
             merge_margin: 6.0,
             shift_margin: 2.0,
             hand_shift_max_cost: 14.0,

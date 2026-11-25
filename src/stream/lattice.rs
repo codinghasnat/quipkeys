@@ -225,6 +225,13 @@ impl<'e> Stream<'e> {
         // Gluing a real word onto its neighbour ("m kept" -> "kept",
         // "soy beans" -> "soybeans") needs much stronger evidence.
         let merge_margin = if ka || kb { cfg.merge_margin } else { 0.0 };
+        // Both chunks gibberish in mashed typing: the space may well be in the
+        // wrong place too, so moving it costs less.
+        let mashed = !ka
+            && !kb
+            && (crate::decoder::SLOPPY.with(|s| s.get())
+                || e.wordlikeness(&a).max(e.wordlikeness(&b)) > cfg.nb_unwordlike);
+        let space_cost = if mashed { cfg.space_cost_mashed.min(cfg.space_cost) } else { cfg.space_cost };
         let joined = format!("{a}{b}");
         let jt: Option<Vec<f32>> = match (pw.core_times(), cw.core_times()) {
             (Some(x), Some(y)) => Some(x.iter().chain(y).copied().collect()),
@@ -248,7 +255,7 @@ impl<'e> Stream<'e> {
                 span: 2,
                 words: vec![Some(wid)],
                 outs: vec![lx.word(wid).to_string(), String::new()],
-                cost: ch + cfg.space_cost + merge_margin + e.variety_cost(wid),
+                cost: ch + space_cost + merge_margin + e.variety_cost(wid),
                 keep: false,
             });
         }
@@ -273,7 +280,7 @@ impl<'e> Stream<'e> {
                         span: 2,
                         words: vec![Some(ix), Some(iy)],
                         outs: vec![sx, sy],
-                        cost: cx + cy + cfg.space_cost + margin,
+                        cost: cx + cy + space_cost + margin,
                         keep: false,
                     });
                 }

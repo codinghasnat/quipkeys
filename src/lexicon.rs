@@ -90,7 +90,9 @@ impl Lexicon {
     /// Built-in English data.
     pub fn english() -> Self {
         let mut lx = Self::english_without_ngrams();
-        lx.ngrams = Ngrams::load(NGRAMS, lx.len(), |w| lx.id(w));
+        // QK_NGRAMS=path: use another counts file (experiments, e.g. pruned sizes).
+        let alt = std::env::var("QK_NGRAMS").ok().and_then(|p| std::fs::read(p).ok());
+        lx.ngrams = Ngrams::load(alt.as_deref().unwrap_or(NGRAMS), lx.len(), |w| lx.id(w));
         for line in VARIANTS.lines().filter(|l| !l.starts_with('#')) {
             if let Some((uk, us)) = line.split_once(' ') {
                 if let (Some(a), Some(b)) = (lx.id(uk), lx.id(us.trim())) {
