@@ -1,0 +1,63 @@
+# Builds QuipKeys for Windows and macOS and publishes a GitHub Release when a
+# version tag is pushed:
+#     git tag v0.2.0 && git push origin v0.2.0
+# The tag must match `version` in app/Cargo.toml. The app's updater
+# (app/src/update.rs) installs these assets after checking SHA256SUMS.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Tag matches the app version
+        shell: bash
+        run: |
+          v=$(sed -n 's/^version = "\(.*\)"/\1/p' app/Cargo.toml | head -1)
+          test "v$v" = "${GITHUB_REF_NAME}" || { echo "tag ${GITHUB_REF_NAME} but app/Cargo.toml says $v"; exit 1; }
+      - name: Build
+        working-directory: app
+        run: cargo build --release
+      - name: Package
+        shell: bash
+        run: cp app/target/release/quipkeys.exe quipkeys-windows-x64.exe
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: quipkeys-windows-x64.exe
+
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the app (Apple silicon + Intel)
+        run: UNIVERSAL=1 sh app/macos/make-app.sh
+      - name: Package
+        run: ditto -c -k --keepParent app/dist/QuipKeys.app QuipKeys-macos.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos
+          path: QuipKeys-macos.zip
+
+  publish:
+    needs: [windows, macos]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+      - name: Checksums
+        run: sha256sum quipkeys-windows-x64.exe QuipKeys-macos.zip > SHA256SUMS && cat SHA256SUMS
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" --title "QuipKeys ${GITHUB_REF_NAME}" --generate-notes \
+            quipkeys-windows-x64.exe QuipKeys-macos.zip SHA256SUMS

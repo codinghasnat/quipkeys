@@ -4,9 +4,19 @@
 #   sh macos/make-app.sh            build dist/QuipKeys.app
 #   sh macos/make-app.sh --install  build, then replace /Applications/QuipKeys.app
 #                                   and start it (use this for updates)
+#   UNIVERSAL=1 sh macos/make-app.sh  one app for Apple silicon and Intel (releases)
 set -e
 cd "$(dirname "$0")/.."
-cargo build --release
+if [ "$UNIVERSAL" = 1 ]; then
+  rustup target add aarch64-apple-darwin x86_64-apple-darwin
+  cargo build --release --target aarch64-apple-darwin
+  cargo build --release --target x86_64-apple-darwin
+  mkdir -p target/release
+  lipo -create -output target/release/quipkeys \
+    target/aarch64-apple-darwin/release/quipkeys target/x86_64-apple-darwin/release/quipkeys
+else
+  cargo build --release
+fi
 APP=dist/QuipKeys.app
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"

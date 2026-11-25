@@ -1931,6 +1931,7 @@ dependencies = [
  "native-tls",
  "quipkeys",
  "serde_json",
+ "sha2",
  "tao",
  "tray-icon",
  "ureq",

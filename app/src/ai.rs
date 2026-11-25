@@ -392,7 +392,8 @@ impl Unthink {
 
 /// One shared connection pool: after the first request, the connection to
 /// the model is reused, which saves the TLS handshake on every later press.
-fn agent() -> &'static ureq::Agent {
+/// The shared HTTPS client (also used by update.rs).
+pub fn http() -> &'static ureq::Agent {
     static AGENT: OnceLock<ureq::Agent> = OnceLock::new();
     AGENT.get_or_init(|| {
         let b = ureq::AgentBuilder::new().timeout_connect(Duration::from_secs(10)).timeout_read(Duration::from_secs(60));
@@ -415,7 +416,7 @@ pub fn warm_up(p: &Provider) {
         Provider::Off => return,
     };
     std::thread::spawn(move || {
-        let _ = agent().head(&url).call();
+        let _ = http().head(&url).call();
     });
 }
 
@@ -437,7 +438,7 @@ pub fn write_at(p: &Provider, claude_url: &str, r: &Request, on_text: &mut dyn F
             if api_key.trim().is_empty() {
                 return Err("Add your Claude API key first: QuipKeys menu › Write it for me…".into());
             }
-            let mut req = agent()
+            let mut req = http()
                 .post(claude_url)
                 .set("x-api-key", api_key.trim())
                 .set("anthropic-version", "2026-10-21")
@@ -451,7 +452,7 @@ pub fn write_at(p: &Provider, claude_url: &str, r: &Request, on_text: &mut dyn F
             if url.trim().is_empty() {
                 return Err("Add the service's address first: QuipKeys menu › Write it for me…".into());
             }
-            let mut req = agent().post(url.trim()).set("content-type", "application/json");
+            let mut req = http().post(url.trim()).set("content-type", "application/json");
             if !api_key.trim().is_empty() {
                 req = req.set("authorization", &format!("Bearer {}", api_key.trim()));
             }
@@ -498,7 +499,7 @@ pub fn list_models(vendor_id: &str, url: &str, api_key: &str) -> Result<Vec<Stri
     if v.needs_key && api_key.trim().is_empty() {
         return Err("Paste your API key first.".into());
     }
-    let mut req = agent().get(&models_url);
+    let mut req = http().get(&models_url);
     if vendor_id == "claude" {
         req = req.set("x-api-key", api_key.trim()).set("anthropic-version", "2026-10-21");
     } else if !api_key.trim().is_empty() {
@@ -551,7 +552,7 @@ pub fn pick_model(vendor_id: &str, available: &[String]) -> Option<String> {
 
 /// Is Ollama running? Its version if so.
 pub fn ollama_version() -> Option<String> {
-    let body: Value = agent().get(&format!("{OLLAMA}/api/version")).timeout(Duration::from_secs(2)).call().ok()?.into_json().ok()?;
+    let body: Value = http().get(&format!("{OLLAMA}/api/version")).timeout(Duration::from_secs(2)).call().ok()?.into_json().ok()?;
     body.get("version").and_then(Value::as_str).map(String::from)
 }
 
@@ -562,7 +563,7 @@ pub fn ollama_pull(model: &str, progress: &mut dyn FnMut(&str, u64, u64)) -> Res
 }
 
 pub fn ollama_pull_at(base: &str, model: &str, progress: &mut dyn FnMut(&str, u64, u64)) -> Result<(), String> {
-    let resp = agent()
+    let resp = http()
         .post(&format!("{base}/api/pull"))
         .timeout(Duration::from_secs(6 * 3600))
         .send_json(json!({ "model": model, "stream": true }));

@@ -15,6 +15,7 @@ mod macos;
 #[cfg(any(windows, target_os = "macos"))]
 mod settings;
 mod stats;
+mod update;
 #[cfg(any(windows, target_os = "macos"))]
 mod ui;
 #[cfg(windows)]
@@ -44,6 +45,8 @@ fn main() {
     settings::load_exclusions(platform::DEFAULT_EXCLUDE);
     stats::set_utc_offset(platform::utc_offset_seconds());
     stats::init(settings::config_dir().join("quipkeys-stats.txt"));
+    update::clean_up();
+    ui::start_update_checks();
     quipkeys::decoder::set_sound_mode(settings::sound_mode());
     platform::start(core::Core::open(Some(settings::words_path()), Some(settings::profile_path()), settings::learning()));
     ui::run();

@@ -34,6 +34,10 @@ macOS it also walks you through the one permission it needs.
 
 - Typo fixing runs entirely on your computer. It works with no internet
   connection and never connects to the internet.
+- Update checks: **Check for updates** in the menu asks GitHub for the latest
+  release (a plain request: nothing about you is sent). It only happens when
+  you choose it, or once a day if you switch on **Check for updates
+  automatically** (off by default).
 - The one exception is **Write it for me** with an online model chosen, which
   you have to switch on and give your own API key. Even then, something is
   sent only when you press its hotkey: your instruction and its context, to
@@ -240,6 +244,30 @@ speed (80 words a minute until it has measured yours). A Write it for me text
 counts the time you'd have spent typing it, minus typing your instruction and
 waiting for it. Only counts are stored, never words, and **Reset stats**
 starts again from zero.
+
+## Updates
+
+**Check for updates…** in the menu shows your version and asks GitHub whether a
+newer one is out. If there is, the item becomes **Install update x.y.z and
+restart**: QuipKeys downloads it, checks it against the release's SHA-256
+checksums (it won't install anything that doesn't match), puts it in place of
+the running copy and restarts. Switch on **Check for updates automatically** to
+be told once a day.
+
+- **Windows:** the new `quipkeys.exe` replaces the old one in the same folder
+  (the old one is set aside and deleted at the next start). If that folder
+  isn't writable, it says so; download from the release page instead.
+- **macOS:** the new `QuipKeys.app` replaces the old one. Because the builds
+  are ad-hoc signed, macOS treats each version as a new app: switch QuipKeys on
+  again in System Settings › Privacy & Security › Accessibility (the welcome
+  window shows the way). Signing with an Apple Developer ID would remove this
+  step.
+
+**Publishing a release** (maintainers): set `version` in `app/Cargo.toml`,
+commit, then push a matching tag: `git tag v0.2.0 && git push origin v0.2.0`.
+The Release workflow (`.github/workflows/release.yml`) builds the Windows
+program and a universal macOS app (Apple silicon + Intel), and publishes them
+with `SHA256SUMS`.
 
 ## Your words
 

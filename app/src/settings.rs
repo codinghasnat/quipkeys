@@ -477,3 +477,13 @@ pub fn set_ai(kind: &str, model: &str, url: &str, screen: bool) {
     }
     set_flag("ai_no_screen", !screen);
 }
+
+/// Check for updates once a day by itself (off unless switched on: it's the
+/// only thing besides Write it for me that would use the internet).
+pub fn auto_update() -> bool {
+    flag("auto_update")
+}
+
+pub fn set_auto_update(on: bool) {
+    set_flag("auto_update", on);
+}

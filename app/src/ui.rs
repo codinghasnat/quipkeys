@@ -59,6 +59,8 @@ pub enum UiEvent {
     OpenCompose,
     /// The answer to "Try it" in the settings window.
     ComposeTest(Result<String, String>),
+    /// An update check finished: (asked by the user?, result).
+    Update(bool, Result<Option<crate::update::Release>, String>),
     /// The models a provider's key can use, and the cheapest of them: (provider, result).
     ComposeModels(String, Result<(Vec<String>, Option<String>), String>),
     /// Ollama's version (None: not running), and the models it has.
@@ -98,6 +100,9 @@ struct Items {
     excluded: MenuItem,
     words: MenuItem,
     compose: MenuItem,
+    /// "Check for updates…", or "Install update 0.2.0 and restart" once one is found.
+    update: MenuItem,
+    auto_update: CheckMenuItem,
     welcome: MenuItem,
     quit: MenuItem,
 }
@@ -131,6 +136,10 @@ struct App {
     writing: bool,
     /// The "Your stats" window.
     stats: Option<Page>,
+    /// A newer release, found by the last check.
+    available: Option<crate::update::Release>,
+    /// An update check or install is running.
+    updating: bool,
 }
 
 pub fn run() {
@@ -165,6 +174,8 @@ pub fn run() {
         excluded: MenuItem::new("Edit excluded apps…", true, None),
         words: MenuItem::new("My words…", true, None),
         compose: MenuItem::new(format!("Write it for me…\t{COMPOSE_KEY}"), true, None),
+        update: MenuItem::new("Check for updates…", true, None),
+        auto_update: CheckMenuItem::new("Check for updates automatically", true, settings::auto_update(), None),
         welcome: MenuItem::new("Welcome & privacy…", true, None),
         quit: MenuItem::new("Quit QuipKeys", true, None),
     };
@@ -173,7 +184,7 @@ pub fn run() {
     }
     let _ = items.recent.append(&PredefinedMenuItem::separator());
     let _ = items.recent.append(&MenuItem::new(format!("Wrong word? Press {NEXT_KEY} straight after it"), false, None));
-    let mut app = App { tray: None, items, on: true, running: platform::has_permission(), app: String::new(), welcome: None, words: None, fixes: Default::default(), flash_until: None, compose: None, notice: None, writing: false, stats: None };
+    let mut app = App { tray: None, items, on: true, running: platform::has_permission(), app: String::new(), welcome: None, words: None, fixes: Default::default(), flash_until: None, compose: None, notice: None, writing: false, stats: None, available: None, updating: false };
 
     event_loop.run(move |event, target, flow| {
         let now = std::time::Instant::now();
@@ -249,6 +260,9 @@ fn build_tray(items: &Items) -> TrayIcon {
         &items.excluded,
         &items.welcome,
         &PredefinedMenuItem::separator(),
+        &items.update,
+        &items.auto_update,
+        &PredefinedMenuItem::separator(),
         &items.quit,
     ]);
     let builder = TrayIconBuilder::new().with_menu(Box::new(menu)).with_tooltip("QuipKeys").with_icon(icon(true));
@@ -292,6 +306,25 @@ impl App {
                 self.refresh();
             }
             UiEvent::OpenCompose => self.open_compose(target),
+            UiEvent::Update(asked, result) => {
+                self.updating = false;
+                match result {
+                    Ok(Some(rel)) => {
+                        let msg = format!("QuipKeys {} is available (you have {}). Choose “Install update” in the menu.", rel.version, crate::update::current());
+                        let fresh = self.available.as_ref().map(|r| &r.version) != Some(&rel.version);
+                        self.available = Some(rel);
+                        if asked || fresh {
+                            self.show_notice_titled(target, "Update available", &msg);
+                        }
+                    }
+                    Ok(None) if asked => {
+                        self.show_notice_titled(target, "Updates", &format!("You have the latest version ({}).", crate::update::current()))
+                    }
+                    Err(e) if asked => self.show_notice_titled(target, "Updates", &e),
+                    _ => {}
+                }
+                self.refresh();
+            }
             UiEvent::ComposeModels(kind, result) => {
                 let js = match result {
                     Ok((list, pick)) => format!(
@@ -352,6 +385,24 @@ impl App {
                     self.open_compose(target);
                 } else if id == *it.welcome.id() {
                     self.open_welcome(target);
+                } else if id == *it.auto_update.id() {
+                    settings::set_auto_update(it.auto_update.is_checked());
+                } else if id == *it.update.id() && !self.updating {
+                    self.updating = true;
+                    match self.available.clone() {
+                        // Install the update found earlier.
+                        Some(rel) => {
+                            std::thread::spawn(move || {
+                                // Only comes back if something went wrong.
+                                if let Err(e) = crate::update::install(&rel) {
+                                    notify(UiEvent::Update(true, Err(e)));
+                                }
+                            });
+                        }
+                        None => {
+                            std::thread::spawn(|| notify(UiEvent::Update(true, crate::update::check())));
+                        }
+                    }
                 } else if id == *it.stats.id() {
                     self.open_stats(target);
                 } else if id == *it.quit.id() {
@@ -397,6 +448,12 @@ impl App {
             "No typos fixed yet".to_string()
         });
         it.login.set_checked(settings::start_at_login());
+        it.auto_update.set_checked(settings::auto_update());
+        it.update.set_text(match (&self.available, self.updating) {
+            (_, true) => "Checking for updates…".to_string(),
+            (Some(rel), false) => format!("Install update {} and restart", rel.version),
+            (None, false) => format!("Check for updates… (you have {})", crate::update::current()),
+        });
         it.sound.set_checked(settings::sound_mode());
         it.learn.set_checked(settings::learning());
         let short = |s: &str| if s.chars().count() > 28 { format!("{}…", s.chars().take(27).collect::<String>()) } else { s.to_string() };
@@ -587,12 +644,17 @@ impl App {
 
     /// A small message that doesn't take the focus from the app you're typing in.
     fn show_notice(&mut self, target: &EventLoopWindowTarget<UiEvent>, msg: &str) {
+        self.show_notice_titled(target, "Write it for me", msg);
+    }
+
+    fn show_notice_titled(&mut self, target: &EventLoopWindowTarget<UiEvent>, title: &str, msg: &str) {
         self.notice = None;
+        let title = title.replace('&', "&amp;").replace('<', "&lt;");
         let esc = msg.replace('&', "&amp;").replace('<', "&lt;");
         let html = format!(
             "<!doctype html><meta charset=utf-8><style>body{{margin:0;padding:18px 20px;font:15px/1.45 -apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;background:#fff;color:#16181d}}\
              b{{display:block;margin-bottom:4px}}@media(prefers-color-scheme:dark){{body{{background:#1b1e24;color:#eceef1}}}}</style>\
-             <b>Write it for me</b>{esc}"
+             <b>{title}</b>{esc}"
         );
         if let Some(page) = open_page(target, "QuipKeys", (440.0, 150.0), false, &html, false) {
             self.notice = Some((page, std::time::Instant::now() + NOTICE_FOR));
@@ -847,4 +909,17 @@ fn icon_colours(on: bool, top_colour: [u8; 3], ink: [u8; 3], template: bool) -> 
         }
     }
     Icon::from_rgba(px, N as u32, N as u32).expect("valid icon")
+}
+
+/// If automatic checks are on: check a minute after start, then once a day.
+pub fn start_update_checks() {
+    std::thread::spawn(|| {
+        std::thread::sleep(std::time::Duration::from_secs(60));
+        loop {
+            if settings::auto_update() {
+                notify(UiEvent::Update(false, crate::update::check()));
+            }
+            std::thread::sleep(std::time::Duration::from_secs(24 * 3600));
+        }
+    });
 }
