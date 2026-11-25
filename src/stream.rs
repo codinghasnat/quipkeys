@@ -566,6 +566,21 @@ impl<'e> Stream<'e> {
                     edits.push(e);
                 }
             }
+            // The real-word scorer: judge a real word with the words on both
+            // sides, two words after it, again at four, and at the end of a sentence.
+            if self.engine.cfg.rw {
+                let mut ks: Vec<usize> = [2usize, 4].iter().filter_map(|&b| i.checked_sub(b)).collect();
+                if self.words[i].tok.ends_sentence {
+                    ks.extend([i.saturating_sub(1), i]);
+                }
+                ks.sort_unstable();
+                ks.dedup();
+                for k in ks {
+                    if let Some(e) = self.rw_check(k, i) {
+                        edits.push(e);
+                    }
+                }
+            }
             return edits;
         }
         let reseg = self.try_boundary(i);
@@ -921,6 +936,27 @@ impl<'e> Stream<'e> {
         let mut hyps = self.engine.hypotheses(&core, w.core_times(), &ctx);
         hyps.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
         let mut out: Vec<String> = Vec::new();
+        // The real-word scorer's look-alikes first, most likely first ("meat" -> "meet").
+        if self.engine.cfg.rw && w.typed == w.output {
+            if let Some(sc) = crate::rwscorer::english() {
+                let (left, typed, right) = self.rw_context(index, self.words.len() - 1);
+                if let Some(mut probs) = sc.judge(&left, &typed, &right, self.engine.cfg.rw_keep_bonus) {
+                    probs.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+                    for (word, p) in probs {
+                        if p < 0.02 {
+                            break;
+                        }
+                        let text = format!("{}{}{}", w.tok.lead, recase_lx(&self.engine.lx, &word, w.capital()), w.tok.trail);
+                        if text != w.output && !out.contains(&text) {
+                            out.push(text);
+                        }
+                        if out.len() == n {
+                            return out;
+                        }
+                    }
+                }
+            }
+        }
         for (h, _) in &hyps {
             let text = match h {
                 crate::decoder::Hyp::Keep => w.typed.clone(),

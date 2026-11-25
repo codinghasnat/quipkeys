@@ -68,6 +68,8 @@ fn configs() -> Vec<(&'static str, Config)> {
     if let Some(v) = envn("QK_NB_SLIP") { neighbour.nb_slip = v; }
     if let Some(v) = envn("QK_NB_MIN") { neighbour.nb_min_slips = v as usize; }
     if let Some(v) = envn("QK_NB_PRECISE") { neighbour.nb_base_precise = v; }
+    let mut no_rw = Config::default();
+    no_rw.rw = false;
     let mut phonetic = Config::default();
     phonetic.phonetic = true;
     let mut sound = Config::default();
@@ -80,6 +82,7 @@ fn configs() -> Vec<(&'static str, Config)> {
     if let Some(v) = envf("QK_PHON_MAX") { phonetic.phon_max = v; }
     vec![
         ("full", full),
+        ("no-rw", no_rw),
         ("phonetic", phonetic),
         ("no-neighbour", neighbour),
         ("sound-mode", sound),

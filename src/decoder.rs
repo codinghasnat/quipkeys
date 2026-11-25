@@ -59,6 +59,13 @@ pub struct Config {
     pub nn_look_max_channel: f32,
     /// Weight of the neural re-ranker on candidate readings (0 = off).
     pub nn_weight: f32,
+    /// The real-word scorer (rwscorer.rs): judge typed real words with the
+    /// words on both sides ("letter form the bank" -> "from").
+    pub rw: bool,
+    /// Probability the scorer needs before it changes a real word.
+    pub rw_tau: f32,
+    /// Added to the typed word's score: more = changes real words less often.
+    pub rw_keep_bonus: f32,
     /// Learned decision gate (None = fixed confidence thresholds).
     pub gate: Option<Gate>,
     /// Load the built-in learned gate (data/gate.txt) when constructing the engine.
@@ -186,6 +193,9 @@ impl Default for Config {
             nn_lookahead: 0.0,
             nn_look_tau: 0.95,
             nn_look_max_channel: 6.5,
+            rw: std::env::var("QK_RW").map(|v| v != "0").unwrap_or(true),
+            rw_tau: std::env::var("QK_RW_TAU").ok().and_then(|v| v.parse().ok()).unwrap_or(0.9),
+            rw_keep_bonus: std::env::var("QK_RW_KEEP").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0),
             gate: None,
             use_gate: true,
             lattice: true,

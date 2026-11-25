@@ -443,6 +443,46 @@ impl<'e> Stream<'e> {
         Some(Edit { index: k, old, new, confidence: conf, revision: true })
     }
 
+    /// The tokens the real-word scorer sees around chunk `k`, with what's
+    /// typed up to chunk `i`: (before, the word, after).
+    pub(super) fn rw_context(&self, k: usize, i: usize) -> (Vec<String>, String, Vec<String>) {
+        use crate::rwscorer::tokens;
+        let mut left: Vec<String> = Vec::new();
+        for c in k.saturating_sub(6)..k {
+            left.extend(tokens(&self.words[c].output));
+        }
+        let w = &self.words[k];
+        left.extend(tokens(&w.tok.lead));
+        let mut right = tokens(&w.tok.trail);
+        for c in k + 1..=i.min(self.words.len() - 1) {
+            right.extend(tokens(&self.words[c].output));
+        }
+        (left, w.tok.core.to_ascii_lowercase(), right)
+    }
+
+    /// Let the real-word scorer judge chunk `k` (a real word, untouched so
+    /// far) with what's been typed up to chunk `i`.
+    pub(super) fn rw_check(&mut self, k: usize, i: usize) -> Option<Edit> {
+        let e = self.engine;
+        if k >= self.words.len() || !self.lattice_open(k) {
+            return None;
+        }
+        let sc = crate::rwscorer::english()?;
+        let (left, typed, right) = self.rw_context(k, i);
+        if right.is_empty() || !sc.judges(&typed) {
+            return None;
+        }
+        let probs = sc.judge(&left, &typed, &right, e.cfg.rw_keep_bonus)?;
+        let (best, p) = probs.iter().skip(1).max_by(|a, b| a.1.partial_cmp(&b.1).unwrap())?.clone();
+        if p < e.cfg.rw_tau {
+            return None;
+        }
+        let wd = &self.words[k];
+        let new = format!("{}{}{}", wd.tok.lead, recase_lx(&e.lx, &best, wd.capital()), wd.tok.trail);
+        let old = self.set_output(k, new.clone());
+        Some(Edit { index: k, old, new, confidence: p, revision: true })
+    }
+
     /// Sum over all paths (forward algorithm, beam-pruned) whose text at the
     /// chunks in `req` equals the required text. Returns -ln(total probability).
     #[allow(clippy::too_many_arguments)]

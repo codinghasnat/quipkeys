@@ -1,0 +1,73 @@
+# Real-word slip test set (written by hand for this test; never used for training
+# or tuning). "typed<TAB>meant". Lines whose two halves match are correct
+# sentences that must stay exactly as they are.
+Can you meat me at the cafe?	Can you meet me at the cafe?
+I got a letter form the bank.	I got a letter from the bank.
+Their is a problem with the car.	There is a problem with the car.
+I am to tired to go out tonight.	I am too tired to go out tonight.
+I can't wait to sea you this weekend.	I can't wait to see you this weekend.
+I think your right about that.	I think you're right about that.
+The dog wagged it's tail.	The dog wagged its tail.
+She is taller then her brother.	She is taller than her brother.
+We where going to call you later.	We were going to call you later.
+I don't know weather it will rain.	I don't know whether it will rain.
+Can you here me now?	Can you hear me now?
+I knew we would loose the game.	I knew we would lose the game.
+Please send me a peace of the cake.	Please send me a piece of the cake.
+I would of done it differently.	I would have done it differently.
+He through the ball over the fence.	He threw the ball over the fence.
+I need to by some milk on the way home.	I need to buy some milk on the way home.
+They left there bags at the station.	They left their bags at the station.
+Its going to be a long day.	It's going to be a long day.
+I will meat you outside the office.	I will meet you outside the office.
+Did you here what happened?	Did you hear what happened?
+I have no idea were they went.	I have no idea where they went.
+That is the best advise I have had.	That is the best advice I have had.
+Lets go to the park after lunch.	Let's go to the park after lunch.
+I want to right a letter to my mum.	I want to write a letter to my mum.
+We had a great tine at the party.	We had a great time at the party.
+I will be their in ten minutes.	I will be there in ten minutes.
+Thanks for you help yesterday.	Thanks for your help yesterday.
+He is the one who's car was stolen.	He is the one whose car was stolen.
+I have to go to work know.	I have to go to work now.
+Can you sent me the files today?	Can you send me the files today?
+Do you want to cone with us?	Do you want to come with us?
+I am looking forward to the weak end.	I am looking forward to the week end.
+The meeting is on Monday morning at nine.	The meeting is on Monday morning at nine.
+I lost my keys in the car park.	I lost my keys in the car park.
+Please fill out the form and return it.	Please fill out the form and return it.
+The sea was calm and the sky was clear.	The sea was calm and the sky was clear.
+We had steak and too many chips.	We had steak and too many chips.
+Their house is at the end of the road.	Their house is at the end of the road.
+I went to the shop to buy some bread.	I went to the shop to buy some bread.
+There are two ways to do this.	There are two ways to do this.
+The letters arrived on Tuesday.	The letters arrived on Tuesday.
+I will return the book tomorrow.	I will return the book tomorrow.
+The meat was cooked perfectly.	The meat was cooked perfectly.
+You're welcome to join us.	You're welcome to join us.
+Your car is blocking the drive.	Your car is blocking the drive.
+It's raining again.	It's raining again.
+The company changed its name last year.	The company changed its name last year.
+She is better than me at chess.	She is better than me at chess.
+Then we drove home.	Then we drove home.
+I can see the hills from here.	I can see the hills from here.
+Where were you last night?	Where were you last night?
+I don't know whether to laugh or cry.	I don't know whether to laugh or cry.
+I need to lose some weight.	I need to lose some weight.
+He threw the keys onto the table.	He threw the keys onto the table.
+I walked through the park.	I walked through the park.
+We went by train.	We went by train.
+Could you form a team by Friday?	Could you form a team by Friday?
+Let me know if you need anything.	Let me know if you need anything.
+I knew it was going to happen.	I knew it was going to happen.
+The new form is on the website.	The new form is on the website.
+We were there for an hour.	We were there for an hour.
+Write your name at the top.	Write your name at the top.
+He is quite good at it.	He is quite good at it.
+Keep quiet during the film.	Keep quiet during the film.
+We had a great time at the party.	We had a great time at the party.
+I have to go to work now.	I have to go to work now.
+Can you send me the files today?	Can you send me the files today?
+Do you want to come with us?	Do you want to come with us?
+The form of the building is unusual.	The form of the building is unusual.
+I will meet you at the station.	I will meet you at the station.

@@ -1,0 +1,163 @@
+# Real-word confusions: each line is a set of words people type for one another
+# (sound-alikes, apostrophe slips, classic mix-ups). Used to train the real-word
+# scorer (scripts/nn/rw_data.py), on top of every pair of real words one keyboard
+# slip apart, which the script finds itself.
+their there they're
+your you're
+its it's
+to too two
+then than
+were where we're wear
+who's whose
+lose loose
+affect effect
+accept except
+advice advise
+form from
+meat meet
+sea see
+here hear
+know no now
+new knew
+right write rite
+weather whether
+peace piece
+quite quiet
+buy by bye
+week weak
+which witch
+of off
+does dose
+breath breathe
+desert dessert
+principle principal
+compliment complement
+stationary stationery
+past passed
+led lead
+through threw thorough though thought tough
+brake break
+plain plane
+fair fare
+hole whole
+hour our are
+knight night
+mail male
+sun son
+tail tale
+waist waste
+wait weight
+way weigh
+wood would
+aloud allowed
+bear bare
+board bored
+cell sell
+cent scent sent
+flour flower
+for four fore
+heal heel
+made maid
+pair pear
+real reel
+role roll
+sight site cite
+steal steel
+thrown throne
+ate eight
+be bee
+sale sail
+an and
+on one
+than that
+untied united
+trial trail
+causal casual
+angel angle
+county country
+bought brought
+dear deer
+die dye
+eye i
+feat feet
+grate great
+hair hare
+heard herd
+higher hire
+holy wholly
+in inn
+mind mined
+missed mist
+morning mourning
+naval navel
+none nun
+pail pale
+pain pane
+patience patients
+pause paws
+pedal peddle
+poor pour pore
+pray prey
+presence presents
+rain reign rein
+raise rays
+read red reed
+residence residents
+ring wring
+road rode rowed
+root route
+sew so sow
+shone shown
+some sum
+stair stare
+stake steak
+suite sweet
+tide tied
+toe tow
+vain vein vane
+wail whale
+war wore
+warn worn
+ware wear
+weave we've
+we'd weed
+he'll heal heel
+we'll well
+she'll shell
+i'll ill isle aisle
+can't cant
+won't wont
+let's lets
+there's theirs
+that's thats
+assure ensure insure
+lay lie
+later latter
+lightning lightening
+loath loathe
+moral morale
+personal personnel
+precede proceed
+envelop envelope
+farther further
+emigrate immigrate
+eminent imminent
+elicit illicit
+discreet discrete
+council counsel
+complement compliment
+cloth clothe
+choose chose
+bazaar bizarre
+beside besides
+along alone
+quit quiet quite
+want went
+who how
+form forum
+mean meant
+were wear
+dinner diner
+dessert desert
+later layer
+plan plane
