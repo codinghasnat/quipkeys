@@ -227,8 +227,11 @@ impl<'e> Stream<'e> {
         let merge_margin = if ka || kb { cfg.merge_margin } else { 0.0 };
         // Both chunks gibberish in mashed typing: the space may well be in the
         // wrong place too, so moving it costs less.
+        // Short chunks ("gpe rgr") can be re-split too many plausible ways.
         let mashed = !ka
             && !kb
+            && a.len() >= 4
+            && b.len() >= 4
             && (crate::decoder::SLOPPY.with(|s| s.get())
                 || e.wordlikeness(&a).max(e.wordlikeness(&b)) > cfg.nb_unwordlike);
         let space_cost = if mashed { cfg.space_cost_mashed.min(cfg.space_cost) } else { cfg.space_cost };

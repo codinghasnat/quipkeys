@@ -323,3 +323,34 @@ peace/piece, let's, advise/advice, "for you help". Turning the scorer off: `QK_R
 | Real typing (50 recorded runs, 1,500 words) | 91.3% / 89.0% | 91.3% / 89.0%: 2 words differ, both wrong either way |
 | Pitch-video examples, screenshot examples | all as shown | all as shown; "form the station" (clip 08) now also fixed |
 | Time per word, median (moderate) | 0.48 ms | 1.0 ms |
+
+## Misplaced spaces in mashed typing ("gsop uvotygssu ti tou")
+
+Wrecked words with the space also in the wrong place weren't decoded: moving a space cost
+5, on top of a whole word of slipped letters. Now, when neither chunk is a word, both are
+at least 4 letters, and the typing looks mashed (a sloppy typist, or a chunk that isn't
+word-shaped), moving the space costs 3. "gsop uvotygssu ti tou" and "gsopuv otygssu ti tou"
+now give "happy birthday to you" from a cold start. Short chunks are left out: with cost 2
+and no length limit, "rjanjd gpe rgr uosate" lost "for" and smash typing dropped 0.6 points.
+
+Held-out test split, word accuracy before / after: light, moderate, messy and blind
+identical (98.21, 96.57, 93.30, 88.90%); rough 87.78 / 87.75%; smash 74.67 / 74.65%.
+Real typing, the real-word set and every video example unchanged.
+
+## How small can the language data be?
+
+`data/en_ngrams.bin` (word pairs and triples from Wikipedia and conversational text) is
+most of the program's size. Dropping the rarest entries (`scripts/prune_ngrams.py`; try a
+file with `QK_NGRAMS=path`), held-out test split, word accuracy:
+
+| Keep pairs seen ≥ / triples seen ≥ | Size | Moderate | Blind | Smash | Video examples |
+|---|---|---|---|---|---|
+| 3 / 6 (current) | 59 MB | 96.55% | 88.83% | 74.08% | all as shown |
+| 5 / 8 | 49 MB | 96.54% | 88.75% | 73.87% | all as shown |
+| 8 / 10 | 39 MB | 96.52% | 88.66% | 73.68% | all as shown |
+| 10 / 20 | 26 MB | 96.50% | 88.45% | 73.21% | "buy milk and vread" |
+| 20 / 40 | 15 MB | 96.41% | 88.14% | 72.57% | also "jrkko how are you" |
+
+(Measured with the space-move cost at 2, so the smash figures sit a little under the final
+ones; the differences between rows are what matter.) The real-word set gave 17/32 at
+every size.

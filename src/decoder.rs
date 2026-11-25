@@ -238,7 +238,7 @@ impl Default for Config {
             split_cost: 6.0,
             space_cost: 5.0,
             tau_reseg: 0.9,
-            space_cost_mashed: std::env::var("QK_SPACE_MASHED").ok().and_then(|v| v.parse().ok()).unwrap_or(2.0),
+            space_cost_mashed: std::env::var("QK_SPACE_MASHED").ok().and_then(|v| v.parse().ok()).unwrap_or(3.0),
             merge_margin: 6.0,
             shift_margin: 2.0,
             hand_shift_max_cost: 14.0,
