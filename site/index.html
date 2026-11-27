@@ -201,6 +201,70 @@ table.vs { width: 100%; border-collapse: collapse; min-width: 640px; font-size: 
 .get .keybtn { background: var(--paper); color: var(--ink); box-shadow: 0 5px 0 #b59a12; justify-self: start; }
 footer { padding-block: 28px 40px; font-size: 0.9rem; color: var(--ink-soft); display: flex; flex-wrap: wrap; gap: 8px 24px; justify-content: space-between; }
 
+/* same keystrokes */
+.wreck { padding-block: 72px 40px; display: grid; gap: 28px; }
+.wreck .head { display: grid; gap: 12px; }
+.wreck .head p { font-size: var(--step-1); line-height: 1.45; color: var(--ink-soft); max-width: 46ch; }
+.rows { display: grid; border-top: 3px solid var(--ink); }
+.wrow { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr) minmax(0, 1.15fr); gap: 18px; padding-block: 18px; border-bottom: 2px solid var(--ink); align-items: baseline; }
+.wrow.labels { font: 600 0.8rem/1 var(--mono); color: var(--ink-soft); padding-block: 12px; border-bottom-width: 2px; }
+.wrow .typed { font: 600 clamp(1rem, 0.9rem + 0.6vw, 1.3rem)/1.35 var(--mono); text-decoration: underline wavy var(--squiggle); text-decoration-thickness: 2px; text-underline-offset: 6px; overflow-wrap: anywhere; }
+.wrow .spell { font: 400 clamp(0.95rem, 0.88rem + 0.4vw, 1.15rem)/1.35 var(--mono); color: #8f8558; text-decoration: line-through 2px var(--squiggle); overflow-wrap: anywhere; }
+.wrow .qk { font: 800 clamp(1.05rem, 0.95rem + 0.7vw, 1.4rem)/1.3 var(--display); font-variation-settings: "wdth" 110; color: var(--fix); }
+.wrow .qk.scramble { color: var(--ink-soft); font-family: var(--mono); font-weight: 600; }
+.film { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 32px; align-items: center; }
+.film video { width: 100%; border-radius: 10px; display: block; background: var(--ink); box-shadow: 0 18px 40px -16px rgba(77, 62, 0, 0.6); }
+.film p { color: var(--ink-soft); }
+
+/* sound-alikes */
+.alike { padding-block: 56px; display: grid; gap: 26px; }
+.alike .lines { display: grid; gap: 0; border-top: 3px solid var(--ink); }
+.aline { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 22px; padding-block: 16px; border-bottom: 2px solid var(--ink); font: 400 clamp(1rem, 0.92rem + 0.5vw, 1.25rem)/1.4 var(--body); }
+.aline .t { color: var(--ink-soft); }
+.aline .t i { font-style: normal; text-decoration: underline wavy var(--squiggle); text-decoration-thickness: 2px; text-underline-offset: 5px; color: var(--ink); }
+.aline .g b { color: var(--fix); text-decoration: underline 3px var(--fix); text-underline-offset: 5px; }
+.aline.keep .g::after { content: "  left alone: it's right here"; font: 600 0.8rem var(--mono); color: var(--ink-soft); }
+
+/* write it for me */
+.write { background: var(--ink); color: var(--paper); margin-inline: calc(-1 * max(16px, env(safe-area-inset-left, 0px))); }
+.write .col { padding: 72px max(16px, env(safe-area-inset-left, 0px)) 72px; display: grid; gap: 34px; }
+.write h2 { font-size: var(--step-3); font-weight: 900; line-height: 0.92; letter-spacing: -0.02em; }
+.write .intro { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 40px; align-items: start; }
+.write .intro > div { display: grid; gap: 18px; }
+.write p { color: #e8dca0; max-width: 52ch; }
+.write ol { margin: 0; padding-left: 1.3em; display: grid; gap: 8px; color: #fff7d1; }
+.write kbd { font: 600 0.85rem/1 var(--mono); background: #fffbea; color: var(--ink); border-radius: 6px; padding: 3px 7px; box-shadow: 0 2px 0 #9a8434; }
+.chat { background: #fffdf3; color: var(--ink); border-radius: 12px; padding: 18px 18px 16px; display: grid; gap: 12px; box-shadow: 0 24px 50px -20px #000; }
+.chat .bar { font: 700 0.85rem var(--body); color: var(--ink-soft); display: flex; justify-content: space-between; }
+.chat .bar span:last-child { font-family: var(--mono); font-weight: 600; }
+.msg { background: #f1ead0; border-radius: 10px 10px 10px 2px; padding: 10px 12px; max-width: 85%; font-size: 0.98rem; }
+.msg b { display: block; font-size: 0.8rem; color: var(--ink-soft); }
+.compose { border: 2px solid rgba(23,20,10,.15); border-radius: 10px; padding: 12px; min-height: 5.5em; font: 400 1rem/1.5 var(--mono); }
+.compose .instr { color: var(--ink-soft); }
+.compose .out { color: var(--fix); font-family: var(--body); font-size: 1.05rem; }
+.compose .caret { display: inline-block; width: 2px; height: 1.1em; background: var(--ink); vertical-align: -0.2em; animation: blink 1s steps(1) infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+.status { font: 600 0.78rem/1 var(--mono); color: var(--ink-soft); min-height: 1em; }
+.brains { display: flex; flex-wrap: wrap; gap: 10px; }
+.brains span { font: 700 0.9rem/1 var(--body); padding: 9px 12px; border-radius: 99px; background: #2b2512; color: #fff7d1; }
+.brains span.free { background: var(--paper); color: var(--ink); }
+.write .fine { font-size: 0.86rem; color: #bdb27a; }
+
+/* extras */
+.extras { padding-block: 64px 24px; display: grid; gap: 26px; }
+.extras ul { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 22px; }
+.extras li { background: #fffdf3; border-radius: 6px; padding: 20px 20px 22px; box-shadow: 0 1px 0 rgba(23,20,10,.08), 0 14px 30px -16px rgba(77, 62, 0, 0.5); color: var(--ink-soft); display: grid; gap: 8px; align-content: start; }
+.extras li b { font: 800 1.2rem/1.2 var(--display); font-variation-settings: "wdth" 112; color: var(--ink); }
+.extras .big { font: 900 2.4rem/1 var(--display); font-variation-settings: "wdth" 125; color: var(--fix); letter-spacing: -0.02em; }
+.extras .tag { font: 600 0.72rem/1 var(--mono); color: #8a8160; }
+
+@media (max-width: 760px) {
+  .wrow { grid-template-columns: minmax(0, 1fr); gap: 6px; }
+  .wrow.labels { display: none; }
+  .wrow .spell::before { content: "spellcheck:"; text-decoration: none; display: inline-block; margin-right: 0.5em; }
+  .film, .write .intro, .extras ul, .aline { grid-template-columns: minmax(0, 1fr); }
+  .aline { gap: 4px; }
+}
 @media (max-width: 760px) {
   .claim-row, .private ul, .cmds, .sound, .versus .intro, .question { grid-template-columns: minmax(0, 1fr); }
   .question > div.us { padding-left: 0; border-left: 0; border-top: 2px solid var(--ink); padding-top: 18px; }
@@ -240,7 +304,7 @@ footer { padding-block: 28px 40px; font-size: 0.9rem; color: var(--ink-soft); di
         <div class="note" id="note" aria-live="polite"></div>
       </div>
       <div class="keyboard" id="kb" aria-hidden="true"></div>
-      <p class="hint">This box runs a pocket-size QuipKeys, with 8,000 words and no sentence model. The app is much smarter. Backspace right after a fix undoes it.</p>
+      <p class="hint">This box runs a pocket-size QuipKeys, with 8,000 words and no sentence model. The app is much smarter: it reads whole sentences, wrecked words and sound-alikes. Backspace right after a fix undoes it.</p>
     </div>
   </section>
 </div>
@@ -254,7 +318,27 @@ footer { padding-block: 28px 40px; font-size: 0.9rem; color: var(--ink-soft); di
       <div class="claim"><div class="n">+21%</div><p>more words right on real, sloppy typing†</p></div>
       <div class="claim"><div class="n">0.1%</div><p>of correctly typed words ever changed. It doesn't fight you.</p></div>
     </div>
-    <p class="small">* Simulated typist with 3% of letters wrong, on held-out text: 55.8 → 72.5 words per minute once fixing time is counted. At 10% wrong it's 37 → 60. † 33 real typing runs: 75.4% → 91.5% of words right. Full results are in the repo.</p>
+    <p class="small">* Simulated typist with 3% of letters wrong, on held-out text: 55.8 → 72.5 words per minute once fixing time is counted. At 10% wrong it's 37 → 60. † 33 real typing runs: 75.4% → 91.3% of words right. Full results are in the repo.</p>
+  </section>
+
+  <section class="wreck" id="wrecked">
+    <div class="head">
+      <h2 class="huge">Same keystrokes. Only one can read them.</h2>
+      <p>Most letters a key off, spaces in the wrong place. A normal spellchecker guesses one word at a time. QuipKeys asks which keys your fingers were going for and what the sentence needs.</p>
+    </div>
+    <div class="rows" id="rows">
+      <div class="wrow labels"><span>You typed</span><span>Normal spellcheck</span><span>QuipKeys</span></div>
+      <div class="wrow"><span class="typed">gsopu votygssu ti tou</span><span class="spell">opus voteless ti you</span><span class="qk" data-out="happy birthday to you">happy birthday to you</span></div>
+      <div class="wrow"><span class="typed">gsop uvotygssu ti tou</span><span class="spell">sop uvotygssu ti you</span><span class="qk" data-out="happy birthday to you">happy birthday to you</span></div>
+      <div class="wrow"><span class="typed">rgsbk ypu sp myvg gpr yput hwlp</span><span class="spell">rgsbk yup sp my gr put help</span><span class="qk" data-out="thank you so much for your help">thank you so much for your help</span></div>
+      <div class="wrow"><span class="typed">qhsr atw yiu diobh rpmihhy</span><span class="spell">qophs taw you dhobi rpmihhy</span><span class="qk" data-out="what are you doing tonight">what are you doing tonight</span></div>
+      <div class="wrow"><span class="typed">jrkko jow aer ypu</span><span class="spell">jrkko how eyer yup</span><span class="qk" data-out="hello how are you">hello how are you</span></div>
+    </div>
+    <p class="small">Real output. Spellcheck: Hunspell's first suggestion for each word (the checker in Firefox and LibreOffice). QuipKeys: the app's engine. These are best cases; across very sloppy typing (about half the letters a key off) it gets about 3 words in 4 right.</p>
+    <div class="film">
+      <video src="media/same-keystrokes.mp4" controls muted playsinline preload="none" aria-label="Video: wrecked typing, a spellchecker's guesses and QuipKeys side by side"></video>
+      <p>Watch it work word by word: QuipKeys even goes back and fixes "gsopu" once "ti tou" arrives.</p>
+    </div>
   </section>
 
   <section class="versus">
@@ -282,12 +366,27 @@ footer { padding-block: 28px 40px; font-size: 0.9rem; color: var(--ink-soft); di
           <tr><th>Fixes a space in the wrong place (<span class="mono">mee tyou</span>)</th><td>Often</td><td class="no">Rarely</td><td class="us">Yes</td></tr>
           <tr><th>Uses your typing rhythm</th><td class="no">Not on a touchscreen</td><td class="no">No</td><td class="us">Yes, swaps and hesitations count</td></tr>
           <tr><th>Works in every app</th><td>Yes</td><td class="no">Only in some apps</td><td class="us">Yes, except passwords and terminals</td></tr>
-          <tr><th>Catches typos that are real words (<span class="mono">form</span> for <span class="mono">from</span>)</th><td>Sometimes</td><td class="no">No</td><td class="us">When the sentence makes it clear</td></tr>
+          <tr><th>Catches typos that are real words (<span class="mono">form</span> for <span class="mono">from</span>)</th><td>Sometimes</td><td class="no">No</td><td class="us">Yes, reading the words on both sides</td></tr>
+          <tr><th>Reads mashed typing (<span class="mono">jrkko</span> for <span class="mono">hello</span>)</th><td>Sometimes</td><td class="no">No</td><td class="us">Yes</td></tr>
+          <tr><th>Writes for you</th><td class="no">No</td><td class="no">No</td><td class="us">Yes, one hotkey (optional)</td></tr>
           <tr><th>Leaves correct words alone</th><td>Usually</td><td class="no">Mostly, but it misfires on names and slang</td><td class="us">Changes 0.1% of correct words, and never one you've undone</td></tr>
           <tr><th>Undo a bad fix</th><td>Tap the suggestion</td><td>Click the word</td><td class="us">Press Backspace once</td></tr>
         </tbody>
       </table>
     </div>
+  </section>
+
+  <section class="alike">
+    <h2>Sound-alikes, sorted</h2>
+    <p>The hardest typos are real words: spell-check can't see them. QuipKeys reads the words on both sides with a small trained model, and fixes the slip once the sentence makes it clear.</p>
+    <div class="lines">
+      <div class="aline"><span class="t">Can you <i>meat</i> me at the cafe?</span><span class="g">Can you <b>meet</b> me at the cafe?</span></div>
+      <div class="aline"><span class="t">I got a letter <i>form</i> the bank.</span><span class="g">I got a letter <b>from</b> the bank.</span></div>
+      <div class="aline"><span class="t"><i>Their</i> is a problem, and I am <i>to</i> tired.</span><span class="g"><b>There</b> is a problem, and I am <b>too</b> tired.</span></div>
+      <div class="aline"><span class="t">I can't wait to <i>sea</i> you this weekend.</span><span class="g">I can't wait to <b>see</b> you this weekend.</span></div>
+      <div class="aline keep"><span class="t">Please fill out the form and return it.</span><span class="g">Please fill out the form and return it.</span></div>
+    </div>
+    <p class="small">On our hand-written test of sound-alike slips it fixed 17 of 32 by itself and changed none of 442 correct words. For the rest, press Ctrl+Alt+N (Ctrl+Option+N on Mac) straight after the word: it offers the likeliest fix first.</p>
   </section>
 
   <section class="how">
@@ -314,10 +413,53 @@ footer { padding-block: 28px 40px; font-size: 0.9rem; color: var(--ink-soft); di
     </div>
   </section>
 
+</div>
+
+<section class="write" id="write">
+  <div class="col">
+    <h2>Write it for me.</h2>
+    <div class="intro">
+      <div>
+        <p>Type a few words, press <kbd>Ctrl+Alt+W</kbd> (<kbd>Ctrl+Option+W</kbd> on Mac), and the finished text streams in where you typed. It reads the room: the app you're in, the conversation on screen, the email you're answering. No copying, no switching to a chatbot tab.</p>
+        <ol>
+          <li>Chats stay short. Emails get a greeting and a sign-off. Documents keep their voice.</li>
+          <li>Keep typing while it writes and it stops; the rest waits on your clipboard.</li>
+          <li>Never reads password fields, banking or password apps.</li>
+        </ol>
+        <div class="brains" aria-label="Models you can use">
+          <span>Claude</span><span>OpenAI</span><span>Gemini</span><span>Grok</span><span>DeepSeek</span><span>Any OpenAI-style service</span><span class="free">Free, on your computer</span>
+        </div>
+        <p class="fine">Optional and off until you switch it on. Bring your own API key (it starts on each provider's cheapest model), or run a free model on your own computer with Ollama, and nothing leaves it. Typo fixing never uses any of this.</p>
+      </div>
+      <div class="chat" aria-hidden="true">
+        <div class="bar"><span>Chat · #design</span><span id="wstatus"></span></div>
+        <div class="msg"><b>Priya</b>Can we ship the new logo on Monday?</div>
+        <div class="msg"><b>Tom</b>The files look close to done.</div>
+        <div class="compose" id="wcompose"></div>
+        <div class="status">Example wording; the real text comes from the model you choose.</div>
+      </div>
+    </div>
+    <div class="film">
+      <video src="media/write-it-for-me.mp4" controls muted playsinline preload="none" aria-label="Video: Write it for me, in four short chapters"></video>
+      <p>The tour, in under a minute: reading the room, fitting the place, streaming, your choice of model, and the safety rules.</p>
+    </div>
+  </div>
+</section>
+
+<div class="col">
+  <section class="extras">
+    <h2>Gets to know you. Shows its work.</h2>
+    <ul>
+      <li><span class="tag">Your stats</span><b>See what it's saved you</b><span class="big">1 h 12 min</span>Typos fixed, words checked and time saved, today and all time, measured at your own typing speed. <span class="tag">(example numbers)</span></li>
+      <li><span class="tag">Learns your typing</span><b>Your slips, learned on your computer</b>Swap letters a lot? Always hit M for N? It notices and leans its fixes your way. It keeps counts, never words.</li>
+      <li><span class="tag">Updates</span><b>Keeps itself up to date</b>One click installs a new version, checked against its fingerprint first. It only looks for updates when you ask, or daily if you switch that on.</li>
+    </ul>
+  </section>
+
   <section class="private">
     <h2>Stays on your computer</h2>
     <ul>
-      <li><b>No internet, ever</b>The dictionary and language model are built in. No account, no analytics, no tracking.</li>
+      <li><b>Offline by default</b>Typo fixing never touches the internet: the dictionary and language model are built in. No account, no analytics, no tracking. Only Write it for me with an online model, and update checks, ever go online, and both are off until you switch them on.</li>
       <li><b>Forgets as you go</b>It only looks at your last few words, and forgets them on Enter, a click or an app switch.</li>
       <li><b>Knows when to back off</b>It stays out of password fields, terminals and code editors, and you can pause it with one shortcut.</li>
     </ul>
@@ -327,18 +469,18 @@ footer { padding-block: 28px 40px; font-size: 0.9rem; color: var(--ink-soft); di
 <section class="get" id="get">
   <div class="col">
     <h2>Get QuipKeys</h2>
-    <p>Windows and Mac. Free for personal and non-commercial use. For now you build it from the source with Rust; ready-made downloads are coming.</p>
+    <p>Windows and Mac. Free for personal and non-commercial use. Ready-made downloads come with the first release on GitHub, and from then on QuipKeys can update itself. Until then, build it from the source with Rust:</p>
     <div class="cmds">
       <div class="cmd"><b>Windows</b>git clone https://github.com/codinghasnat/quipkeys<br>cd quipkeys\app<br>cargo build --release<br>target\release\quipkeys.exe</div>
       <div class="cmd"><b>Mac</b>git clone https://github.com/codinghasnat/quipkeys<br>cd quipkeys/app<br>sh macos/make-app.sh --install</div>
     </div>
-    <a class="keybtn" href="https://github.com/codinghasnat/quipkeys">Open on GitHub</a>
+    <div class="buttons"><a class="keybtn" href="https://github.com/codinghasnat/quipkeys/releases">Downloads</a><a class="keybtn" href="https://github.com/codinghasnat/quipkeys">Open on GitHub</a></div>
   </div>
 </section>
 
 <div class="col">
   <footer>
-    <span>Pause it any time: Ctrl+Alt+Q on Windows, Ctrl+Option+Q on Mac.</span>
+    <span>Pause: Ctrl+Alt+Q · Next guess: Ctrl+Alt+N · Write it for me: Ctrl+Alt+W (Ctrl+Option on Mac).</span>
     <span>Free for non-commercial use under the <a href="https://github.com/codinghasnat/quipkeys/blob/HEAD/LICENSE">PolyForm Noncommercial License</a>.</span>
   </footer>
 </div>
@@ -367,7 +509,8 @@ footer { padding-block: 28px 40px; font-size: 0.9rem; color: var(--ink-soft); di
 
   // ---- ticker ----
   const pairs = [["wamt", "want"], ["teh", "the"], ["Hellon ice", "Hello nice"], ["mee tyou", "meet you"], ["thsi", "this"], ["stpre", "store"],
-    ["keybaord", "keyboard"], ["becuase", "because"], ["tomorow", "tomorrow"], ["recieve", "receive"], ["hte", "the"], ["gp", "go"], ["I amm", "I am"], ["Gello", "Hello"]];
+    ["keybaord", "keyboard"], ["becuase", "because"], ["tomorow", "tomorrow"], ["recieve", "receive"], ["hte", "the"], ["gp", "go"], ["I amm", "I am"], ["Gello", "Hello"],
+    ["jrkko", "hello"], ["gsopu votygssu", "happy birthday"], ["meat me", "meet me"], ["form the bank", "from the bank"], ["to tired", "too tired"], ["sea you", "see you"]];
   const track = document.getElementById("track");
   const chunk = pairs.map(([a, b]) => `<span><s>${a}</s> <b>${b}</b></span>`).join("");
   track.innerHTML = chunk + chunk;
@@ -454,6 +597,47 @@ footer { padding-block: 28px 40px; font-size: 0.9rem; color: var(--ink-soft); di
   };
   pad.addEventListener("focus", takeOver);
   autoplay();
+
+  // ---- same keystrokes: decode each row when it scrolls into view ----
+  const rows = document.querySelectorAll(".wrow .qk");
+  const scramble = (el) => {
+    const out = el.dataset.out, typed = el.closest(".wrow").querySelector(".typed").textContent;
+    if (reduced) return;
+    el.classList.add("scramble"); el.textContent = typed;
+    let step = 0;
+    const id = setInterval(() => {
+      step++;
+      const n = Math.min(out.length, Math.floor(step * out.length / 18));
+      el.textContent = out.slice(0, n) + typed.slice(n);
+      if (n >= out.length) { clearInterval(id); el.classList.remove("scramble"); el.textContent = out; }
+    }, 45);
+  };
+  if ("IntersectionObserver" in window) {
+    const io = new IntersectionObserver((es) => es.forEach((e) => { if (e.isIntersecting) { io.unobserve(e.target); setTimeout(() => scramble(e.target), 150 * [...rows].indexOf(e.target)); } }), { threshold: 0.6 });
+    rows.forEach((r) => io.observe(r));
+  }
+
+  // ---- write it for me: a looping chat demo ----
+  const wc = document.getElementById("wcompose"), ws = document.getElementById("wstatus");
+  const INSTR = "yes but need until tuesday afternoon";
+  const REPLY = ["Yes, mostly! ", "Could we make it Tuesday afternoon instead? ", "I need a bit more time on the final files."];
+  async function writeDemo() {
+    if (reduced) { wc.innerHTML = `<span class="out">${REPLY.join("")}</span>`; return; }
+    for (;;) {
+      wc.innerHTML = ""; ws.textContent = "";
+      await sleep(900);
+      for (let i = 1; i <= INSTR.length; i++) { wc.innerHTML = `<span class="instr">${esc(INSTR.slice(0, i))}</span><span class="caret"></span>`; await sleep(45 + Math.random() * 40); }
+      await sleep(700); ws.textContent = "Ctrl+Alt+W"; await sleep(600); ws.textContent = "Writing…"; await sleep(1100);
+      let text = "";
+      for (const part of REPLY) { text += part; wc.innerHTML = `<span class="out">${esc(text)}</span><span class="caret"></span>`; await sleep(650); }
+      ws.textContent = "Done ✓"; wc.innerHTML = `<span class="out">${esc(text)}</span>`;
+      await sleep(4200);
+    }
+  }
+  if ("IntersectionObserver" in window) {
+    const wio = new IntersectionObserver((es) => { if (es[0].isIntersecting) { wio.disconnect(); writeDemo(); } }, { threshold: 0.3 });
+    wio.observe(wc);
+  } else writeDemo();
 
   // ---- spell-by-sound switch ----
   const sw = document.getElementById("sw"), pairsEl = document.getElementById("pairs");
