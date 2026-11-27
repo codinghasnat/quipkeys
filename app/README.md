@@ -23,7 +23,7 @@ in, at the moment you press space.
   list below), and password fields.
 
 Everything runs offline. The dictionary and language model are built into the
-binary, so it's one file of about 70 MB that starts in about half a second.
+binary, so it's one file of about 62 MB that starts in about half a second.
 
 It lives in the system tray (Windows) or menu bar (macOS). Click the icon to
 pause it, skip the app you're in, turn on start at login, or quit. On first

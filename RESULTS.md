@@ -354,3 +354,8 @@ file with `QK_NGRAMS=path`), held-out test split, word accuracy:
 (Measured with the space-move cost at 2, so the smash figures sit a little under the final
 ones; the differences between rows are what matter.) The real-word set gave 17/32 at
 every size.
+
+**Chosen: 8 / 10 (39 MB).** With the final settings, held-out test split, 59 MB / 39 MB:
+light 98.21 / 98.20%, moderate 96.57 / 96.53%, blind 88.90 / 88.74%, smash 74.65 / 74.21%.
+Real typing (91.3% / 89.0%), the real-word set (17/32) and every video and screenshot
+example are unchanged. The Windows program went from 74 MB to 62 MB (about 40 MB compressed).
